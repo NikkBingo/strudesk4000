@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Strudesk 4000 – Strudel Pattern Mixer</title>
+  <link rel="stylesheet" href="/src/styles.css">
+  <!-- Strudel is loaded via Vite from local packages to avoid version conflicts -->
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Strudesk 4000</h1>
+      <p>Strudel Pattern Mixer — click elements to start/stop patterns. Each channel routes to master.</p>
+    </header>
+
+    <!-- Controls Panel -->
+    <div class="controls-panel">
+      <h2>Controls</h2>
+      <div class="control-group">
+        <label for="tempo-slider">
+          Tempo: <span id="tempo-value">120</span> BPM
+        </label>
+        <div class="tempo-controls">
+          <input 
+            type="range" 
+            id="tempo-slider" 
+            min="60" 
+            max="240" 
+            value="120"
+          />
+          <button id="tap-tempo-btn" class="tap-tempo-button" title="Tap to set tempo">TAP</button>
+        </div>
+      </div>
+      <div class="control-group">
+        <label for="key-select">
+          Key: <span id="key-value">Select Key</span>
+        </label>
+        <select id="key-select" class="control-select">
+          <option value="" selected>Select Key</option>
+          <option value="C">C Major</option>
+          <option value="C#">C# Major</option>
+          <option value="Db">Db Major</option>
+          <option value="D">D Major</option>
+          <option value="D#">D# Major</option>
+          <option value="Eb">Eb Major</option>
+          <option value="E">E Major</option>
+          <option value="F">F Major</option>
+          <option value="F#">F# Major</option>
+          <option value="Gb">Gb Major</option>
+          <option value="G">G Major</option>
+          <option value="G#">G# Major</option>
+          <option value="Ab">Ab Major</option>
+          <option value="A">A Major</option>
+          <option value="A#">A# Major</option>
+          <option value="Bb">Bb Major</option>
+          <option value="B">B Major</option>
+          <option value="Cm">C Minor</option>
+          <option value="C#m">C# Minor</option>
+          <option value="Dm">D Minor</option>
+          <option value="D#m">D# Minor</option>
+          <option value="Em">E Minor</option>
+          <option value="Fm">F Minor</option>
+          <option value="F#m">F# Minor</option>
+          <option value="Gm">G Minor</option>
+          <option value="G#m">G# Minor</option>
+          <option value="Am">A Minor</option>
+          <option value="A#m">A# Minor</option>
+          <option value="Bm">B Minor</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="time-signature-select">
+          Time Signature: <span id="time-signature-value">Select Time Signature</span>
+        </label>
+        <select id="time-signature-select" class="control-select">
+          <option value="" selected>Select Time Signature</option>
+          <option value="4/4">4/4 (Common Time)</option>
+          <option value="3/4">3/4 (Waltz)</option>
+          <option value="6/8">6/8</option>
+          <option value="2/4">2/4 (March)</option>
+          <option value="5/4">5/4</option>
+          <option value="7/8">7/8</option>
+          <option value="12/8">12/8</option>
+          <option value="2/2">2/2 (Cut Time)</option>
+          <option value="3/8">3/8</option>
+          <option value="9/8">9/8</option>
+          <option value="5/8">5/8</option>
+          <option value="7/4">7/4</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Status Indicator -->
+    <div class="status-panel">
+      <div id="status-text">Ready</div>
+      <div id="active-elements"></div>
+      <div id="pattern-slots" style="margin-top: 10px; font-size: 0.85rem; color: #666;">
+        <strong>Pattern Slots:</strong> <span id="slots-info">None active</span>
+      </div>
+    </div>
+
+    <!-- Interactive Elements -->
+    <div class="elements-container">
+      <div class="sound-element" data-sound-id="element-1">
+        <input type="range" class="gain-slider" min="0" max="1" step="0.01" value="0.8" orient="vertical" />
+        <div class="volume-label">Gain</div>
+        <div class="channel-label">Channel 1</div>
+        <input type="range" class="pan-slider" min="-1" max="1" step="0.01" value="0" orient="horizontal" />
+        <div class="pan-label">Pan</div>
+        <div class="status-dots">
+          <div class="status-dot loaded-dot" title="Sound Loaded"></div>
+          <div class="status-dot playing-dot" title="Playing"></div>
+        </div>
+        <div class="vu-meter-container">
+          <div class="vu-meter">
+            <div class="vu-bar"></div>
+          </div>
+        </div>
+        <div class="master-status-indicator" title="Pattern saved to Master">M</div>
+        <div class="element-title">Element 1</div>
+        <div class="element-indicator"></div>
+        <div class="element-circle"></div>
+        <div class="spiral-visualization-container" style="display: none;"></div>
+        <div class="element-controls">
+          <button class="solo-button" title="Solo">S</button>
+          <button class="mute-button" title="Mute">M</button>
+        </div>
+        
+        <!-- Synthesis Section (ADSR Envelope) - Only for synth sounds -->
+        <div class="collapsible-section synthesis-section" style="display: none;">
+          <button class="collapsible-toggle" data-target="synthesis">
+            <span class="toggle-icon">▶</span> Synthesis
+          </button>
+          <div class="collapsible-content synthesis-content">
+            <div class="slider-row">
+              <label>Attack</label>
+              <input type="range" class="synth-slider attack-slider" min="0" max="2" step="0.01" value="0.01" />
+              <span class="slider-value">0.01</span>
+            </div>
+            <div class="slider-row">
+              <label>Decay</label>
+              <input type="range" class="synth-slider decay-slider" min="0" max="2" step="0.01" value="0.1" />
+              <span class="slider-value">0.1</span>
+            </div>
+            <div class="slider-row">
+              <label>Sustain</label>
+              <input type="range" class="synth-slider sustain-slider" min="0" max="1" step="0.01" value="0.5" />
+              <span class="slider-value">0.5</span>
+            </div>
+            <div class="slider-row">
+              <label>Release</label>
+              <input type="range" class="synth-slider release-slider" min="0" max="5" step="0.01" value="0.1" />
+              <span class="slider-value">0.1</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Filters Section -->
+        <div class="collapsible-section">
+          <button class="collapsible-toggle" data-target="filters">
+            <span class="toggle-icon">▶</span> Filters
+          </button>
+          <div class="collapsible-content filters-content">
+            <div class="slider-row">
+              <label>Low-pass</label>
+              <input type="range" class="filter-slider lpf-slider" min="20" max="20000" step="10" value="20000" />
+              <span class="slider-value">20000</span>
+              <div class="slider-endpoints">
+                <span>20 Hz</span>
+                <span>20 kHz</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label>High-pass</label>
+              <input type="range" class="filter-slider hpf-slider" min="20" max="20000" step="10" value="20" />
+              <span class="slider-value">20</span>
+              <div class="slider-endpoints">
+                <span>20 Hz</span>
+                <span>20 kHz</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label>Resonance</label>
+              <input type="range" class="filter-slider resonance-slider" min="0" max="20" step="0.1" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Effects Section -->
+        <div class="collapsible-section">
+          <button class="collapsible-toggle" data-target="effects">
+            <span class="toggle-icon">▶</span> Effects
+          </button>
+          <div class="collapsible-content effects-content">
+            <div class="slider-row">
+              <label>Reverb</label>
+              <input type="range" class="effect-slider reverb-slider" min="0" max="1" step="0.01" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+            <div class="slider-row">
+              <label>Delay</label>
+              <input type="range" class="effect-slider delay-slider" min="0" max="1" step="0.01" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+            <div class="slider-row">
+              <label>Distortion</label>
+              <input type="range" class="effect-slider distortion-slider" min="0" max="10" step="0.1" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+          </div>
+        </div>
+        
+        <button class="config-button">Configure Sound</button>
+      </div>
+      <div class="sound-element" data-sound-id="element-2">
+        <input type="range" class="gain-slider" min="0" max="1" step="0.01" value="0.8" orient="vertical" />
+        <div class="volume-label">Gain</div>
+        <div class="channel-label">Channel 2</div>
+        <input type="range" class="pan-slider" min="-1" max="1" step="0.01" value="0" orient="horizontal" />
+        <div class="pan-label">Pan</div>
+        <div class="status-dots">
+          <div class="status-dot loaded-dot" title="Sound Loaded"></div>
+          <div class="status-dot playing-dot" title="Playing"></div>
+        </div>
+        <div class="vu-meter-container">
+          <div class="vu-meter">
+            <div class="vu-bar"></div>
+          </div>
+        </div>
+        <div class="master-status-indicator" title="Pattern saved to Master">M</div>
+        <div class="element-title">Element 2</div>
+        <div class="element-indicator"></div>
+        <div class="element-circle"></div>
+        <div class="spiral-visualization-container" style="display: none;"></div>
+        <div class="element-controls">
+          <button class="solo-button" title="Solo">S</button>
+          <button class="mute-button" title="Mute">M</button>
+        </div>
+        
+        <!-- Synthesis Section (ADSR Envelope) - Only for synth sounds -->
+        <div class="collapsible-section synthesis-section" style="display: none;">
+          <button class="collapsible-toggle" data-target="synthesis">
+            <span class="toggle-icon">▶</span> Synthesis
+          </button>
+          <div class="collapsible-content synthesis-content">
+            <div class="slider-row">
+              <label>Attack</label>
+              <input type="range" class="synth-slider attack-slider" min="0" max="2" step="0.01" value="0.01" />
+              <span class="slider-value">0.01</span>
+            </div>
+            <div class="slider-row">
+              <label>Decay</label>
+              <input type="range" class="synth-slider decay-slider" min="0" max="2" step="0.01" value="0.1" />
+              <span class="slider-value">0.1</span>
+            </div>
+            <div class="slider-row">
+              <label>Sustain</label>
+              <input type="range" class="synth-slider sustain-slider" min="0" max="1" step="0.01" value="0.5" />
+              <span class="slider-value">0.5</span>
+            </div>
+            <div class="slider-row">
+              <label>Release</label>
+              <input type="range" class="synth-slider release-slider" min="0" max="5" step="0.01" value="0.1" />
+              <span class="slider-value">0.1</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Filters Section -->
+        <div class="collapsible-section">
+          <button class="collapsible-toggle" data-target="filters">
+            <span class="toggle-icon">▶</span> Filters
+          </button>
+          <div class="collapsible-content filters-content">
+            <div class="slider-row">
+              <label>Low-pass</label>
+              <input type="range" class="filter-slider lpf-slider" min="20" max="20000" step="10" value="20000" />
+              <span class="slider-value">20000</span>
+              <div class="slider-endpoints">
+                <span>20 Hz</span>
+                <span>20 kHz</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label>High-pass</label>
+              <input type="range" class="filter-slider hpf-slider" min="20" max="20000" step="10" value="20" />
+              <span class="slider-value">20</span>
+              <div class="slider-endpoints">
+                <span>20 Hz</span>
+                <span>20 kHz</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label>Resonance</label>
+              <input type="range" class="filter-slider resonance-slider" min="0" max="20" step="0.1" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Effects Section -->
+        <div class="collapsible-section">
+          <button class="collapsible-toggle" data-target="effects">
+            <span class="toggle-icon">▶</span> Effects
+          </button>
+          <div class="collapsible-content effects-content">
+            <div class="slider-row">
+              <label>Reverb</label>
+              <input type="range" class="effect-slider reverb-slider" min="0" max="1" step="0.01" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+            <div class="slider-row">
+              <label>Delay</label>
+              <input type="range" class="effect-slider delay-slider" min="0" max="1" step="0.01" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+            <div class="slider-row">
+              <label>Distortion</label>
+              <input type="range" class="effect-slider distortion-slider" min="0" max="10" step="0.1" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+          </div>
+        </div>
+        
+        <button class="config-button">Configure Sound</button>
+      </div>
+      <div class="sound-element" data-sound-id="element-3">
+        <input type="range" class="gain-slider" min="0" max="1" step="0.01" value="0.8" orient="vertical" />
+        <div class="volume-label">Gain</div>
+        <div class="channel-label">Channel 3</div>
+        <input type="range" class="pan-slider" min="-1" max="1" step="0.01" value="0" orient="horizontal" />
+        <div class="pan-label">Pan</div>
+        <div class="status-dots">
+          <div class="status-dot loaded-dot" title="Sound Loaded"></div>
+          <div class="status-dot playing-dot" title="Playing"></div>
+        </div>
+        <div class="vu-meter-container">
+          <div class="vu-meter">
+            <div class="vu-bar"></div>
+          </div>
+        </div>
+        <div class="master-status-indicator" title="Pattern saved to Master">M</div>
+        <div class="element-title">Element 3</div>
+        <div class="element-indicator"></div>
+        <div class="element-circle"></div>
+        <div class="spiral-visualization-container" style="display: none;"></div>
+        <div class="element-controls">
+          <button class="solo-button" title="Solo">S</button>
+          <button class="mute-button" title="Mute">M</button>
+        </div>
+        
+        <!-- Synthesis Section (ADSR Envelope) - Only for synth sounds -->
+        <div class="collapsible-section synthesis-section" style="display: none;">
+          <button class="collapsible-toggle" data-target="synthesis">
+            <span class="toggle-icon">▶</span> Synthesis
+          </button>
+          <div class="collapsible-content synthesis-content">
+            <div class="slider-row">
+              <label>Attack</label>
+              <input type="range" class="synth-slider attack-slider" min="0" max="2" step="0.01" value="0.01" />
+              <span class="slider-value">0.01</span>
+            </div>
+            <div class="slider-row">
+              <label>Decay</label>
+              <input type="range" class="synth-slider decay-slider" min="0" max="2" step="0.01" value="0.1" />
+              <span class="slider-value">0.1</span>
+            </div>
+            <div class="slider-row">
+              <label>Sustain</label>
+              <input type="range" class="synth-slider sustain-slider" min="0" max="1" step="0.01" value="0.5" />
+              <span class="slider-value">0.5</span>
+            </div>
+            <div class="slider-row">
+              <label>Release</label>
+              <input type="range" class="synth-slider release-slider" min="0" max="5" step="0.01" value="0.1" />
+              <span class="slider-value">0.1</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Filters Section -->
+        <div class="collapsible-section">
+          <button class="collapsible-toggle" data-target="filters">
+            <span class="toggle-icon">▶</span> Filters
+          </button>
+          <div class="collapsible-content filters-content">
+            <div class="slider-row">
+              <label>Low-pass</label>
+              <input type="range" class="filter-slider lpf-slider" min="20" max="20000" step="10" value="20000" />
+              <span class="slider-value">20000</span>
+              <div class="slider-endpoints">
+                <span>20 Hz</span>
+                <span>20 kHz</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label>High-pass</label>
+              <input type="range" class="filter-slider hpf-slider" min="20" max="20000" step="10" value="20" />
+              <span class="slider-value">20</span>
+              <div class="slider-endpoints">
+                <span>20 Hz</span>
+                <span>20 kHz</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label>Resonance</label>
+              <input type="range" class="filter-slider resonance-slider" min="0" max="20" step="0.1" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Effects Section -->
+        <div class="collapsible-section">
+          <button class="collapsible-toggle" data-target="effects">
+            <span class="toggle-icon">▶</span> Effects
+          </button>
+          <div class="collapsible-content effects-content">
+            <div class="slider-row">
+              <label>Reverb</label>
+              <input type="range" class="effect-slider reverb-slider" min="0" max="1" step="0.01" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+            <div class="slider-row">
+              <label>Delay</label>
+              <input type="range" class="effect-slider delay-slider" min="0" max="1" step="0.01" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+            <div class="slider-row">
+              <label>Distortion</label>
+              <input type="range" class="effect-slider distortion-slider" min="0" max="10" step="0.1" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+          </div>
+        </div>
+        
+        <button class="config-button">Configure Sound</button>
+      </div>
+      <div class="sound-element" data-sound-id="element-4">
+        <input type="range" class="gain-slider" min="0" max="1" step="0.01" value="0.8" orient="vertical" />
+        <div class="volume-label">Gain</div>
+        <div class="channel-label">Channel 4</div>
+        <input type="range" class="pan-slider" min="-1" max="1" step="0.01" value="0" orient="horizontal" />
+        <div class="pan-label">Pan</div>
+        <div class="status-dots">
+          <div class="status-dot loaded-dot" title="Sound Loaded"></div>
+          <div class="status-dot playing-dot" title="Playing"></div>
+        </div>
+        <div class="vu-meter-container">
+          <div class="vu-meter">
+            <div class="vu-bar"></div>
+          </div>
+        </div>
+        <div class="master-status-indicator" title="Pattern saved to Master">M</div>
+        <div class="element-title">Element 4</div>
+        <div class="element-indicator"></div>
+        <div class="element-circle"></div>
+        <div class="spiral-visualization-container" style="display: none;"></div>
+        <div class="element-controls">
+          <button class="solo-button" title="Solo">S</button>
+          <button class="mute-button" title="Mute">M</button>
+        </div>
+        
+        <!-- Synthesis Section (ADSR Envelope) - Only for synth sounds -->
+        <div class="collapsible-section synthesis-section" style="display: none;">
+          <button class="collapsible-toggle" data-target="synthesis">
+            <span class="toggle-icon">▶</span> Synthesis
+          </button>
+          <div class="collapsible-content synthesis-content">
+            <div class="slider-row">
+              <label>Attack</label>
+              <input type="range" class="synth-slider attack-slider" min="0" max="2" step="0.01" value="0.01" />
+              <span class="slider-value">0.01</span>
+            </div>
+            <div class="slider-row">
+              <label>Decay</label>
+              <input type="range" class="synth-slider decay-slider" min="0" max="2" step="0.01" value="0.1" />
+              <span class="slider-value">0.1</span>
+            </div>
+            <div class="slider-row">
+              <label>Sustain</label>
+              <input type="range" class="synth-slider sustain-slider" min="0" max="1" step="0.01" value="0.5" />
+              <span class="slider-value">0.5</span>
+            </div>
+            <div class="slider-row">
+              <label>Release</label>
+              <input type="range" class="synth-slider release-slider" min="0" max="5" step="0.01" value="0.1" />
+              <span class="slider-value">0.1</span>
+            </div>
+      </div>
+        </div>
+        
+        <!-- Filters Section -->
+        <div class="collapsible-section">
+          <button class="collapsible-toggle" data-target="filters">
+            <span class="toggle-icon">▶</span> Filters
+          </button>
+          <div class="collapsible-content filters-content">
+            <div class="slider-row">
+              <label>Low-pass</label>
+              <input type="range" class="filter-slider lpf-slider" min="20" max="20000" step="10" value="20000" />
+              <span class="slider-value">20000</span>
+              <div class="slider-endpoints">
+                <span>20 Hz</span>
+                <span>20 kHz</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label>High-pass</label>
+              <input type="range" class="filter-slider hpf-slider" min="20" max="20000" step="10" value="20" />
+              <span class="slider-value">20</span>
+              <div class="slider-endpoints">
+                <span>20 Hz</span>
+                <span>20 kHz</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label>Resonance</label>
+              <input type="range" class="filter-slider resonance-slider" min="0" max="20" step="0.1" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+      </div>
+        </div>
+        
+        <!-- Effects Section -->
+        <div class="collapsible-section">
+          <button class="collapsible-toggle" data-target="effects">
+            <span class="toggle-icon">▶</span> Effects
+          </button>
+          <div class="collapsible-content effects-content">
+            <div class="slider-row">
+              <label>Reverb</label>
+              <input type="range" class="effect-slider reverb-slider" min="0" max="1" step="0.01" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+            <div class="slider-row">
+              <label>Delay</label>
+              <input type="range" class="effect-slider delay-slider" min="0" max="1" step="0.01" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+            <div class="slider-row">
+              <label>Distortion</label>
+              <input type="range" class="effect-slider distortion-slider" min="0" max="10" step="0.1" value="0" />
+              <span class="slider-value">0</span>
+            </div>
+      </div>
+        </div>
+        
+        <button class="config-button">Configure Sound</button>
+      </div>
+      <!-- Add Element Button -->
+      <button class="add-element-button" id="add-element-btn" title="Add New Element">
+        <span class="plus-icon">+</span>
+      </button>
+    </div>
+
+    <!-- Master Channel -->
+    <div class="master-section">
+      <h2>Master</h2>
+      <div class="master-channel">
+        <div class="master-controls">
+          <div class="control-group">
+            <label for="master-volume">
+              Master Volume: <span id="master-volume-value">100</span>%
+            </label>
+            <input 
+              type="range" 
+              id="master-volume" 
+              class="master-volume-slider"
+              min="0" 
+              max="100" 
+              value="100"
+            />
+          </div>
+          <div class="control-group">
+            <label for="master-pan">
+              Master Pan: <span id="master-pan-value">0</span>
+            </label>
+            <input 
+              type="range" 
+              id="master-pan" 
+              class="master-pan-slider"
+              min="-1" 
+              max="1" 
+              step="0.01" 
+              value="0"
+            />
+          </div>
+          <button id="master-mute-btn" class="master-mute-button" title="Mute Master">🔊</button>
+        </div>
+        <div class="master-status">
+          <div class="status-dots">
+            <div class="status-dot master-active-dot" title="Master Active"></div>
+      </div>
+        </div>
+      </div>
+      <div class="master-pattern-container">
+        <div class="master-pattern-header">
+          <label for="master-pattern">Master Pattern Code</label>
+          <div class="header-buttons">
+            <button id="update-master-btn" class="update-master-button">💾 Apply Changes</button>
+            <button id="copy-code-btn" class="copy-code-button" title="Copy Code">📋 Copy Code</button>
+          </div>
+        </div>
+        <textarea 
+          id="master-pattern" 
+          class="master-pattern-field"
+          placeholder="Combined pattern will appear here..."
+          rows="15"
+        ></textarea>
+        <div class="master-pattern-controls">
+          <button id="play-master-btn" class="play-master-button">▶ Play Master</button>
+          <button id="stop-master-btn" class="stop-master-button">⏹ Stop Master</button>
+          <button id="reset-master-btn" class="reset-master-button">🔄 Reset All</button>
+          <button id="export-audio-btn" class="export-audio-button" title="Export as WAV">🎵 Export Audio</button>
+    </div>
+      </div>
+    </div>
+
+    <!-- Configuration Modal -->
+    <div class="modal-overlay" id="config-modal" style="display: none;">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Configure Channel <span id="modal-element-id"></span></h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="modal-title">Title:</label>
+            <input type="text" id="modal-title" placeholder="e.g., My Drum Pattern or leave empty for bank name" />
+          </div>
+          <div class="form-group">
+            <label for="modal-pattern-bank">Pattern Bank:</label>
+            <select id="modal-pattern-bank">
+              <optgroup label="Drums">
+                <option value="">Default</option>
+                <option value="RolandTR808">Roland TR-808</option>
+                <option value="RolandTR909">Roland TR-909</option>
+              </optgroup>
+              <optgroup label="Basic Waveforms">
+                <option value="sine">Sine</option>
+                <option value="square">Square</option>
+                <option value="triangle">Triangle</option>
+                <option value="sawtooth">Sawtooth</option>
+              </optgroup>
+              <optgroup label="Sample-based Synths">
+                <option value="superpiano">Piano</option>
+                <option value="supersaw">Saw Synth</option>
+                <option value="gtr">Guitar</option>
+                <option value="bass">Bass</option>
+                <option value="casio">Casio</option>
+                <option value="jazz">Jazz</option>
+                <option value="metal">Metal</option>
+              </optgroup>
+            </select>
+            <div class="pattern-help">
+              <small>Select a pattern bank to load. Banks are loaded when selected.</small>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="modal-pattern">Pattern:</label>
+            <textarea id="modal-pattern" rows="8" placeholder=''></textarea>
+            <div class="pattern-help">
+              <small>
+                Drum sounds examples: <a href="https://strudel.cc/workshop/first-sounds/#drum-sounds" target="_blank">https://strudel.cc/workshop/first-sounds/#drum-sounds</a><br>
+                Synth sound examples: <a href="https://strudel.cc/workshop/first-notes/#changing-the-sound" target="_blank">https://strudel.cc/workshop/first-notes/#changing-the-sound</a>
+              </small>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="modal-sample-url">Sample URL:</label>
+            <input type="text" id="modal-sample-url" placeholder="e.g., https://example.com/sample.wav (optional)" />
+          </div>
+          <div class="form-group">
+            <label for="modal-sample-file">Or Select File:</label>
+            <input type="file" id="modal-sample-file" accept="audio/*" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-cancel">Cancel</button>
+          <button class="btn-save">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Early console suppression - must run before any modules load -->
+  <script>
+    // Set up console suppression at the earliest possible moment
+    // This must run before Strudel loads to catch its internal logging
+    (function() {
+      const originalError = console.error;
+      const originalWarn = console.warn;
+      const originalLog = console.log;
+      
+      function shouldSuppressStrudelError(args) {
+        if (!args || args.length === 0) return false;
+        
+        // Convert all arguments to a single searchable string
+        // Handle BigInt safely - avoid JSON.stringify which fails on BigInt
+        const fullMessage = args.map(arg => {
+          if (typeof arg === 'string') return arg;
+          if (typeof arg === 'bigint') return String(arg);
+          if (arg instanceof Error) return arg.message || String(arg);
+          if (arg && typeof arg === 'object') {
+            // Try to get message property first
+            if (arg.message) return String(arg.message);
+            // Try JSON.stringify with error handling for BigInt
+            try {
+              // Use a replacer to handle BigInt values
+              return JSON.stringify(arg, (key, value) => 
+                typeof value === 'bigint' ? value.toString() : value
+              );
+            } catch (e) {
+              // Fallback to String() if JSON.stringify still fails
+              return String(arg);
+            }
+          }
+          return String(arg);
+        }).join(' ');
+        
+        const lowerMessage = fullMessage.toLowerCase();
+        
+        // Suppress Strudel internal errors - check multiple variations
+        // Check for eval/getTrigger errors (most common)
+        // Also check first argument directly for immediate match
+        const firstArg = args && args.length > 0 ? args[0] : null;
+        const firstArgStr = firstArg ? String(firstArg) : '';
+        const firstArgLower = firstArgStr.toLowerCase();
+        
+        // Check first argument directly (faster path) - catch all variations
+        if (firstArgStr.includes('[eval]') || 
+            firstArgStr.includes('[getTrigger]') ||
+            firstArgStr.includes('[eval] error') || 
+            firstArgStr.includes('[getTrigger] error') ||
+            firstArgLower.includes('[eval]') ||
+            firstArgLower.includes('[gettrigger]') ||
+            firstArgStr.includes('undefined instead of pattern') ||
+            firstArgStr.includes('got "undefined" instead of pattern') ||
+            firstArgStr.includes('got undefined instead of pattern') ||
+            firstArgLower.includes('undefined instead of pattern') ||
+            firstArgStr.includes('not found') ||
+            firstArgLower.includes('rolandtr') ||
+            (firstArgStr.includes('error:') && firstArgStr.includes('undefined'))) {
+          return true;
+        }
+        
+        // Check full message for patterns
+        if (fullMessage.includes('[eval]') || 
+            fullMessage.includes('[getTrigger]') ||
+            fullMessage.includes('[eval] error') || 
+            fullMessage.includes('[getTrigger] error') ||
+            lowerMessage.includes('[eval]') ||
+            lowerMessage.includes('[gettrigger]')) {
+          return true;
+        }
+        
+        // Check for "undefined instead of pattern" errors - catch all variations
+        if (fullMessage.includes('undefined instead of pattern') || 
+            fullMessage.includes('got "undefined" instead of pattern') ||
+            fullMessage.includes('got undefined instead of pattern') ||
+            fullMessage.includes('undefined instead') ||
+            fullMessage.includes('instead of pattern') ||
+            (fullMessage.includes('[eval]') && fullMessage.includes('undefined')) ||
+            (fullMessage.includes('error:') && fullMessage.includes('undefined')) ||
+            lowerMessage.includes('undefined instead of pattern') ||
+            lowerMessage.includes('undefined instead') ||
+            lowerMessage.includes('instead of pattern')) {
+          return true;
+        }
+        
+        // Check for "sound X not found" patterns (multiple formats)
+        if (fullMessage.includes('not found! Is it loaded?') ||
+            fullMessage.includes('not found! is it loaded?') ||
+            fullMessage.includes('not found') ||
+            lowerMessage.includes('not found') ||
+            (fullMessage.includes('sound ') && (fullMessage.includes('not found') || fullMessage.includes('not found!'))) ||
+            (lowerMessage.includes('sound ') && lowerMessage.includes('not found'))) {
+          return true;
+        }
+        
+        // Suppress RolandTR errors (all variations)
+        if (fullMessage.includes('RolandTR') ||
+            fullMessage.includes('RolandTR808') ||
+            fullMessage.includes('RolandTR909') ||
+            lowerMessage.includes('rolandtr') ||
+            lowerMessage.includes('rolandtr808') ||
+            lowerMessage.includes('rolandtr909')) {
+          return true;
+        }
+        
+        // Suppress superdough scheduling warnings
+        if (fullMessage.includes('[superdough]') || 
+            fullMessage.includes('cannot schedule sounds in the past') ||
+            lowerMessage.includes('[superdough]')) {
+          return true;
+        }
+        
+        // Suppress network 404 errors for bank loading (expected when banks don't exist)
+        // Check for various network error formats
+        const isBankLoadingError = fullMessage.includes('strudel.json') ||
+                                    fullMessage.includes('raw.githubusercontent.com') ||
+                                    fullMessage.includes('tidalcycles') ||
+                                    fullMessage.includes('CycleTones') ||
+                                    fullMessage.includes('RolandTR') ||
+                                    fullMessage.includes('rolandtr') ||
+                                    lowerMessage.includes('rolandtr');
+        
+        if (isBankLoadingError) {
+          // Suppress if it's any kind of loading/404 error
+          if (fullMessage.includes('Failed to load resource') || 
+              fullMessage.includes('failed to load') ||
+              fullMessage.includes('404') ||
+              fullMessage.includes('Not Found') ||
+              fullMessage.includes('GET http') ||
+              fullMessage.includes('GET https') ||
+              (fullMessage.includes('GET') && (fullMessage.includes('404') || fullMessage.includes('Not Found')))) {
+            return true;
+          }
+        }
+        
+        return false;
+      }
+      
+      // Override console.error
+      console.error = function(...args) {
+        if (shouldSuppressStrudelError(args)) {
+          return; // Suppress
+        }
+        originalError.apply(console, args);
+      };
+      
+      // Override console.warn
+      console.warn = function(...args) {
+        if (shouldSuppressStrudelError(args)) {
+          return; // Suppress
+        }
+        originalWarn.apply(console, args);
+      };
+      
+      // Don't override console.log - only suppress errors/warnings
+      // console.log should always pass through for debugging
+    })();
+  </script>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
+
