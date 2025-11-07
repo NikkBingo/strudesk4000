@@ -1109,28 +1109,21 @@ class SoundManager {
         // Bank names are case-sensitive - keep as-is (no conversion needed)
         
         // Check if bank is loaded
-        // Local custom banks and built-in banks are always available
-        const localDrumBanks = ['RolandTR808', 'RolandTR909']; // Local custom banks in assets folder
-        const builtInDrumBanks = ['RolandTR707', 'RhythmAce', 'AkaiLinn', 'ViscoSpaceDrum', 'EmuSP1200', 'CasioRZ1'];
-        const isLocalOrBuiltInBank = localDrumBanks.includes(strudelBankName) || builtInDrumBanks.includes(strudelBankName);
+        // Built-in banks are loaded from CDN, with local fallback for TR-808/TR-909
+        const localFallbackBanks = ['RolandTR808', 'RolandTR909']; // Have local fallback in assets folder
+        const builtInDrumBanks = ['RolandTR808', 'RolandTR909', 'RolandTR707', 'RhythmAce', 'AkaiLinn', 'ViscoSpaceDrum', 'EmuSP1200', 'CasioRZ1'];
+        const isBuiltInBank = builtInDrumBanks.includes(strudelBankName);
         
-        if (!this.loadedBanks.has(strudelBankName) && !isLocalOrBuiltInBank) {
+        if (!this.loadedBanks.has(strudelBankName) && !isBuiltInBank) {
           console.warn(`⚠️ Bank "${strudelBankName}" not loaded - removing .bank() modifier from pattern`);
           patternToEval = patternToEval.replace(new RegExp(`\\.bank\(["']${strudelBankName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']\)`, 'g'), '');
           hadUnloadedBank = true;
-        } else if (isLocalOrBuiltInBank) {
-          // Local custom or built-in drum banks
-          const bankType = localDrumBanks.includes(strudelBankName) ? 'local custom' : 'built-in';
-          console.log(`[${elementId}] Bank "${strudelBankName}" is ${bankType} - keeping .bank() modifier`);
+        } else if (isBuiltInBank) {
+          // Built-in drum banks (loaded from CDN or local fallback)
+          console.log(`[${elementId}] Bank "${strudelBankName}" is built-in - keeping .bank() modifier`);
           
-          // For local custom banks, load them if not already loaded
-          if (localDrumBanks.includes(strudelBankName) && !this.loadedBanks.has(strudelBankName)) {
-            console.log(`📦 Loading local bank "${strudelBankName}" from assets folder...`);
-            await this.loadBank(strudelBankName);
-          } else {
-            // Mark as loaded for tracking
-            this.loadedBanks.add(strudelBankName);
-          }
+          // Mark as loaded for tracking
+          this.loadedBanks.add(strudelBankName);
         }
       }
       
@@ -3726,18 +3719,86 @@ class SoundManager {
         }
       }
       
-      // Load default dirt-samples which include TR-808, TR-909, etc.
+      // Hybrid Approach: Load samples from dough-samples CDN
+      // TR-808 and TR-909 are loaded from CDN with local samples as fallback
       const samplesFunc = window.strudel?.samples || globalThis.samples;
       
       if (samplesFunc && typeof samplesFunc === 'function') {
         try {
-          console.log('📦 Loading dirt-samples (includes TR-808, TR-909, etc.)...');
-          // Load the default dirt-samples - this makes .bank() work
-          await samplesFunc('github:tidalcycles/dirt-samples');
-          console.log('✅ Default dirt-samples loaded successfully');
+          console.log('📦 Loading default Strudel samples from dough-samples CDN...');
+          const ds = "https://raw.githubusercontent.com/felixroos/dough-samples/main/";
+          
+          // Track which samples loaded successfully
+          const loadResults = {
+            tidalDrums: false,
+            piano: false,
+            dirt: false,
+            emusp12: false,
+            vcsl: false,
+            mridangam: false
+          };
+          
+          // Load all default sample collections in parallel
+          await Promise.all([
+            samplesFunc(`${ds}/tidal-drum-machines.json`).then(() => {
+              console.log('  ✅ Tidal drum machines loaded (TR-808, TR-909, TR-707, RhythmAce, AkaiLinn, etc.)');
+              loadResults.tidalDrums = true;
+            }).catch(e => {
+              console.warn('  ⚠️ Could not load tidal-drum-machines from CDN:', e.message);
+              console.log('  📁 Will use local TR-808/TR-909 samples as fallback');
+            }),
+            
+            samplesFunc(`${ds}/piano.json`).then(() => {
+              console.log('  ✅ Piano samples loaded');
+              loadResults.piano = true;
+            }).catch(e => console.warn('  ⚠️ Could not load piano:', e.message)),
+            
+            samplesFunc(`${ds}/Dirt-Samples.json`).then(() => {
+              console.log('  ✅ Dirt-Samples loaded');
+              loadResults.dirt = true;
+            }).catch(e => console.warn('  ⚠️ Could not load Dirt-Samples:', e.message)),
+            
+            samplesFunc(`${ds}/EmuSP12.json`).then(() => {
+              console.log('  ✅ EmuSP12 samples loaded');
+              loadResults.emusp12 = true;
+            }).catch(e => console.warn('  ⚠️ Could not load EmuSP12:', e.message)),
+            
+            samplesFunc(`${ds}/vcsl.json`).then(() => {
+              console.log('  ✅ VCSL (vocal) samples loaded');
+              loadResults.vcsl = true;
+            }).catch(e => console.warn('  ⚠️ Could not load VCSL:', e.message)),
+            
+            samplesFunc(`${ds}/mridangam.json`).then(() => {
+              console.log('  ✅ Mridangam (percussion) samples loaded');
+              loadResults.mridangam = true;
+            }).catch(e => console.warn('  ⚠️ Could not load mridangam:', e.message))
+          ]);
+          
+          console.log('✅ Default Strudel samples loaded from dough-samples CDN');
+          
+          // If tidal-drum-machines failed to load, use local samples as fallback
+          if (!loadResults.tidalDrums) {
+            console.log('📁 Loading local TR-808 and TR-909 samples as fallback...');
+            try {
+              await this.loadBank('RolandTR808');
+              await this.loadBank('RolandTR909');
+              console.log('✅ Local TR-808 and TR-909 samples loaded successfully');
+            } catch (error) {
+              console.warn('⚠️ Could not load local TR-808/TR-909 samples:', error);
+            }
+          } else {
+            console.log('📝 Note: TR-808 and TR-909 loaded from CDN (local samples available as backup)');
+          }
         } catch (error) {
-          console.warn('⚠️ Could not load dirt-samples:', error);
-          console.log('   Samples may already be embedded in Strudel');
+          console.warn('⚠️ Error loading samples from dough-samples:', error);
+          console.log('   Attempting to load local TR-808/TR-909 samples...');
+          try {
+            await this.loadBank('RolandTR808');
+            await this.loadBank('RolandTR909');
+            console.log('✅ Local TR-808 and TR-909 samples loaded as fallback');
+          } catch (fallbackError) {
+            console.warn('⚠️ Could not load local samples either:', fallbackError);
+          }
         }
       }
       
@@ -3745,40 +3806,7 @@ class SoundManager {
       this.strudelSoundBanksLoaded = true;
       this.strudelSoundBankLoading = false;
       console.log('✅ Default sound banks ready');
-      
-      // Preload all built-in banks to ensure instant playback
-      console.log('📦 Preloading all built-in banks...');
-      const builtInBanks = ['RolandTR808', 'RolandTR707', 'RhythmAce', 'AkaiLinn', 'ViscoSpaceDrum', 'EmuSP1200', 'CasioRZ1'];
-      const preloadSlot = 'd14'; // Use d14 for bank preloading
-      
-      for (const bankName of builtInBanks) {
-        try {
-          // Create a pattern with bank modifier to trigger sample loading
-          const preloadPattern = `s("bd").bank("${bankName}")`;
-          const code = `${preloadSlot} = ${preloadPattern}`;
-          console.log(`📦 Preloading bank: ${bankName}...`);
-          await window.strudel.evaluate(code);
-          
-          // Wait a bit for samples to load
-          await new Promise(resolve => setTimeout(resolve, 200));
-          
-          // Trigger scheduler to process the pattern and load samples
-          if (window.strudel.scheduler && window.strudel.scheduler.tick) {
-            for (let i = 0; i < 3; i++) {
-              window.strudel.scheduler.tick();
-              await new Promise(resolve => setTimeout(resolve, 50));
-            }
-          }
-          
-          // Clear the pattern
-          await window.strudel.evaluate(`${preloadSlot} = silence`);
-          console.log(`✅ Bank ${bankName} preloaded`);
-        } catch (error) {
-          console.warn(`⚠️ Could not preload bank ${bankName}:`, error);
-        }
-      }
-      
-      console.log('✅ All built-in banks preloaded');
+      console.log('📦 Available: Piano, Dirt-Samples, EmuSP12, VCSL, Mridangam, Drum Machines (TR-808, TR-909, TR-707, etc.)');
       
       // Verify patterns can actually be evaluated before notifying
       console.log('🧪 Testing pattern evaluation...');

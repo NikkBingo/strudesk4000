@@ -2102,19 +2102,18 @@ class InteractiveSoundApp {
             }
             
             // Check if this is a local custom or built-in Strudel bank or synth waveform
-            // RolandTR808 and RolandTR909 are loaded from local assets folder
-            // Others are from dirt-samples
-            const localDrumBanks = ['RolandTR808', 'RolandTR909'];
+            // All drum banks are loaded from dough-samples CDN
+            // TR-808 and TR-909 have local fallback in assets folder
             const builtInDrumBanks = [
-              'RolandTR707', 'RhythmAce', 'AkaiLinn', 'ViscoSpaceDrum',
-              'EmuSP1200', 'CasioRZ1'
+              'RolandTR808', 'RolandTR909', 'RolandTR707', 'RhythmAce', 
+              'AkaiLinn', 'ViscoSpaceDrum', 'EmuSP1200', 'CasioRZ1'
             ];
             const builtInSynthSounds = [
               'sine', 'square', 'triangle', 'sawtooth',
               'superpiano', 'supersaw', 'gtr', 'bass',
               'casio', 'insect', 'wind', 'jazz', 'metal', 'east', 'crow', 'space', 'numbers'
             ];
-            const isBuiltInBank = localDrumBanks.includes(bankValue) || builtInDrumBanks.includes(bankValue) || builtInSynthSounds.includes(bankValue.toLowerCase());
+            const isBuiltInBank = builtInDrumBanks.includes(bankValue) || builtInSynthSounds.includes(bankValue.toLowerCase());
             
             let bankLoaded = false;
             // Built-in banks are embedded and work directly - just mark as loaded
