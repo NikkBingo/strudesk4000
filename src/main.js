@@ -6,6 +6,7 @@ import { soundManager } from './soundManager.js';
 import { uiController } from './ui.js';
 import { soundConfig } from './config.js';
 import { initStrudelReplEditors, getStrudelEditorValue, setStrudelEditorValue } from './strudelReplEditor.js';
+import { getDrawContext } from '@strudel/draw';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -27,6 +28,35 @@ const DRUM_ABBREVIATIONS = {
   'misc': 'Miscellaneous samples',
   'fx': 'Effects'
 };
+
+const DRUM_BANK_VALUES = new Set([
+  'RolandTR808',
+  'RolandTR909',
+  'RolandTR707',
+  'RhythmAce',
+  'AkaiLinn',
+  'ViscoSpaceDrum',
+  'EmuSP1200',
+  'CasioRZ1'
+]);
+
+const DRUM_GRID_ROWS = [
+  { key: 'bd', label: 'BD', sample: 'bd' },
+  { key: 'sn', label: 'SN', sample: 'sd' },
+  { key: 'hh', label: 'HH', sample: 'hh' }
+];
+
+const DRUM_SAMPLE_TO_ROW = new Map([
+  ['bd', 'bd'],
+  ['kick', 'bd'],
+  ['sn', 'sn'],
+  ['sd', 'sn'],
+  ['snare', 'sn'],
+  ['hh', 'hh'],
+  ['ch', 'hh'],
+  ['oh', 'hh'],
+  ['hihat', 'hh']
+]);
 
 /**
  * Convert Strudel pattern to drum abbreviations display
@@ -119,6 +149,89 @@ function drumDisplayToPattern(display) {
   return pattern;
 }
 
+/**
+ * Normalize and parse a time signature string into useful metrics.
+ * @param {string} signature - e.g., "4/4" or "3/4"
+ * @returns {{signature: string, numerator: number, denominator: number, stepsPerBeat: number, totalSteps: number}}
+ */
+function getTimeSignatureMetrics(signature) {
+  let numerator = 4;
+  let denominator = 4;
+  
+  if (typeof signature === 'string' && signature.includes('/')) {
+    const [numPart, denPart] = signature.split('/');
+    const parsedNumerator = parseInt(numPart, 10);
+    const parsedDenominator = parseInt(denPart, 10);
+    if (Number.isFinite(parsedNumerator) && parsedNumerator > 0) {
+      numerator = parsedNumerator;
+    }
+    if (Number.isFinite(parsedDenominator) && parsedDenominator > 0) {
+      denominator = parsedDenominator;
+    }
+  }
+  
+  const stepsPerBeatRaw = 16 / denominator;
+  const stepsPerBeat = Math.max(1, Math.round(stepsPerBeatRaw));
+  const totalSteps = Math.max(numerator * stepsPerBeat, 1);
+  
+  return {
+    signature: `${numerator}/${denominator}`,
+    numerator,
+    denominator,
+    stepsPerBeat,
+    totalSteps
+  };
+}
+
+const fromPolar = (angle, radius, cx, cy) => {
+  const radians = ((angle - 90) * Math.PI) / 180;
+  return [cx + Math.cos(radians) * radius, cy + Math.sin(radians) * radius];
+};
+
+const xyOnSpiral = (angle, margin, cx, cy, rotate = 0) => {
+  const adjustedAngle = (angle + rotate) * 360;
+  return fromPolar(adjustedAngle, margin * angle, cx, cy);
+};
+
+function drawSpiralSegment(ctx, options) {
+  let {
+    from = 0,
+    to = 3,
+    margin = 40,
+    cx = 100,
+    cy = 100,
+    rotate = 0,
+    thickness = margin / 2,
+    color = '#4c51bf',
+    cap = 'round',
+    stretch = 1,
+    fromOpacity = 1,
+    toOpacity = 1
+  } = options;
+  from *= stretch;
+  to *= stretch;
+  rotate *= stretch;
+  ctx.lineWidth = thickness;
+  ctx.lineCap = cap;
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = fromOpacity;
+
+  ctx.beginPath();
+  let [sx, sy] = xyOnSpiral(from, margin, cx, cy, rotate);
+  ctx.moveTo(sx, sy);
+
+  const increment = 1 / 60;
+  let angle = from;
+  while (angle <= to) {
+    const [x, y] = xyOnSpiral(angle, margin, cx, cy, rotate);
+    ctx.globalAlpha = ((angle - from) / (to - from)) * toOpacity;
+    ctx.lineTo(x, y);
+    angle += increment;
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
 class InteractiveSoundApp {
   constructor() {
     this.activeElements = new Set();
@@ -136,6 +249,18 @@ class InteractiveSoundApp {
     this.elementEffects = {}; // Store effects for each element
     this.elementFilters = {}; // Store filters for each element
     this.elementSynthesis = {}; // Store synthesis (ADSR) for each element
+    this.currentTimeSignature = '4/4';
+    this.currentTimeSignatureMetrics = getTimeSignatureMetrics(this.currentTimeSignature);
+    
+    // Master punchcard visualization state
+    this.masterPunchcardContainer = null;
+    this.masterPunchcardHeaderNote = null;
+    this.masterPunchcardCanvas = null;
+    this.masterPunchcardCtx = null;
+    this.masterPunchcardPlaceholder = null;
+    this.masterPunchcardIsRendering = false;
+    this.masterPunchcardPendingRefresh = false;
+    this.masterPunchcardResizeTimer = null;
   }
 
   /**
@@ -158,8 +283,20 @@ class InteractiveSoundApp {
     });
 
     uiController.onUpdate('timeSignature', (timeSignature) => {
+      this.currentTimeSignature = timeSignature || '4/4';
+      this.currentTimeSignatureMetrics = getTimeSignatureMetrics(this.currentTimeSignature);
       soundManager.setTimeSignature(timeSignature);
       console.log(`🎵 Time signature changed to: ${timeSignature}`);
+      if (typeof this.applyTimeSignatureToDrumGrid === 'function') {
+        try {
+          this.applyTimeSignatureToDrumGrid(this.currentTimeSignature);
+        } catch (error) {
+          console.warn('⚠️ Could not update drum grid for new time signature:', error);
+        }
+      }
+      this.refreshMasterPunchcard('time-signature-change').catch(err => {
+        console.warn('⚠️ Could not refresh punchcard after time signature change:', err);
+      });
     });
 
     // Set up control sound trigger
@@ -195,6 +332,9 @@ class InteractiveSoundApp {
     soundManager.onMasterPatternUpdate(() => {
       console.log('🔄 Master pattern updated - refreshing display');
       this.updateMasterPatternDisplay();
+      this.refreshMasterPunchcard('master-update').catch(err => {
+        console.warn('⚠️ Could not refresh punchcard after master update:', err);
+      });
     });
 
     // Set up callback for when master state changes (playing/stopped)
@@ -422,6 +562,7 @@ class InteractiveSoundApp {
     
     // Setup master pattern controls
     this.setupMasterPatternControls();
+    this.setupMasterPunchcard();
     
     console.log('✅ Master channel controls setup complete');
   }
@@ -613,6 +754,529 @@ class InteractiveSoundApp {
     }
 
     console.log('✅ Master pattern controls setup complete');
+  }
+
+  /**
+   * Initialize master punchcard visualizer
+   */
+  setupMasterPunchcard() {
+    this.masterPunchcardContainer = document.getElementById('master-punchcard');
+    this.masterPunchcardHeaderNote = document.querySelector('.master-visualizer-note');
+    this.masterPunchcardCanvas = document.getElementById('master-punchcard-canvas');
+    this.masterPunchcardPlaceholder = this.masterPunchcardContainer
+      ? this.masterPunchcardContainer.querySelector('.punchcard-placeholder')
+      : null;
+    
+    if (!this.masterPunchcardContainer || !this.masterPunchcardCanvas) {
+      console.warn('⚠️ Master punchcard elements not found in DOM');
+      return;
+    }
+    
+    // Ensure initial placeholder text reflects current steps
+    this.updateMasterPunchcardHeader();
+    this.showMasterPunchcardPlaceholder();
+    
+    window.addEventListener('resize', () => {
+      if (this.masterPunchcardResizeTimer) {
+        clearTimeout(this.masterPunchcardResizeTimer);
+      }
+      this.masterPunchcardResizeTimer = setTimeout(() => {
+        this.refreshMasterPunchcard('resize').catch(err => {
+          console.warn('⚠️ Unable to refresh punchcard after resize:', err);
+        });
+      }, 150);
+    });
+    
+    this.refreshMasterPunchcard('initial').catch(err => {
+      console.warn('⚠️ Unable to render initial punchcard:', err);
+    });
+  }
+
+  updateMasterPunchcardHeader() {
+    if (this.masterPunchcardHeaderNote) {
+      const { totalSteps, signature } = this.currentTimeSignatureMetrics || getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
+      this.masterPunchcardHeaderNote.textContent = `One-bar activity across ${totalSteps} steps (${signature})`;
+    }
+  }
+
+  showMasterPunchcardPlaceholder(message) {
+    if (!this.masterPunchcardContainer) return;
+    
+    if (this.masterPunchcardPlaceholder) {
+      const codeEl = this.masterPunchcardPlaceholder.querySelector('.punchcard-default-code');
+      if (codeEl) {
+        codeEl.textContent = '._spectrum()';
+      }
+      const noteEl = this.masterPunchcardPlaceholder.querySelector('.punchcard-note');
+      if (noteEl) {
+        noteEl.textContent = message || 'Play the master pattern to drive the punchcard.';
+      }
+      this.masterPunchcardPlaceholder.classList.remove('hidden');
+    }
+
+    if (this.masterPunchcardCanvas && this.masterPunchcardCtx) {
+      this.masterPunchcardCtx.setTransform(1, 0, 0, 1, 0, 0);
+      this.masterPunchcardCtx.clearRect(0, 0, this.masterPunchcardCanvas.width, this.masterPunchcardCanvas.height);
+    }
+  }
+
+  async refreshMasterPunchcard(reason = 'auto') {
+    if (!this.masterPunchcardContainer) return;
+    
+    // Avoid overlapping renders; queue another refresh if needed
+    if (this.masterPunchcardIsRendering) {
+      this.masterPunchcardPendingRefresh = true;
+      return;
+    }
+    
+    const patternCode = soundManager.getMasterPatternCode();
+    if (!patternCode || patternCode.trim() === '') {
+      this.updateMasterPunchcardHeader();
+      this.showMasterPunchcardPlaceholder('Add patterns to populate the punchcard.');
+      return;
+    }
+    const useSpiral = this.shouldUseSpiralVisualizer(patternCode);
+    const spiralOptions = useSpiral ? this.extractSpiralOptions(patternCode) : {};
+    
+    this.masterPunchcardIsRendering = true;
+    try {
+      this.updateMasterPunchcardHeader();
+      const metrics = this.currentTimeSignatureMetrics || getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
+      const data = await this.computeMasterPunchcardData(patternCode, metrics);
+      
+      if (!data || data.error) {
+        const message = data?.error ? `Unable to render punchcard: ${data.error}` : 'Unable to render punchcard.';
+        console.warn(message, { reason, data });
+        this.showMasterPunchcardPlaceholder(message);
+        return;
+      }
+      
+      if (useSpiral) {
+        this.renderMasterSpiral(metrics, data, spiralOptions);
+        return;
+      }
+      
+      if (!data.counts || data.counts.length === 0) {
+        this.showMasterPunchcardPlaceholder('No events found in the first bar of the master pattern.');
+        return;
+      }
+      
+      const maxValue = Math.max(...data.counts);
+      if (maxValue <= 0) {
+        this.showMasterPunchcardPlaceholder('No audible hits detected in the first bar.');
+        return;
+      }
+      
+      this.renderMasterPunchcard(metrics, data);
+    } finally {
+      this.masterPunchcardIsRendering = false;
+      if (this.masterPunchcardPendingRefresh) {
+        this.masterPunchcardPendingRefresh = false;
+        this.refreshMasterPunchcard('queued-refresh').catch(err => {
+          console.warn('⚠️ Queued punchcard refresh failed:', err);
+        });
+      }
+    }
+  }
+
+  renderMasterPunchcard(metrics, data) {
+    if (!this.masterPunchcardContainer || !this.masterPunchcardCanvas) return;
+    
+    this.hideMasterPunchcardPlaceholder();
+    this.drawMasterPunchcardCanvas(metrics, data);
+  }
+
+  hideMasterPunchcardPlaceholder() {
+    if (this.masterPunchcardPlaceholder) {
+      this.masterPunchcardPlaceholder.classList.add('hidden');
+    }
+  }
+
+  shouldUseSpiralVisualizer(patternCode) {
+    if (!patternCode) return false;
+    return /\.\s*_?spiral\s*\(/i.test(patternCode);
+  }
+
+  extractSpiralOptions(patternCode) {
+    if (!patternCode) return {};
+    const match = patternCode.match(/\.\s*_?spiral\s*\(\s*\{([^}]*)\}\s*\)/i);
+    if (!match) return {};
+    const options = {};
+    const body = match[1];
+    body.split(',').forEach((segment) => {
+      const [rawKey, rawValue] = segment.split(':');
+      if (!rawKey || !rawValue) return;
+      const key = rawKey.trim();
+      const valueText = rawValue.trim();
+      const numeric = Number(valueText.replace(/[^0-9.+-eE]/g, ''));
+      if (!Number.isNaN(numeric)) {
+        options[key] = numeric;
+      } else if (/true|false/i.test(valueText)) {
+        options[key] = /^true$/i.test(valueText);
+      } else {
+        options[key] = valueText.replace(/['"]/g, '');
+      }
+    });
+    return options;
+  }
+
+  getMasterPunchcardContext() {
+    if (!this.masterPunchcardCanvas) return null;
+    if (!this.masterPunchcardCtx) {
+      try {
+        this.masterPunchcardCtx = getDrawContext(this.masterPunchcardCanvas.id, { contextType: '2d' });
+      } catch (error) {
+        console.warn('⚠️ Falling back to native canvas context:', error);
+        this.masterPunchcardCtx = this.masterPunchcardCanvas.getContext('2d');
+      }
+    }
+    return this.masterPunchcardCtx;
+  }
+
+  drawMasterPunchcardCanvas(metrics, data) {
+    const canvas = this.masterPunchcardCanvas;
+    const ctx = this.getMasterPunchcardContext();
+    if (!canvas || !ctx) return;
+    
+    const containerRect = this.masterPunchcardContainer.getBoundingClientRect();
+    const displayWidth = Math.max(containerRect.width || this.masterPunchcardContainer.offsetWidth || 600, 240);
+    const displayHeight = Math.max(containerRect.height || this.masterPunchcardContainer.offsetHeight || 200, 200);
+    const pixelRatio = window.devicePixelRatio || 1;
+    
+    if (canvas.width !== displayWidth * pixelRatio || canvas.height !== displayHeight * pixelRatio) {
+      canvas.width = displayWidth * pixelRatio;
+      canvas.height = displayHeight * pixelRatio;
+      canvas.style.width = `${displayWidth}px`;
+      canvas.style.height = `${displayHeight}px`;
+    }
+    
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    
+    const padding = 16;
+    const chartWidth = displayWidth - padding * 2;
+    const chartHeight = displayHeight - padding * 3;
+    const originX = padding;
+    const originY = displayHeight - padding * 1.5;
+    
+    // Background
+    const backgroundGradient = ctx.createLinearGradient(0, 0, displayWidth, displayHeight);
+    backgroundGradient.addColorStop(0, 'rgba(102, 126, 234, 0.06)');
+    backgroundGradient.addColorStop(1, 'rgba(118, 75, 162, 0.08)');
+    ctx.fillStyle = backgroundGradient;
+    ctx.fillRect(0, 0, displayWidth, displayHeight);
+    
+    const { counts, hits } = data;
+    const { totalSteps, stepsPerBeat } = metrics;
+    if (counts.length !== totalSteps) {
+      console.warn('⚠️ Punchcard data length mismatch', { expected: totalSteps, received: counts.length });
+    }
+    const safeMax = Math.max(...counts, 0.0001);
+    const barWidth = chartWidth / totalSteps;
+    
+    // Quarter separators
+    ctx.strokeStyle = 'rgba(102, 126, 234, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let step = 0; step <= totalSteps; step += stepsPerBeat) {
+      const x = originX + step * barWidth;
+      ctx.moveTo(x, originY);
+      ctx.lineTo(x, originY - chartHeight);
+    }
+    ctx.stroke();
+    
+    // Bars
+    counts.forEach((count, index) => {
+      const normalized = Math.max(count / safeMax, 0);
+      const barHeight = chartHeight * normalized;
+      const x = originX + index * barWidth;
+      const y = originY - barHeight;
+      
+      if (barHeight <= 2) {
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.35)';
+        ctx.fillRect(x + barWidth * 0.3, originY - 3, barWidth * 0.4, 3);
+        return;
+      }
+      
+      const gradient = ctx.createLinearGradient(x, y, x, originY);
+      gradient.addColorStop(0, 'rgba(102, 126, 234, 0.9)');
+      gradient.addColorStop(1, 'rgba(118, 75, 162, 0.85)');
+      ctx.fillStyle = gradient;
+      const barX = x + barWidth * 0.2;
+      const barW = barWidth * 0.6;
+      const radius = Math.min(barWidth * 0.3, 8);
+      if (typeof ctx.roundRect === 'function') {
+        ctx.beginPath();
+        ctx.roundRect(barX, y, barW, barHeight, radius);
+        ctx.fill();
+      } else {
+        ctx.fillRect(barX, y, barW, barHeight);
+      }
+      
+      const labels = hits?.[index];
+      if (labels && labels.length) {
+        ctx.fillStyle = 'rgba(26, 32, 44, 0.75)';
+        ctx.font = '10px "Fira Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        const labelText = labels.slice(0, 2).join(' • ');
+        ctx.fillText(labelText, x + barWidth / 2, y - 4);
+      }
+    });
+    
+    // Baseline
+    ctx.strokeStyle = 'rgba(79, 70, 229, 0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(originX, originY);
+    ctx.lineTo(originX + chartWidth, originY);
+    ctx.stroke();
+    
+    ctx.restore();
+  }
+
+  renderMasterSpiral(metrics, data, spiralOptions = {}) {
+    if (!this.masterPunchcardContainer || !this.masterPunchcardCanvas) return;
+    const events = data.events || [];
+    if (!events.length) {
+      this.showMasterPunchcardPlaceholder('No spiral data detected for the first bar.');
+      return;
+    }
+    this.hideMasterPunchcardPlaceholder();
+    this.drawMasterSpiralCanvas(metrics, events, spiralOptions);
+  }
+
+  drawMasterSpiralCanvas(metrics, events, spiralOptions = {}) {
+    const canvas = this.masterPunchcardCanvas;
+    const ctx = this.getMasterPunchcardContext();
+    if (!canvas || !ctx) return;
+
+    const containerRect = this.masterPunchcardContainer.getBoundingClientRect();
+    const displayWidth = Math.max(containerRect.width || this.masterPunchcardContainer.offsetWidth || 320, 240);
+    const displayHeight = Math.max(containerRect.height || this.masterPunchcardContainer.offsetHeight || 240, 220);
+    const pixelRatio = window.devicePixelRatio || 1;
+
+    if (canvas.width !== displayWidth * pixelRatio || canvas.height !== displayHeight * pixelRatio) {
+      canvas.width = displayWidth * pixelRatio;
+      canvas.height = displayHeight * pixelRatio;
+      canvas.style.width = `${displayWidth}px`;
+      canvas.style.height = `${displayHeight}px`;
+    }
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+
+    const padding = Number.isFinite(spiralOptions.padding) ? spiralOptions.padding : 32;
+    const inset = Number.isFinite(spiralOptions.inset) ? spiralOptions.inset : 3;
+    const stretch = Number.isFinite(spiralOptions.stretch) ? spiralOptions.stretch : 1;
+    const rotations = Number.isFinite(spiralOptions.rotations)
+      ? spiralOptions.rotations
+      : Math.max(metrics.numerator ?? 4, 4);
+    const steady = Number.isFinite(spiralOptions.steady) ? spiralOptions.steady : 0.9;
+    const thicknessBase = Number.isFinite(spiralOptions.thickness) ? spiralOptions.thickness : 6;
+    const cap = typeof spiralOptions.cap === 'string' ? spiralOptions.cap : 'round';
+
+    const backgroundGradient = ctx.createLinearGradient(0, 0, displayWidth, displayHeight);
+    backgroundGradient.addColorStop(0, 'rgba(102, 126, 234, 0.08)');
+    backgroundGradient.addColorStop(1, 'rgba(118, 75, 162, 0.12)');
+    ctx.fillStyle = backgroundGradient;
+    ctx.fillRect(0, 0, displayWidth, displayHeight);
+
+    const cx = displayWidth / 2;
+    const cy = displayHeight / 2;
+    const maxRadius = Math.max(Math.min(displayWidth, displayHeight) / 2 - padding, 40);
+    const margin = maxRadius / Math.max(rotations + inset + 1, 1);
+
+    const time = 0; // static snapshot of first bar
+    const rotate = steady * time;
+
+    const baseSettings = {
+      margin,
+      cx,
+      cy,
+      stretch,
+      cap,
+      thickness: thicknessBase
+    };
+
+    const defaultColor = 'rgba(76, 81, 191, 0.85)';
+    const inactiveColor = 'rgba(148, 163, 184, 0.35)';
+    const weightScale = Math.max(...events.map(ev => ev.weight ?? 1), 1);
+    const rotationsPerCycle = rotations;
+
+    // Draw events
+    events.forEach((event) => {
+      const begin = Number.isFinite(event.begin) ? event.begin : 0;
+      const end = Number.isFinite(event.endClipped) ? event.endClipped : Number.isFinite(event.end) ? event.end : begin;
+      const weight = Number.isFinite(event.weight) ? Math.max(event.weight, 0.1) : 1;
+      const color = event.color || defaultColor;
+
+      const from = inset + begin * rotationsPerCycle;
+      const to = inset + Math.max(end, begin) * rotationsPerCycle;
+
+      drawSpiralSegment(ctx, {
+        ...baseSettings,
+        from,
+        to,
+        rotate,
+        thickness: baseSettings.thickness * (0.6 + (weight / weightScale) * 0.8),
+        color
+      });
+    });
+
+    // Draw subtle inactive spiral for context
+    const totalSpan = inset + rotationsPerCycle + 1;
+    drawSpiralSegment(ctx, {
+      ...baseSettings,
+      from: inset,
+      to: totalSpan,
+      rotate,
+      color: inactiveColor,
+      thickness: baseSettings.thickness * 0.6,
+      fromOpacity: 0.35,
+      toOpacity: 0.1
+    });
+
+    ctx.restore();
+  }
+
+  async computeMasterPunchcardData(patternCode, metrics) {
+    try {
+      if (!soundManager.strudelLoaded) {
+        await soundManager.initStrudel();
+      }
+    } catch (error) {
+      console.warn('⚠️ Unable to initialize Strudel for punchcard:', error);
+      return { error: 'Strudel is not ready yet.' };
+    }
+    
+    if (!window.strudel || typeof window.strudel.evaluate !== 'function') {
+      return { error: 'Strudel evaluate function is unavailable.' };
+    }
+    
+    const evalScript = `
+      (function(patternCode){
+        try {
+          const pattern = eval(patternCode);
+          if (!pattern || typeof pattern.queryArc !== 'function') {
+            return JSON.stringify({ error: 'Pattern expression did not return a Strudel pattern.' });
+          }
+          const toNumber = (value) => {
+            if (value == null) return 0;
+            if (typeof value === 'number') return value;
+            if (typeof value.valueOf === 'function') {
+              const result = value.valueOf();
+              if (typeof result === 'number' && !Number.isNaN(result)) {
+                return result;
+              }
+            }
+            if (typeof value === 'object' && value !== null && 'n' in value && 'd' in value) {
+              const numerator = Number(value.n ?? 0);
+              const denominator = Number(value.d ?? 1);
+              return denominator !== 0 ? numerator / denominator : 0;
+            }
+            const coerced = Number(value);
+            return Number.isFinite(coerced) ? coerced : 0;
+          };
+          
+          const describeValue = (hapValue) => {
+            if (!hapValue) return null;
+            if (typeof hapValue === 'string') return hapValue;
+            if (hapValue.label) return hapValue.label;
+            if (hapValue.sample) return hapValue.sample;
+            if (hapValue.s) return hapValue.s;
+            if (hapValue.note) return hapValue.note;
+            if (hapValue.n) return hapValue.n;
+            if (hapValue.sound) return hapValue.sound;
+            if (hapValue.instrument) return hapValue.instrument;
+            return null;
+          };
+          
+          const haps = pattern.queryArc(0, 1) || [];
+          const data = haps.map((hap) => {
+            const part = hap?.part;
+            const whole = hap?.whole;
+            const begin = part ? toNumber(part.begin ?? part.start ?? 0) : toNumber(whole?.begin ?? 0);
+            let end = part ? toNumber(part.end ?? part.finish ?? part.begin ?? 0) : toNumber(whole?.end ?? whole?.begin ?? 0);
+            if (!Number.isFinite(end) || end < begin) {
+              end = begin;
+            }
+            const value = hap?.value ?? null;
+            const label = describeValue(value);
+            const velocity = value && typeof value === 'object' && value.velocity != null ? Number(value.velocity) : 1;
+            const gain = value && typeof value === 'object' && value.gain != null ? Number(value.gain) : 1;
+            const weight = (Number.isFinite(velocity) ? velocity : 1) * (Number.isFinite(gain) ? gain : 1);
+            return {
+              begin,
+              end,
+              endClipped: toNumber(hap?.endClipped ?? end),
+              wholeBegin: toNumber(whole?.begin ?? begin),
+              wholeEnd: toNumber(whole?.end ?? end),
+              label,
+              weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
+              color: value && typeof value === 'object' && value.color ? value.color : null,
+              tags: Array.isArray(hap?.tags) ? hap.tags : []
+            };
+          });
+          
+          return JSON.stringify({ events: data });
+        } catch (error) {
+          return JSON.stringify({ error: error?.message || String(error) });
+        }
+      })(${JSON.stringify(patternCode)})
+    `;
+    
+    let evaluationResult;
+    try {
+      evaluationResult = await window.strudel.evaluate(evalScript);
+    } catch (error) {
+      return { error: error?.message || 'Strudel evaluation failed.' };
+    }
+    
+    let parsed;
+    try {
+      parsed = typeof evaluationResult === 'string' ? JSON.parse(evaluationResult) : evaluationResult;
+    } catch (parseError) {
+      return { error: 'Failed to parse Strudel response.' };
+    }
+    
+    if (!parsed || parsed.error) {
+      return { error: parsed?.error || 'Unknown error from Strudel evaluation.' };
+    }
+    
+    const { totalSteps } = metrics;
+    const counts = new Array(totalSteps).fill(0);
+    const hits = new Array(totalSteps).fill(null).map(() => []);
+    const events = parsed.events || [];
+    
+    events.forEach((event) => {
+      if (!event) return;
+      const { begin, end, endClipped, label, weight } = event;
+      const normalizedBegin = ((Number(begin) % 1) + 1) % 1;
+      const effectiveEnd = Number.isFinite(endClipped) ? endClipped : end;
+      let normalizedEnd = ((Number(effectiveEnd) % 1) + 1) % 1;
+      if (!Number.isFinite(normalizedEnd) || normalizedEnd < normalizedBegin) {
+        normalizedEnd = normalizedBegin;
+      }
+      const startIndex = Math.min(totalSteps - 1, Math.max(0, Math.floor(normalizedBegin * totalSteps)));
+      const endIndex = Math.min(totalSteps - 1, Math.max(startIndex, Math.ceil(normalizedEnd * totalSteps) - 1));
+      const increment = Number.isFinite(weight) ? Math.max(weight, 0.1) : 1;
+      for (let step = startIndex; step <= endIndex; step += 1) {
+        counts[step] += increment;
+        if (label) {
+          const current = hits[step];
+          if (!current.includes(label)) {
+            current.push(label);
+          }
+        }
+      }
+    });
+    
+    return { counts, hits, events };
   }
 
   /**
@@ -1880,11 +2544,228 @@ class InteractiveSoundApp {
   setupModal() {
     const modal = document.getElementById('config-modal');
     if (!modal) return;
+    
+    const drumGridSection = document.getElementById('modal-drum-grid-section');
+    const drumGridTimesigLabel = document.getElementById('modal-drum-grid-timesig');
+    const drumGridStepsContainers = {
+      bd: document.getElementById('drum-grid-steps-bd'),
+      sn: document.getElementById('drum-grid-steps-sn'),
+      hh: document.getElementById('drum-grid-steps-hh')
+    };
+    
+    const drumGridState = {
+      active: false,
+      totalSteps: 0,
+      built: false,
+      updatingFromPattern: false,
+      updatingFromGrid: false,
+      checkboxes: {
+        bd: [],
+        sn: [],
+        hh: []
+      }
+    };
+    
+    const isDrumBankValue = (value) => value && DRUM_BANK_VALUES.has(value);
+    
+    const setDrumGridSubtitle = (metrics) => {
+      if (!drumGridTimesigLabel) return;
+      drumGridTimesigLabel.textContent = `${metrics.signature} · ${metrics.totalSteps} steps`;
+    };
+    
+    const resetDrumGridSelection = () => {
+      DRUM_GRID_ROWS.forEach(({ key }) => {
+        const checkboxes = drumGridState.checkboxes[key];
+        if (checkboxes && checkboxes.length) {
+          checkboxes.forEach(cb => { if (cb) cb.checked = false; });
+        }
+      });
+    };
+    
+    const handleDrumGridStepChange = () => {
+      if (!drumGridState.active || drumGridState.updatingFromPattern) {
+        return;
+      }
+      updatePatternFromGrid();
+    };
+    
+    const ensureDrumGridBuilt = (metrics) => {
+      if (!drumGridSection) return;
+      if (drumGridState.built && drumGridState.totalSteps === metrics.totalSteps) {
+        return;
+      }
+      
+      DRUM_GRID_ROWS.forEach(({ key }) => {
+        const container = drumGridStepsContainers[key];
+        if (!container) return;
+        container.innerHTML = '';
+        container.style.gridTemplateColumns = `repeat(${metrics.totalSteps}, minmax(18px, 1fr))`;
+        drumGridState.checkboxes[key] = [];
+        for (let step = 0; step < metrics.totalSteps; step += 1) {
+          const stepWrapper = document.createElement('div');
+          stepWrapper.className = 'drum-grid-step';
+          if (step > 0 && step % 4 === 0) {
+            stepWrapper.classList.add('quarter-boundary');
+          }
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.dataset.row = key;
+          checkbox.dataset.step = String(step);
+          checkbox.addEventListener('change', handleDrumGridStepChange);
+          stepWrapper.appendChild(checkbox);
+          container.appendChild(stepWrapper);
+          drumGridState.checkboxes[key].push(checkbox);
+        }
+      });
+      
+      drumGridState.totalSteps = metrics.totalSteps;
+      drumGridState.built = true;
+    };
+    
+    const tokenizePattern = (pattern) => {
+      if (!pattern || typeof pattern !== 'string') return null;
+      const match = pattern.match(/(?:s|sound)\(\s*["'`]([^"'`]+)["'`]\s*\)/i);
+      if (!match || !match[1]) return null;
+      const sequence = match[1].trim();
+      if (!sequence) return null;
+      return sequence.split(/\s+/).filter(Boolean);
+    };
+    
+    const parseTokenToSamples = (token) => {
+      if (!token) return [];
+      const trimmed = token.trim();
+      if (!trimmed || trimmed === '~') return [];
+      let working = trimmed;
+      if ((working.startsWith('[') && working.endsWith(']')) || (working.startsWith('{') && working.endsWith('}'))) {
+        working = working.slice(1, -1);
+      }
+      working = working.replace(/[,]+/g, ' ');
+      return working.split(/\s+/).map(part => part.trim()).filter(Boolean);
+    };
+    
+    const populateDrumGridFromPattern = (pattern, metrics) => {
+      if (!drumGridSection || !drumGridState.active) return;
+      const tokens = tokenizePattern(pattern);
+      resetDrumGridSelection();
+      if (!tokens || tokens.length === 0) {
+        return;
+      }
+      
+      let workingTokens = tokens.slice();
+      if (workingTokens.length !== metrics.totalSteps) {
+        const adjustedTokens = [];
+        for (let step = 0; step < metrics.totalSteps; step += 1) {
+          adjustedTokens.push(workingTokens[step % workingTokens.length]);
+        }
+        workingTokens = adjustedTokens;
+      }
+      
+      drumGridState.updatingFromPattern = true;
+      for (let step = 0; step < metrics.totalSteps; step += 1) {
+        const samples = parseTokenToSamples(workingTokens[step]);
+        samples.forEach(sample => {
+          const rowKey = DRUM_SAMPLE_TO_ROW.get(sample.toLowerCase());
+          if (!rowKey) return;
+          const checkboxes = drumGridState.checkboxes[rowKey];
+          if (checkboxes && checkboxes[step]) {
+            checkboxes[step].checked = true;
+          }
+        });
+      }
+      drumGridState.updatingFromPattern = false;
+    };
+    
+    const generateTokensFromGrid = (metrics) => {
+      const tokens = [];
+      for (let step = 0; step < metrics.totalSteps; step += 1) {
+        const activeSamples = [];
+        DRUM_GRID_ROWS.forEach(({ key, sample }) => {
+          const checkboxes = drumGridState.checkboxes[key];
+          const checkbox = checkboxes ? checkboxes[step] : null;
+          if (checkbox && checkbox.checked) {
+            activeSamples.push(sample);
+          }
+        });
+        if (activeSamples.length === 0) {
+          tokens.push('~');
+        } else if (activeSamples.length === 1) {
+          tokens.push(activeSamples[0]);
+        } else {
+          tokens.push(`[${activeSamples.join(' ')}]`);
+        }
+      }
+      return tokens;
+    };
+    
+    const updatePatternFromGrid = () => {
+      const bankSelect = document.getElementById('modal-pattern-bank');
+      if (!drumGridSection || !drumGridState.active || !bankSelect) return;
+      const metrics = getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
+      const tokens = generateTokensFromGrid(metrics);
+      const sequence = tokens.join(' ');
+      const fastFactor = metrics.totalSteps / 4;
+      const fastSuffix = Math.abs(fastFactor - 1) > 0.001 ? `.fast(${parseFloat(fastFactor.toFixed(3))})` : '';
+      const bankValue = bankSelect.value;
+      const bankSuffix = bankValue && bankValue !== '' ? `.bank("${bankValue}")` : '';
+      const pattern = `s("${sequence}")${fastSuffix}${bankSuffix}`;
+      drumGridState.updatingFromGrid = true;
+      setStrudelEditorValue('modal-pattern', pattern);
+      drumGridState.updatingFromGrid = false;
+    };
+    
+    const showDrumGrid = (metrics, pattern) => {
+      if (!drumGridSection) return;
+      ensureDrumGridBuilt(metrics);
+      setDrumGridSubtitle(metrics);
+      drumGridSection.style.display = 'block';
+      drumGridState.active = true;
+      populateDrumGridFromPattern(pattern, metrics);
+    };
+    
+    const hideDrumGrid = () => {
+      if (!drumGridSection) return;
+      drumGridSection.style.display = 'none';
+      drumGridState.active = false;
+    };
+    
+    const refreshDrumGridForCurrentState = () => {
+      const bankSelect = document.getElementById('modal-pattern-bank');
+      if (!bankSelect) return;
+      const bankValue = bankSelect.value;
+      if (!isDrumBankValue(bankValue)) {
+        hideDrumGrid();
+        return;
+      }
+      const patternValue = getStrudelEditorValue('modal-pattern');
+      const metrics = getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
+      showDrumGrid(metrics, patternValue);
+    };
 
+    const modalPatternTextarea = document.getElementById('modal-pattern');
+    if (modalPatternTextarea) {
+      modalPatternTextarea.addEventListener('input', () => {
+        if (!drumGridState.active || drumGridState.updatingFromGrid) {
+          return;
+        }
+        const metrics = getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
+        populateDrumGridFromPattern(modalPatternTextarea.value, metrics);
+      });
+    }
+    
+    this.applyTimeSignatureToDrumGrid = (timeSignature) => {
+      if (!drumGridSection || !drumGridState.active) return;
+      const metrics = getTimeSignatureMetrics(timeSignature || '4/4');
+      const currentPattern = getStrudelEditorValue('modal-pattern');
+      ensureDrumGridBuilt(metrics);
+      setDrumGridSubtitle(metrics);
+      showDrumGrid(metrics, currentPattern);
+    };
+    
     const closeModal = () => {
       // Preview removed - no longer needed
       modal.style.display = 'none';
       this.currentEditingElementId = null;
+      hideDrumGrid();
     };
 
     const openModal = (elementId) => {
@@ -1946,6 +2827,7 @@ class InteractiveSoundApp {
       document.getElementById('modal-sample-file').value = '';
       
       this.currentEditingElementId = elementId;
+      refreshDrumGridForCurrentState();
       modal.style.display = 'flex';
     };
 
@@ -2411,6 +3293,8 @@ class InteractiveSoundApp {
             }
           }, 300); // Increased delay to ensure old pattern stops completely
         }
+
+        refreshDrumGridForCurrentState();
       });
     }
 
@@ -2431,6 +3315,10 @@ class InteractiveSoundApp {
       saveBtn.addEventListener('click', () => {
         if (!this.currentEditingElementId) return;
         
+        if (drumGridState.active) {
+          updatePatternFromGrid();
+        }
+        
         let title = document.getElementById('modal-title').value.trim();
         // Treat "No sound assigned" as empty title (it's just a placeholder)
         if (title === 'No sound assigned') {
@@ -2450,6 +3338,7 @@ class InteractiveSoundApp {
         }
         const sampleUrl = document.getElementById('modal-sample-url').value.trim();
         const fileInput = document.getElementById('modal-sample-file');
+        const bankValue = document.getElementById('modal-pattern-bank').value;
         
         let finalSampleUrl = sampleUrl;
         
@@ -2457,7 +3346,6 @@ class InteractiveSoundApp {
         if (fileInput.files && fileInput.files.length > 0) {
           const file = fileInput.files[0];
           const reader = new FileReader();
-          const bankValue = document.getElementById('modal-pattern-bank').value;
           reader.onload = (e) => {
             // Store as data URL
             finalSampleUrl = e.target.result;
@@ -2480,7 +3368,6 @@ class InteractiveSoundApp {
           reader.readAsDataURL(file);
         } else {
           // Save without file
-          const bankValue = document.getElementById('modal-pattern-bank').value;
           this.saveElementConfig(this.currentEditingElementId, {
             title: title || this.currentEditingElementId,
             pattern: pattern,
@@ -2632,21 +3519,17 @@ class InteractiveSoundApp {
           <div class="collapsible-content filters-content">
             <div class="slider-row">
               <label>Low-pass</label>
+              <span class="slider-endpoint slider-endpoint--min">20 Hz</span>
               <input type="range" class="filter-slider lpf-slider" min="20" max="20000" step="10" value="20000" />
               <span class="slider-value">20000</span>
-              <div class="slider-endpoints">
-                <span>20 Hz</span>
-                <span>20 kHz</span>
-              </div>
+              <span class="slider-endpoint slider-endpoint--max">20 kHz</span>
             </div>
             <div class="slider-row">
               <label>High-pass</label>
+              <span class="slider-endpoint slider-endpoint--min">20 Hz</span>
               <input type="range" class="filter-slider hpf-slider" min="20" max="20000" step="10" value="20" />
               <span class="slider-value">20</span>
-              <div class="slider-endpoints">
-                <span>20 Hz</span>
-                <span>20 kHz</span>
-              </div>
+              <span class="slider-endpoint slider-endpoint--max">20 kHz</span>
             </div>
             <div class="slider-row">
               <label>Resonance</label>
