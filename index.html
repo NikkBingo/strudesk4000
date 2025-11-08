@@ -164,21 +164,17 @@
           <div class="collapsible-content filters-content">
             <div class="slider-row">
               <label>Low-pass</label>
+              <span class="slider-endpoint slider-endpoint--min">20 Hz</span>
               <input type="range" class="filter-slider lpf-slider" min="20" max="20000" step="10" value="20000" />
               <span class="slider-value">20000</span>
-              <div class="slider-endpoints">
-                <span>20 Hz</span>
-                <span>20 kHz</span>
-              </div>
+              <span class="slider-endpoint slider-endpoint--max">20 kHz</span>
             </div>
             <div class="slider-row">
               <label>High-pass</label>
+              <span class="slider-endpoint slider-endpoint--min">20 Hz</span>
               <input type="range" class="filter-slider hpf-slider" min="20" max="20000" step="10" value="20" />
               <span class="slider-value">20</span>
-              <div class="slider-endpoints">
-                <span>20 Hz</span>
-                <span>20 kHz</span>
-              </div>
+              <span class="slider-endpoint slider-endpoint--max">20 kHz</span>
             </div>
             <div class="slider-row">
               <label>Resonance</label>
@@ -276,21 +272,17 @@
           <div class="collapsible-content filters-content">
             <div class="slider-row">
               <label>Low-pass</label>
+              <span class="slider-endpoint slider-endpoint--min">20 Hz</span>
               <input type="range" class="filter-slider lpf-slider" min="20" max="20000" step="10" value="20000" />
               <span class="slider-value">20000</span>
-              <div class="slider-endpoints">
-                <span>20 Hz</span>
-                <span>20 kHz</span>
-              </div>
+              <span class="slider-endpoint slider-endpoint--max">20 kHz</span>
             </div>
             <div class="slider-row">
               <label>High-pass</label>
+              <span class="slider-endpoint slider-endpoint--min">20 Hz</span>
               <input type="range" class="filter-slider hpf-slider" min="20" max="20000" step="10" value="20" />
               <span class="slider-value">20</span>
-              <div class="slider-endpoints">
-                <span>20 Hz</span>
-                <span>20 kHz</span>
-              </div>
+              <span class="slider-endpoint slider-endpoint--max">20 kHz</span>
             </div>
             <div class="slider-row">
               <label>Resonance</label>
@@ -388,21 +380,17 @@
           <div class="collapsible-content filters-content">
             <div class="slider-row">
               <label>Low-pass</label>
+              <span class="slider-endpoint slider-endpoint--min">20 Hz</span>
               <input type="range" class="filter-slider lpf-slider" min="20" max="20000" step="10" value="20000" />
               <span class="slider-value">20000</span>
-              <div class="slider-endpoints">
-                <span>20 Hz</span>
-                <span>20 kHz</span>
-              </div>
+              <span class="slider-endpoint slider-endpoint--max">20 kHz</span>
             </div>
             <div class="slider-row">
               <label>High-pass</label>
+              <span class="slider-endpoint slider-endpoint--min">20 Hz</span>
               <input type="range" class="filter-slider hpf-slider" min="20" max="20000" step="10" value="20" />
               <span class="slider-value">20</span>
-              <div class="slider-endpoints">
-                <span>20 Hz</span>
-                <span>20 kHz</span>
-              </div>
+              <span class="slider-endpoint slider-endpoint--max">20 kHz</span>
             </div>
             <div class="slider-row">
               <label>Resonance</label>
@@ -500,21 +488,17 @@
           <div class="collapsible-content filters-content">
             <div class="slider-row">
               <label>Low-pass</label>
+              <span class="slider-endpoint slider-endpoint--min">20 Hz</span>
               <input type="range" class="filter-slider lpf-slider" min="20" max="20000" step="10" value="20000" />
               <span class="slider-value">20000</span>
-              <div class="slider-endpoints">
-                <span>20 Hz</span>
-                <span>20 kHz</span>
-              </div>
+              <span class="slider-endpoint slider-endpoint--max">20 kHz</span>
             </div>
             <div class="slider-row">
               <label>High-pass</label>
+              <span class="slider-endpoint slider-endpoint--min">20 Hz</span>
               <input type="range" class="filter-slider hpf-slider" min="20" max="20000" step="10" value="20" />
               <span class="slider-value">20</span>
-              <div class="slider-endpoints">
-                <span>20 Hz</span>
-                <span>20 kHz</span>
-              </div>
+              <span class="slider-endpoint slider-endpoint--max">20 kHz</span>
             </div>
             <div class="slider-row">
               <label>Resonance</label>
@@ -596,6 +580,19 @@
       </div>
         </div>
       </div>
+      <div class="master-visualizer">
+        <div class="master-visualizer-header">
+          <h3>Punchcard Visualizer</h3>
+          <span class="master-visualizer-note">One-bar activity across 16 steps</span>
+        </div>
+          <div id="master-punchcard" class="punchcard-grid">
+            <canvas id="master-punchcard-canvas" aria-label="Master punchcard visualizer"></canvas>
+            <div class="punchcard-placeholder">
+              <code class="punchcard-default-code">._spectrum()</code>
+              <span class="punchcard-note">Play the master pattern to drive the punchcard.</span>
+            </div>
+        </div>
+      </div>
       <div class="master-pattern-container">
         <div class="master-pattern-header">
           <label for="master-pattern">Master Pattern Code</label>
@@ -661,6 +658,27 @@
           </div>
           <div class="form-group">
             <label for="modal-pattern">Pattern:</label>
+            <div id="modal-drum-grid-section" class="drum-grid-section" style="display: none;">
+              <div class="drum-grid-header">
+                <span class="drum-grid-title">Drum Grid (1 bar)</span>
+                <span class="drum-grid-subtitle" id="modal-drum-grid-timesig">16th-note steps</span>
+              </div>
+              <div class="drum-grid">
+                <div class="drum-grid-row" data-row="bd">
+                  <span class="drum-grid-row-label">BD</span>
+                  <div class="drum-grid-steps" id="drum-grid-steps-bd"></div>
+                </div>
+                <div class="drum-grid-row" data-row="sn">
+                  <span class="drum-grid-row-label">SN</span>
+                  <div class="drum-grid-steps" id="drum-grid-steps-sn"></div>
+                </div>
+                <div class="drum-grid-row" data-row="hh">
+                  <span class="drum-grid-row-label">HH</span>
+                  <div class="drum-grid-steps" id="drum-grid-steps-hh"></div>
+                </div>
+              </div>
+              <div class="drum-grid-hint">Toggle 16th-note steps to build a 1-bar drum groove. Pattern updates automatically.</div>
+            </div>
             <textarea id="modal-pattern" rows="8" placeholder=''></textarea>
             <div class="pattern-help">
               <small>

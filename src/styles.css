@@ -482,6 +482,92 @@ header p {
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
+.master-visualizer {
+  width: 100%;
+  max-width: 900px;
+  margin: 25px auto 0;
+  padding: 20px 24px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+  border: 2px solid rgba(102, 126, 234, 0.25);
+  box-shadow: 0 10px 24px rgba(102, 126, 234, 0.18);
+}
+
+.master-visualizer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.master-visualizer-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #4c51bf;
+  text-shadow: 0 1px 2px rgba(76, 81, 191, 0.2);
+}
+
+.master-visualizer-note {
+  font-size: 0.85rem;
+  color: #6b7280;
+  opacity: 0.9;
+}
+
+.punchcard-grid {
+  position: relative;
+  min-height: 220px;
+  border-radius: 12px;
+  border: 1px solid rgba(102, 126, 234, 0.25);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+}
+
+.punchcard-grid canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.punchcard-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  color: #4b5563;
+  font-size: 0.95rem;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(248, 250, 252, 0.86) 100%);
+  pointer-events: none;
+}
+
+.punchcard-placeholder.hidden {
+  display: none;
+}
+
+.punchcard-default-code {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(102, 126, 234, 0.14);
+  color: #4c51bf;
+  font-weight: 600;
+  font-size: 1rem;
+  box-shadow: inset 0 0 0 1px rgba(102, 126, 234, 0.22);
+}
+
+.punchcard-note {
+  font-size: 0.82rem;
+  color: #374151;
+  max-width: 260px;
+  line-height: 1.4;
+}
+
 /* Master Pattern Field Styles */
 .master-pattern-container {
   width: 100%;
@@ -1279,6 +1365,99 @@ header p {
   font-size: 0.85rem;
 }
 
+.drum-grid-section {
+  margin-top: 10px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.drum-grid-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.drum-grid-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #444;
+}
+
+.drum-grid-subtitle {
+  font-size: 0.75rem;
+  color: #777;
+}
+
+.drum-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.drum-grid-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drum-grid-row-label {
+  width: 32px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #555;
+  text-align: right;
+}
+
+.drum-grid-steps {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.drum-grid-step {
+  width: 20px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: #fff;
+  border: 1px solid #e2e2e2;
+  position: relative;
+}
+
+.drum-grid-step.quarter-boundary::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: #d0d0d0;
+}
+
+.drum-grid-step input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: #6366f1;
+}
+
+.drum-grid-step input[type="checkbox"]:focus {
+  outline: none;
+}
+
+.drum-grid-hint {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: #777;
+}
+
 .form-group input[type="file"] {
   width: 100%;
   padding: 8px;
@@ -1498,27 +1677,19 @@ header p {
   text-align: right;
 }
 
-.slider-row .slider-endpoints {
-  flex-basis: 100%;
-  display: flex;
-  justify-content: space-between;
+.slider-row .slider-endpoint {
   font-size: 7px;
   color: #666;
-  margin-bottom: 2px;
-  margin-left: 54px; /* Label width (48px) + gap (6px) */
-  margin-right: 0px; /* Value width (42px) + gap (6px) */
-  order: -1; /* Move above the slider on a separate row */
+  flex: 0 0 38px;
 }
 
-.slider-row .slider-endpoints span {
-  font-size: 7px;
-}
-
-.slider-row .slider-endpoints span:first-child {
-  text-align: left;
-}
-
-.slider-row .slider-endpoints span:last-child {
+.slider-row .slider-endpoint--min {
   text-align: right;
+  margin-right: 4px;
+}
+
+.slider-row .slider-endpoint--max {
+  text-align: left;
+  margin-left: 4px;
 }
 
