@@ -4717,6 +4717,41 @@ class SoundManager {
   }
 
   /**
+   * Inject visualizer targets (e.g., canvas IDs) into master pattern
+   */
+  applyVisualizerTargetsToPattern(pattern) {
+    if (!pattern || typeof pattern !== 'string') return pattern;
+    const canvasId = 'master-punchcard-canvas';
+    const canonicalPrefixes = ['spectrum', 'scope', 'tscope', 'fscope', 'visual', 'spiral'];
+    let result = pattern;
+    const canonicalRegex = new RegExp(`\\.\\s*_(${canonicalPrefixes.join('|')})\\s*\\(`, 'gi');
+    result = result.replace(canonicalRegex, (match, name) => match.replace(`_${name}`, name));
+
+    const visualizers = ['spectrum', 'scope', 'tscope', 'fscope', 'visual'];
+
+    visualizers.forEach((fn) => {
+      const escaped = fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const emptyCallRegex = new RegExp(`\\.\\s*_?${escaped}\\s*\\(\\s*\\)`, 'gi');
+      result = result.replace(emptyCallRegex, (match) => {
+        return match.replace(/\(\s*\)/, `({ id: '${canvasId}' })`);
+      });
+
+      const objectCallRegex = new RegExp(`\\.\\s*_?${escaped}\\s*\\(\\s*\\{([^}]*)\\}\\s*\\)`, 'gi');
+      result = result.replace(objectCallRegex, (match, body) => {
+        const hasId = /(^|,)\s*id\s*:/.test(body);
+        if (hasId) {
+          return match;
+        }
+        const trimmed = body.trim();
+        const insertion = trimmed.length > 0 ? `${trimmed}, id: '${canvasId}'` : `id: '${canvasId}'`;
+        return match.replace(body, insertion);
+      });
+    });
+
+    return result;
+  }
+
+  /**
    * Play the master pattern
    */
   async playMasterPattern() {
@@ -4760,6 +4795,8 @@ class SoundManager {
           console.error(`❌ Master pattern is empty, cannot evaluate`);
           return { success: false, error: 'Master pattern is empty' };
         }
+        
+        patternToEval = this.applyVisualizerTargetsToPattern(patternToEval);
         
         // Normalize quotes as a final safety measure before evaluation
         const beforeNormalization = patternToEval;

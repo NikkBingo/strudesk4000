@@ -580,19 +580,18 @@
       </div>
         </div>
       </div>
-      <div class="master-visualizer">
-        <div class="master-visualizer-header">
-          <h3>Punchcard Visualizer</h3>
-          <span class="master-visualizer-note">One-bar activity across 16 steps</span>
-        </div>
-          <div id="master-punchcard" class="punchcard-grid">
-            <canvas id="master-punchcard-canvas" aria-label="Master punchcard visualizer"></canvas>
-            <div class="punchcard-placeholder">
-              <code class="punchcard-default-code">._spectrum()</code>
-              <span class="punchcard-note">Play the master pattern to drive the punchcard.</span>
+          <div class="master-visualizer">
+            <div class="master-visualizer-header">
+              <h3>Visualizer</h3>
+              <span class="master-visualizer-note">Shows the active master pattern output</span>
             </div>
-        </div>
-      </div>
+            <div id="master-punchcard" class="punchcard-grid">
+              <canvas id="master-punchcard-canvas" aria-label="Master visualizer"></canvas>
+              <div class="punchcard-placeholder">
+                <span class="punchcard-note">Play the master pattern to render the current visual.</span>
+              </div>
+            </div>
+          </div>
       <div class="master-pattern-container">
         <div class="master-pattern-header">
           <label for="master-pattern">Master Pattern Code</label>
