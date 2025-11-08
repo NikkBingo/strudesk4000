@@ -14,6 +14,18 @@ midi = MidiFile("test.mid")
 notes = []
 durations = []
 note_on_times = {}
+DEFAULT_TEMPO_BPM = 120
+tempo_events = []
+tempo_bpm = DEFAULT_TEMPO_BPM  # default tempo
+
+# Extract tempo information
+for track in midi.tracks:
+    for msg in track:
+        if msg.type == "set_tempo":
+            tempo_events.append(60_000_000 / msg.tempo)  # convert microseconds per beat to BPM
+
+if tempo_events:
+    tempo_bpm = tempo_events[0]
 
 # Collect note timings
 for track in midi.tracks:
@@ -32,6 +44,18 @@ for track in midi.tracks:
 note_names = [note_name(n) for n in notes]
 dur_values = [round(d, 3) for d in durations]
 
+slow_factor = round(DEFAULT_TEMPO_BPM / tempo_bpm, 4) if tempo_bpm else 1.0
+cpm_value = round(tempo_bpm * 4, 3)
+
+# Create mini-notation pattern with @ for durations
+mini_notation = " ".join([f"{note}@{dur}" for note, dur in zip(note_names, dur_values)])
+
 # Output Strudel code
-print("\n🎶 Strudel pattern:\n")
-print(f'n("{ " ".join(note_names) }").dur("{ " ".join(map(str, dur_values)) }")')
+print("\n🎶 Strudel pattern (mini-notation):\n")
+print(f"Tempo: {tempo_bpm} BPM\n")
+print(f'note("{mini_notation}").cpm({cpm_value})')
+print(f"\n💡 Mini-notation tip: The @weight syntax specifies duration in beats")
+print(f"   Alternative tempo: .slow({slow_factor}) for relative timing")
+
+if len(tempo_events) > 1:
+    print(f"\n⚠️  Found {len(tempo_events)} tempo changes; using the first ({tempo_bpm} BPM).")

@@ -772,6 +772,11 @@ class InteractiveSoundApp {
       return;
     }
     
+    const initialCtx = this.getMasterPunchcardContext();
+    if (initialCtx) {
+      window.__strudelVisualizerCtx = initialCtx;
+    }
+    
     // Ensure initial placeholder text reflects current steps
     this.updateMasterPunchcardHeader();
     this.showMasterPunchcardPlaceholder();
@@ -794,8 +799,7 @@ class InteractiveSoundApp {
 
   updateMasterPunchcardHeader() {
     if (this.masterPunchcardHeaderNote) {
-      const { totalSteps, signature } = this.currentTimeSignatureMetrics || getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
-      this.masterPunchcardHeaderNote.textContent = `One-bar activity across ${totalSteps} steps (${signature})`;
+      this.masterPunchcardHeaderNote.textContent = 'Shows the active master pattern output';
     }
   }
 
@@ -803,13 +807,9 @@ class InteractiveSoundApp {
     if (!this.masterPunchcardContainer) return;
     
     if (this.masterPunchcardPlaceholder) {
-      const codeEl = this.masterPunchcardPlaceholder.querySelector('.punchcard-default-code');
-      if (codeEl) {
-        codeEl.textContent = '._spectrum()';
-      }
       const noteEl = this.masterPunchcardPlaceholder.querySelector('.punchcard-note');
       if (noteEl) {
-        noteEl.textContent = message || 'Play the master pattern to drive the punchcard.';
+        noteEl.textContent = message || 'Play the master pattern to render the current visual.';
       }
       this.masterPunchcardPlaceholder.classList.remove('hidden');
     }
@@ -836,12 +836,18 @@ class InteractiveSoundApp {
       return;
     }
     const useSpiral = this.shouldUseSpiralVisualizer(patternCode);
+    const useScope = !useSpiral && this.shouldUseScopeVisualizer(patternCode);
+    const useSpectrum = !useSpiral && !useScope && this.shouldUseSpectrumVisualizer(patternCode);
     const spiralOptions = useSpiral ? this.extractSpiralOptions(patternCode) : {};
     
     this.masterPunchcardIsRendering = true;
     try {
       this.updateMasterPunchcardHeader();
       const metrics = this.currentTimeSignatureMetrics || getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
+      if (useScope || useSpectrum) {
+        this.prepareCanvasForExternalVisualizer();
+      }
+
       const data = await this.computeMasterPunchcardData(patternCode, metrics);
       
       if (!data || data.error) {
@@ -853,6 +859,10 @@ class InteractiveSoundApp {
       
       if (useSpiral) {
         this.renderMasterSpiral(metrics, data, spiralOptions);
+        return;
+      }
+      
+      if (useScope || useSpectrum) {
         return;
       }
       
@@ -886,6 +896,30 @@ class InteractiveSoundApp {
     this.drawMasterPunchcardCanvas(metrics, data);
   }
 
+  prepareCanvasForExternalVisualizer() {
+    if (!this.masterPunchcardContainer || !this.masterPunchcardCanvas) return;
+    this.hideMasterPunchcardPlaceholder();
+    const ctx = this.getMasterPunchcardContext();
+    if (ctx) {
+      const containerRect = this.masterPunchcardContainer.getBoundingClientRect();
+      const displayWidth = Math.max(containerRect.width || this.masterPunchcardContainer.offsetWidth || 320, 240);
+      const displayHeight = Math.max(containerRect.height || this.masterPunchcardContainer.offsetHeight || 200, 220);
+      const pixelRatio = window.devicePixelRatio || 1;
+
+      if (this.masterPunchcardCanvas.width !== displayWidth * pixelRatio || this.masterPunchcardCanvas.height !== displayHeight * pixelRatio) {
+        this.masterPunchcardCanvas.width = displayWidth * pixelRatio;
+        this.masterPunchcardCanvas.height = displayHeight * pixelRatio;
+        this.masterPunchcardCanvas.style.width = `${displayWidth}px`;
+        this.masterPunchcardCanvas.style.height = `${displayHeight}px`;
+      }
+
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, this.masterPunchcardCanvas.width, this.masterPunchcardCanvas.height);
+      ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      window.__strudelVisualizerCtx = ctx;
+    }
+  }
+
   hideMasterPunchcardPlaceholder() {
     if (this.masterPunchcardPlaceholder) {
       this.masterPunchcardPlaceholder.classList.add('hidden');
@@ -895,6 +929,16 @@ class InteractiveSoundApp {
   shouldUseSpiralVisualizer(patternCode) {
     if (!patternCode) return false;
     return /\.\s*_?spiral\s*\(/i.test(patternCode);
+  }
+
+  shouldUseScopeVisualizer(patternCode) {
+    if (!patternCode) return false;
+    return /\.\s*_?(?:t?scope)\s*\(/i.test(patternCode);
+  }
+
+  shouldUseSpectrumVisualizer(patternCode) {
+    if (!patternCode) return false;
+    return /\.\s*_?spectrum\s*\(/i.test(patternCode);
   }
 
   extractSpiralOptions(patternCode) {
@@ -1158,6 +1202,7 @@ class InteractiveSoundApp {
       return { error: 'Strudel evaluate function is unavailable.' };
     }
     
+    const patternForEval = soundManager.applyVisualizerTargetsToPattern(patternCode);
     const evalScript = `
       (function(patternCode){
         try {
@@ -1227,7 +1272,7 @@ class InteractiveSoundApp {
         } catch (error) {
           return JSON.stringify({ error: error?.message || String(error) });
         }
-      })(${JSON.stringify(patternCode)})
+      })(${JSON.stringify(patternForEval)})
     `;
     
     let evaluationResult;
