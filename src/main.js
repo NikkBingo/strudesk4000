@@ -2782,7 +2782,7 @@ class InteractiveSoundApp {
         }
         
         // Show Synthesis section if this is a synth pattern
-        const synthSounds = ['sine', 'square', 'triangle', 'sawtooth', 'superpiano', 'supersaw', 'gtr', 'bass', 'casio', 'jazz', 'metal'];
+    const synthSounds = ['sine', 'square', 'triangle', 'sawtooth', 'superpiano', 'supersaw', 'gtr', 'bass', 'casio', 'jazz', 'metal', 'folkharp'];
         const isSynthPattern = config.pattern && (
           config.pattern.includes('note(') || 
           config.pattern.includes('n(') ||
@@ -3292,16 +3292,10 @@ class InteractiveSoundApp {
           }
         } else {
           // Check if this is a synth sound (not a drum bank)
-          const synthSounds = ['sine', 'square', 'triangle', 'sawtooth', 'superpiano', 'supersaw', 'gtr', 'bass', 'casio', 'jazz', 'metal'];
+          const synthSounds = ['sine', 'square', 'triangle', 'sawtooth', 'superpiano', 'supersaw', 'gtr', 'bass', 'casio', 'jazz', 'metal', 'folkharp'];
           const isSynthSound = synthSounds.includes(bankValue);
           
           if (isSynthSound) {
-            // Handle synth sound - no bank loading needed
-            console.log(`🎹 Using synth sound: ${bankValue}`);
-            if (statusText) {
-              statusText.textContent = `🎹 Using ${bankValue} synth sound`;
-            }
-            
             // Update title with better display names
             const titleInput = document.getElementById('modal-title');
             const displayNames = {
@@ -3311,9 +3305,16 @@ class InteractiveSoundApp {
               'bass': 'Bass',
               'casio': 'Casio',
               'jazz': 'Jazz',
-              'metal': 'Metal'
+              'metal': 'Metal',
+              'folkharp': 'Folk Harp'
             };
             const displayName = displayNames[bankValue] || bankValue.charAt(0).toUpperCase() + bankValue.slice(1);
+            
+            // Handle synth sound - no bank loading needed
+            console.log(`🎹 Using synth sound: ${bankValue}`);
+            if (statusText) {
+              statusText.textContent = `🎹 Using ${displayName}`;
+            }
             titleInput.value = displayName;
             
             // Update title in DOM immediately
@@ -3383,7 +3384,7 @@ class InteractiveSoundApp {
             ];
             const builtInSynthSounds = [
               'sine', 'square', 'triangle', 'sawtooth',
-              'superpiano', 'supersaw', 'gtr', 'bass',
+              'superpiano', 'supersaw', 'gtr', 'bass', 'folkharp',
               'casio', 'insect', 'wind', 'jazz', 'metal', 'east', 'crow', 'space', 'numbers'
             ];
             const isBuiltInBank = builtInDrumBanks.includes(bankValue) || builtInSynthSounds.includes(bankValue.toLowerCase());
