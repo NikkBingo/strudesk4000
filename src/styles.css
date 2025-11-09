@@ -515,6 +515,30 @@ header p {
   opacity: 0.9;
 }
 
+.visualizer-select {
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  color: #4c51bf;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.08), rgba(118, 75, 162, 0.08));
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 600;
+  outline: none;
+}
+
+.visualizer-select:hover {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+  border-color: rgba(102, 126, 234, 0.5);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+}
+
+.visualizer-select:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
 .punchcard-grid {
   position: relative;
   min-height: 220px;
@@ -634,6 +658,51 @@ header p {
   outline: none;
   border-color: #5568d3;
   background: #fff;
+}
+
+/* CodeMirror editor styling for all pattern editors */
+.master-pattern-container .cm-editor,
+.form-group .cm-editor {
+  width: 100%;
+  min-height: 200px;
+  border: 1px solid rgba(102, 126, 234, 0.25) !important;
+  border-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5) !important;
+  overflow: hidden !important;
+  font-family: 'Monaco', 'Consolas', 'Courier New', monospace !important;
+  font-size: 13px !important;
+}
+
+.master-pattern-container .cm-editor.cm-focused,
+.form-group .cm-editor.cm-focused {
+  border-color: #667eea !important;
+  background: #fff !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5), 0 0 0 2px rgba(102, 126, 234, 0.2) !important;
+}
+
+.master-pattern-container .cm-scroller,
+.form-group .cm-scroller {
+  min-height: 200px;
+}
+
+.master-pattern-container .cm-content,
+.form-group .cm-content {
+  min-height: 200px;
+  padding: 15px;
+}
+
+.master-pattern-container .cm-gutters,
+.form-group .cm-gutters {
+  background-color: rgba(245, 245, 245, 0.5) !important;
+  border-right: 1px solid rgba(102, 126, 234, 0.15) !important;
+}
+
+/* Modal pattern editor specific height */
+.form-group .cm-editor,
+.form-group .cm-scroller,
+.form-group .cm-content {
+  min-height: 150px;
 }
 
 .master-pattern-controls {

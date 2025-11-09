@@ -244,6 +244,7 @@ class InteractiveSoundApp {
     // Master pattern system
     this.masterActive = false;
     this.masterPatternField = null;
+    this._applyingVisualizer = false; // Flag to prevent infinite loops when re-applying visualizers
     
     // Effects, Filters, and Synthesis storage
     this.elementEffects = {}; // Store effects for each element
@@ -329,9 +330,23 @@ class InteractiveSoundApp {
     });
 
     // Set up callback for when master pattern is updated
-    soundManager.onMasterPatternUpdate(() => {
+    soundManager.onMasterPatternUpdate(async () => {
       console.log('🔄 Master pattern updated - refreshing display');
       this.updateMasterPatternDisplay();
+      
+      // If a visualizer is selected and master is active, re-apply it
+      // Use a flag to prevent infinite loops
+      if (this.selectedVisualizer && this.selectedVisualizer !== 'punchcard' && soundManager.masterActive && !this._applyingVisualizer) {
+        console.log(`🎨 Re-applying visualizer "${this.selectedVisualizer}" after master pattern update`);
+        this._applyingVisualizer = true;
+        try {
+          this.prepareCanvasForExternalVisualizer();
+          await this.applyVisualizerToMaster();
+        } finally {
+          this._applyingVisualizer = false;
+        }
+      }
+      
       this.refreshMasterPunchcard('master-update').catch(err => {
         console.warn('⚠️ Could not refresh punchcard after master update:', err);
       });
@@ -609,6 +624,15 @@ class InteractiveSoundApp {
             await soundManager.setMasterPatternCode(currentCode);
           }
           
+          // Prepare canvas FIRST if using a visualizer
+          if (this.selectedVisualizer && this.selectedVisualizer !== 'punchcard') {
+            console.log(`🎨 Preparing canvas for visualizer "${this.selectedVisualizer}"`);
+            this.prepareCanvasForExternalVisualizer();
+            
+            console.log(`🎨 Applying visualizer "${this.selectedVisualizer}" before playing`);
+            await this.applyVisualizerToMaster();
+          }
+          
           const result = await soundManager.playMasterPattern();
           
           if (result.success) {
@@ -761,7 +785,6 @@ class InteractiveSoundApp {
    */
   setupMasterPunchcard() {
     this.masterPunchcardContainer = document.getElementById('master-punchcard');
-    this.masterPunchcardHeaderNote = document.querySelector('.master-visualizer-note');
     this.masterPunchcardCanvas = document.getElementById('master-punchcard-canvas');
     this.masterPunchcardPlaceholder = this.masterPunchcardContainer
       ? this.masterPunchcardContainer.querySelector('.punchcard-placeholder')
@@ -777,8 +800,32 @@ class InteractiveSoundApp {
       window.__strudelVisualizerCtx = initialCtx;
     }
     
+    // Setup visualizer dropdown
+    this.selectedVisualizer = 'punchcard'; // default
+    const visualizerSelect = document.getElementById('visualizer-select');
+    if (visualizerSelect) {
+      visualizerSelect.value = this.selectedVisualizer;
+      visualizerSelect.addEventListener('change', async (e) => {
+        this.selectedVisualizer = e.target.value;
+        console.log(`🎨 Visualizer changed to: ${this.selectedVisualizer}`);
+        
+        // If master is currently playing, update it with the new visualizer
+        if (soundManager.masterActive) {
+          // Prepare canvas if using external visualizer
+          if (this.selectedVisualizer !== 'punchcard') {
+            this.prepareCanvasForExternalVisualizer();
+          }
+          await this.applyVisualizerToMaster();
+        } else {
+          // Just refresh the punchcard display
+          this.refreshMasterPunchcard('visualizer-change').catch(err => {
+            console.warn('⚠️ Unable to refresh punchcard after visualizer change:', err);
+          });
+        }
+      });
+    }
+    
     // Ensure initial placeholder text reflects current steps
-    this.updateMasterPunchcardHeader();
     this.showMasterPunchcardPlaceholder();
     
     window.addEventListener('resize', () => {
@@ -797,10 +844,80 @@ class InteractiveSoundApp {
     });
   }
 
-  updateMasterPunchcardHeader() {
-    if (this.masterPunchcardHeaderNote) {
-      this.masterPunchcardHeaderNote.textContent = 'Shows the active master pattern output';
+  /**
+   * Apply the selected visualizer to the master pattern and restart playback
+   */
+  async applyVisualizerToMaster() {
+    console.log(`🎨 Applying visualizer "${this.selectedVisualizer}" to master pattern`);
+    
+    // Get the current master pattern without any visualizers
+    let basePattern = soundManager.getMasterPatternCode();
+    if (!basePattern || basePattern.trim() === '') {
+      console.warn('⚠️ No master pattern to apply visualizer to');
+      return;
     }
+    
+    // Strip JavaScript comments (// and /* */)
+    basePattern = basePattern.replace(/\/\/.*$/gm, '');
+    basePattern = basePattern.replace(/\/\*[\s\S]*?\*\//g, '');
+    basePattern = basePattern.replace(/\n\s*\n/g, '\n').trim();
+    
+    // Strip any existing visualizer methods using the same robust logic as computeMasterPunchcardData
+    const findMatchingParen = (str, startIndex) => {
+      let depth = 1;
+      for (let i = startIndex + 1; i < str.length; i++) {
+        if (str[i] === '(') depth++;
+        else if (str[i] === ')') {
+          depth--;
+          if (depth === 0) return i;
+        }
+      }
+      return -1;
+    };
+    
+    const visualizerMethods = ['scope', 'tscope', 'fscope', 'spectrum', 'visual', 'spiral'];
+    visualizerMethods.forEach(method => {
+      const searchPattern = new RegExp(`\\.\\s*_?${method}\\s*\\(`, 'gi');
+      let match;
+      
+      while ((match = searchPattern.exec(basePattern)) !== null) {
+        const startPos = match.index;
+        const openParenPos = match.index + match[0].length - 1;
+        const closeParenPos = findMatchingParen(basePattern, openParenPos);
+        
+        if (closeParenPos !== -1) {
+          basePattern = basePattern.substring(0, startPos) + basePattern.substring(closeParenPos + 1);
+          searchPattern.lastIndex = 0;
+        } else {
+          break;
+        }
+      }
+    });
+    basePattern = basePattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
+    
+    // Add the selected visualizer with canvas ID targeting
+    // This ensures the visualizer renders in the correct canvas, not full-page
+    let patternWithVisualizer = basePattern;
+    const canvasId = 'master-punchcard-canvas';
+    
+    if (this.selectedVisualizer === 'scope') {
+      patternWithVisualizer = `${basePattern}.scope({ id: '${canvasId}' })`;
+    } else if (this.selectedVisualizer === 'spectrum') {
+      patternWithVisualizer = `${basePattern}.spectrum({ id: '${canvasId}' })`;
+    } else if (this.selectedVisualizer === 'spiral') {
+      patternWithVisualizer = `${basePattern}.spiral({ id: '${canvasId}' })`;
+    }
+    // For 'punchcard', we don't add any visualizer method - it's just the default rendering
+    
+    console.log(`🎨 Pattern with visualizer: ${patternWithVisualizer.substring(0, 150)}...`);
+    
+    // Update the master pattern and restart playback
+    await soundManager.setMasterPatternCode(patternWithVisualizer);
+    
+    // Refresh the punchcard display
+    this.refreshMasterPunchcard('visualizer-applied').catch(err => {
+      console.warn('⚠️ Unable to refresh punchcard after applying visualizer:', err);
+    });
   }
 
   showMasterPunchcardPlaceholder(message) {
@@ -831,7 +948,6 @@ class InteractiveSoundApp {
     
     const patternCode = soundManager.getMasterPatternCode();
     if (!patternCode || patternCode.trim() === '') {
-      this.updateMasterPunchcardHeader();
       this.showMasterPunchcardPlaceholder('Add patterns to populate the punchcard.');
       return;
     }
@@ -840,15 +956,19 @@ class InteractiveSoundApp {
     const useSpectrum = !useSpiral && !useScope && this.shouldUseSpectrumVisualizer(patternCode);
     const spiralOptions = useSpiral ? this.extractSpiralOptions(patternCode) : {};
     
-    this.masterPunchcardIsRendering = true;
-    try {
-      this.updateMasterPunchcardHeader();
-      const metrics = this.currentTimeSignatureMetrics || getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
-      if (useScope || useSpectrum) {
-        this.prepareCanvasForExternalVisualizer();
-      }
+     this.masterPunchcardIsRendering = true;
+     try {
+       const metrics = this.currentTimeSignatureMetrics || getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
+       
+       // For external visualizers (scope, spectrum, spiral), just prepare the canvas and return
+       // Strudel will render to it directly during playback
+       if (useScope || useSpectrum || useSpiral) {
+         this.prepareCanvasForExternalVisualizer();
+         this.hideMasterPunchcardPlaceholder();
+         return;
+       }
 
-      const data = await this.computeMasterPunchcardData(patternCode, metrics);
+       const data = await this.computeMasterPunchcardData(patternCode, metrics);
       
       if (!data || data.error) {
         const message = data?.error ? `Unable to render punchcard: ${data.error}` : 'Unable to render punchcard.';
@@ -856,17 +976,8 @@ class InteractiveSoundApp {
         this.showMasterPunchcardPlaceholder(message);
         return;
       }
-      
-      if (useSpiral) {
-        this.renderMasterSpiral(metrics, data, spiralOptions);
-        return;
-      }
-      
-      if (useScope || useSpectrum) {
-        return;
-      }
-      
-      if (!data.counts || data.counts.length === 0) {
+       
+       if (!data.counts || data.counts.length === 0) {
         this.showMasterPunchcardPlaceholder('No events found in the first bar of the master pattern.');
         return;
       }
@@ -897,14 +1008,41 @@ class InteractiveSoundApp {
   }
 
   prepareCanvasForExternalVisualizer() {
-    if (!this.masterPunchcardContainer || !this.masterPunchcardCanvas) return;
+    if (!this.masterPunchcardContainer || !this.masterPunchcardCanvas) {
+      console.warn('⚠️ Canvas elements not found for visualizer');
+      return;
+    }
+    
+    const canvasId = this.masterPunchcardCanvas.id;
+    console.log(`🎨 Preparing canvas for external visualizer: ${canvasId}`);
+    
+    // Verify canvas is accessible via getElementById
+    const canvasById = document.getElementById(canvasId);
+    if (!canvasById) {
+      console.error(`❌ Canvas "${canvasId}" not found via getElementById!`);
+      return;
+    }
+    console.log(`✅ Canvas "${canvasId}" is accessible via getElementById`);
+    
     this.hideMasterPunchcardPlaceholder();
-    const ctx = this.getMasterPunchcardContext();
+    
+    // Get or create context using Strudel's getDrawContext
+    let ctx;
+    try {
+      ctx = getDrawContext(canvasId, { contextType: '2d' });
+      console.log(`✅ Got draw context via getDrawContext for ${canvasId}`);
+    } catch (error) {
+      console.warn('⚠️ getDrawContext failed, falling back to native:', error);
+      ctx = this.masterPunchcardCanvas.getContext('2d');
+    }
+    
     if (ctx) {
       const containerRect = this.masterPunchcardContainer.getBoundingClientRect();
       const displayWidth = Math.max(containerRect.width || this.masterPunchcardContainer.offsetWidth || 320, 240);
       const displayHeight = Math.max(containerRect.height || this.masterPunchcardContainer.offsetHeight || 200, 220);
       const pixelRatio = window.devicePixelRatio || 1;
+
+      console.log(`🎨 Canvas dimensions: ${displayWidth}x${displayHeight}, pixelRatio: ${pixelRatio}`);
 
       if (this.masterPunchcardCanvas.width !== displayWidth * pixelRatio || this.masterPunchcardCanvas.height !== displayHeight * pixelRatio) {
         this.masterPunchcardCanvas.width = displayWidth * pixelRatio;
@@ -912,11 +1050,29 @@ class InteractiveSoundApp {
         this.masterPunchcardCanvas.style.width = `${displayWidth}px`;
         this.masterPunchcardCanvas.style.height = `${displayHeight}px`;
       }
+      
+      // Make canvas visible
+      this.masterPunchcardCanvas.style.display = 'block';
+      this.masterPunchcardCanvas.style.opacity = '1';
 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, this.masterPunchcardCanvas.width, this.masterPunchcardCanvas.height);
       ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      
+      // Store context in both places for Strudel to find
       window.__strudelVisualizerCtx = ctx;
+      
+      // Also try to register with Strudel's draw system if available
+      if (window.strudel && window.strudel.controls) {
+        try {
+          window.strudel.controls.setCanvas(canvasId);
+          console.log(`✅ Registered canvas "${canvasId}" with Strudel controls`);
+        } catch (e) {
+          console.log(`ℹ️ Could not register with strudel.controls:`, e.message);
+        }
+      }
+      
+      console.log(`✅ Canvas prepared, context stored in window.__strudelVisualizerCtx`);
     }
   }
 
@@ -1202,12 +1358,114 @@ class InteractiveSoundApp {
       return { error: 'Strudel evaluate function is unavailable.' };
     }
     
-    const patternForEval = soundManager.applyVisualizerTargetsToPattern(patternCode);
+    // Strip visualizer methods for punchcard evaluation
+    // We only want the pattern data, not the visualization
+    let patternForEval = patternCode;
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('🔍 PUNCHCARD EVALUATION - Original pattern:');
+    console.log('   Full pattern:', patternForEval);
+    console.log('───────────────────────────────────────────────────────────');
+    
+    // Strip JavaScript comments (// and /* */)
+    // Remove single-line comments
+    patternForEval = patternForEval.replace(/\/\/.*$/gm, '');
+    // Remove multi-line comments
+    patternForEval = patternForEval.replace(/\/\*[\s\S]*?\*\//g, '');
+    // Clean up extra whitespace and newlines
+    patternForEval = patternForEval.replace(/\n\s*\n/g, '\n').trim();
+    
+    console.log('🔍 PUNCHCARD EVALUATION - After removing comments:');
+    console.log('   Pattern:', patternForEval);
+    console.log('───────────────────────────────────────────────────────────');
+    
+    // Helper function to find matching closing parenthesis
+    const findMatchingParen = (str, startIndex) => {
+      let depth = 1;
+      for (let i = startIndex + 1; i < str.length; i++) {
+        if (str[i] === '(') depth++;
+        else if (str[i] === ')') {
+          depth--;
+          if (depth === 0) return i;
+        }
+      }
+      return -1;
+    };
+    
+    const visualizerMethods = ['scope', 'tscope', 'fscope', 'spectrum', 'visual', 'spiral'];
+    visualizerMethods.forEach(method => {
+      // Use a manual approach to handle nested parentheses
+      const searchPattern = new RegExp(`\\.\\s*_?${method}\\s*\\(`, 'gi');
+      let match;
+      let removed = 0;
+      
+      while ((match = searchPattern.exec(patternForEval)) !== null) {
+        const startPos = match.index;
+        const openParenPos = match.index + match[0].length - 1;
+        const closeParenPos = findMatchingParen(patternForEval, openParenPos);
+        
+        if (closeParenPos !== -1) {
+          const before = patternForEval;
+          patternForEval = patternForEval.substring(0, startPos) + patternForEval.substring(closeParenPos + 1);
+          removed++;
+          console.log(`  Stripped .${method}(...) occurrence #${removed}`);
+          // Reset regex search since we modified the string
+          searchPattern.lastIndex = 0;
+        } else {
+          console.warn(`  Could not find matching ) for .${method}( at position ${openParenPos}`);
+          break;
+        }
+      }
+    });
+    patternForEval = patternForEval.trim();
+    
+    // Clean up any trailing dots or double dots that might be left
+    patternForEval = patternForEval.replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
+    
+    console.log('🔍 PUNCHCARD EVALUATION - After stripping:');
+    console.log('   Stripped pattern:', patternForEval);
+    console.log('───────────────────────────────────────────────────────────');
+    
+    // If pattern is empty after stripping, return early
+    if (!patternForEval || patternForEval.trim() === '') {
+      console.warn('⚠️ Pattern is empty after stripping visualizers');
+      return { error: 'Pattern is empty after removing visualizers.' };
+    }
+    
+    // Final safety check: if pattern still contains visualizer patterns, log warning and try to show placeholder
+    const stillHasVisualizers = visualizerMethods.some(method => {
+      const checkRegex = new RegExp(`\\.\\s*_?${method}\\s*\\(`, 'i');
+      return checkRegex.test(patternForEval);
+    });
+    
+    if (stillHasVisualizers) {
+      console.warn('═══════════════════════════════════════════════════════════');
+      console.warn('⚠️ PUNCHCARD EVALUATION - FAILED TO STRIP VISUALIZERS');
+      console.warn('   Pattern still contains visualizers after stripping:');
+      console.warn('   ', patternForEval);
+      console.warn('   This will cause Mini parser errors. Skipping punchcard evaluation.');
+      console.warn('═══════════════════════════════════════════════════════════');
+      return { error: 'Pattern contains visualizers that could not be stripped.' };
+    }
+    
+    console.log('✅ PUNCHCARD EVALUATION - Ready to evaluate (no visualizers detected)');
+    console.log('═══════════════════════════════════════════════════════════');
+    
+    // Validate pattern before evaluation
+    if (!patternForEval || patternForEval.trim() === '') {
+      console.warn('⚠️ Pattern is empty after stripping - cannot evaluate');
+      return { error: 'Pattern is empty after processing' };
+    }
+    
+    console.log('📝 Final pattern to evaluate:', patternForEval);
+    
     const evalScript = `
       (function(patternCode){
+        console.log('🔍 Inside eval function, patternCode:', patternCode);
         try {
           const pattern = eval(patternCode);
+          console.log('🔍 Pattern eval result:', typeof pattern, pattern);
           if (!pattern || typeof pattern.queryArc !== 'function') {
+            console.warn('⚠️ Pattern did not return a valid Strudel pattern');
             return JSON.stringify({ error: 'Pattern expression did not return a Strudel pattern.' });
           }
           const toNumber = (value) => {
@@ -1278,18 +1536,29 @@ class InteractiveSoundApp {
     let evaluationResult;
     try {
       evaluationResult = await window.strudel.evaluate(evalScript);
+      console.log('🔍 Evaluation result:', evaluationResult);
     } catch (error) {
+      console.error('❌ Strudel evaluation error:', error);
       return { error: error?.message || 'Strudel evaluation failed.' };
+    }
+    
+    // Check if evaluationResult is undefined
+    if (evaluationResult === undefined || evaluationResult === null) {
+      console.warn('⚠️ Pattern assignment returned undefined:', evalScript.substring(0, 200));
+      console.warn('   This usually means the pattern is invalid or samples aren\'t loaded');
+      return { error: 'Pattern evaluation returned undefined. Pattern may be invalid.' };
     }
     
     let parsed;
     try {
       parsed = typeof evaluationResult === 'string' ? JSON.parse(evaluationResult) : evaluationResult;
     } catch (parseError) {
+      console.error('❌ Failed to parse evaluation result:', parseError);
       return { error: 'Failed to parse Strudel response.' };
     }
     
     if (!parsed || parsed.error) {
+      console.warn('⚠️ Parsed result has error:', parsed?.error);
       return { error: parsed?.error || 'Unknown error from Strudel evaluation.' };
     }
     
@@ -2748,11 +3017,10 @@ class InteractiveSoundApp {
       const metrics = getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
       const tokens = generateTokensFromGrid(metrics);
       const sequence = tokens.join(' ');
-      const fastFactor = metrics.totalSteps / 4;
-      const fastSuffix = Math.abs(fastFactor - 1) > 0.001 ? `.fast(${parseFloat(fastFactor.toFixed(3))})` : '';
+      // Note: .fast() modifier removed - patterns are clean without tempo modifiers
       const bankValue = bankSelect.value;
       const bankSuffix = bankValue && bankValue !== '' ? `.bank("${bankValue}")` : '';
-      const pattern = `s("${sequence}")${fastSuffix}${bankSuffix}`;
+      const pattern = `s("${sequence}")${bankSuffix}`;
       drumGridState.updatingFromGrid = true;
       setStrudelEditorValue('modal-pattern', pattern);
       drumGridState.updatingFromGrid = false;

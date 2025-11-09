@@ -1073,10 +1073,7 @@ class SoundManager {
     // Remove spaces before dots (pattern might have "pattern .modifier()" which should be "pattern.modifier()")
     patternToEval = patternToEval.replace(/\s+\./g, '.').trim();
     
-    // Remove any .scope() or ._scope() calls - these don't exist in Strudel or aren't needed
-    patternToEval = patternToEval.replace(/\.(_?scope)\(\)/g, '').trim();
-    
-    // Clean up any double dots that might result from removal
+    // Clean up any double dots
     patternToEval = patternToEval.replace(/\.\.+/g, '.').trim();
     
     // Remove any existing tempo modifiers (.cpm, .fast, .slow) - we'll add them fresh with current tempo
@@ -1434,10 +1431,7 @@ class SoundManager {
       // Remove spaces before dots (pattern might have "pattern .modifier()" which should be "pattern.modifier()")
       patternToEval = patternToEval.replace(/\s+\./g, '.').trim();
       
-      // Remove any .scope() or ._scope() calls
-      patternToEval = patternToEval.replace(/\.(_?scope)\(\)/g, '').trim();
-      
-      // Clean up any double dots that might result from removal
+      // Clean up any double dots
       patternToEval = patternToEval.replace(/\.\.+/g, '.').trim();
       
       // Remove any existing tempo modifiers (.cpm, .fast, .slow) - we'll add them fresh with current tempo
@@ -2677,7 +2671,7 @@ class SoundManager {
         try {
           const initOptions = {
             audioContext: this.audioContext,
-            getTime: () => this.audioContext.currentTime,
+            getTime: () => this.audioContext ? this.audioContext.currentTime : 0,
             audioOutput: elementRoutedOutput, // Use element-routed output
             editPattern: () => {}, // Dummy function to prevent editor issues
             setUrl: () => {}, // Dummy function to prevent URL issues
@@ -3440,32 +3434,11 @@ class SoundManager {
     let modifiedPattern = pattern;
     let needsWrapping = alreadyWrapped;
 
-    // 1. Apply Tempo (using .fast() or .slow() based on current tempo)
-    // Default is 120 BPM, so calculate speed multiplier
-    const baseTempo = 120;
-    const speedMultiplier = this.currentTempo / baseTempo;
-    
-    if (speedMultiplier !== 1.0) {
-      if (speedMultiplier > 1.0) {
-        if (needsWrapping) {
-          modifiedPattern = `${modifiedPattern}.fast(${speedMultiplier.toFixed(2)})`;
-        } else {
-          modifiedPattern = `(${modifiedPattern}).fast(${speedMultiplier.toFixed(2)})`;
-          needsWrapping = true;
-        }
-        console.log(`  ⚡ Applied tempo: ${this.currentTempo} BPM (${speedMultiplier.toFixed(2)}x faster)`);
-      } else {
-        if (needsWrapping) {
-          modifiedPattern = `${modifiedPattern}.slow(${(1 / speedMultiplier).toFixed(2)})`;
-        } else {
-          modifiedPattern = `(${modifiedPattern}).slow(${(1 / speedMultiplier).toFixed(2)})`;
-          needsWrapping = true;
-        }
-        console.log(`  🐌 Applied tempo: ${this.currentTempo} BPM (${(1 / speedMultiplier).toFixed(2)}x slower)`);
-      }
-    }
+    // Note: Tempo is NOT automatically applied to patterns
+    // Users can manually add .fast() or .slow() to their patterns if desired
+    // The tempo control is for reference and manual use only
 
-    // 2. Apply Key/Scale (only for numeric scale degree patterns)
+    // 1. Apply Key/Scale (only for numeric scale degree patterns)
     // Strudel's .scale() works with numeric patterns like n("0 2 4 7")
     // It does NOT work with explicit note names like note("c3 e3 d3")
     // Check if pattern uses notes but NOT explicit note names with octaves
@@ -3506,7 +3479,7 @@ class SoundManager {
       console.log(`  ⏭️  No key selected - skipping scale application`);
     }
 
-    // 3. Time Signature (informational - affects pattern interpretation)
+    // 2. Time Signature (informational - affects pattern interpretation)
     // Strudel doesn't have a direct time signature setting, but we can use
     // the time signature to adjust pattern structure if needed
     // For now, this is stored for reference (this.currentTimeSignature)
@@ -4574,7 +4547,9 @@ class SoundManager {
       console.log(`🎛️ Updating master pattern. Tracks: ${this.trackedPatterns.size}, Solo: ${soloedElements.size}, Muted: ${mutedElements.size}`);
       
       const patterns = [];
+      const patternComments = []; // Store comments for each pattern
       const hasSolo = soloedElements.size > 0;
+      let channelNumber = 0;
       
       for (const [elementId, trackData] of this.trackedPatterns.entries()) {
         const isMuted = mutedElements.has(elementId);
@@ -4653,12 +4628,12 @@ class SoundManager {
           }
         }
         
-        // Apply global settings to THIS pattern (before stacking)
-        // This ensures .scale() only applies to note-based patterns
-        // applyGlobalSettingsToPattern will wrap if it adds modifiers
-        patternCode = this.applyGlobalSettingsToPattern(patternCode, needsWrapping);
+        // Note: Global settings (tempo, key, etc.) will be applied to the entire stack at the end
+        // Not to individual patterns
         
+        channelNumber++;
         patterns.push(patternCode);
+        patternComments.push(`// Channel ${channelNumber}`);
         console.log(`  ✅ Added ${elementId}: ${patternCode.substring(0, 60)}...`);
       }
       
@@ -4666,13 +4641,25 @@ class SoundManager {
         this.masterPattern = '';
         console.log(`🔇 No active patterns - master pattern cleared`);
       } else if (patterns.length === 1) {
-        // Single pattern - no need for stack()
-        this.masterPattern = patterns[0];
+        // Single pattern - add comment
+        let singlePattern = `${patternComments[0]}\n${patterns[0]}`;
+        
+        // Apply global settings to the single pattern
+        singlePattern = this.applyGlobalSettingsToPattern(patterns[0], false);
+        this.masterPattern = `${patternComments[0]}\n${singlePattern}`;
         console.log(`🎵 Master pattern (single): ${this.masterPattern.substring(0, 100)}...`);
       } else {
-        // Multiple patterns - use stack()
-        const joinedPatterns = patterns.join(', ');
-        this.masterPattern = `stack(${joinedPatterns})`;
+        // Multiple patterns - use stack() with comments and formatting
+        // Build formatted pattern with comments and blank lines
+        const formattedPatterns = patterns.map((pattern, index) => {
+          return `  ${patternComments[index]}\n  ${pattern}`;
+        }).join(',\n\n');
+        
+        let stackPattern = `stack(\n${formattedPatterns}\n)`;
+        
+        // Apply global settings to the entire stack
+        stackPattern = this.applyGlobalSettingsToPattern(stackPattern, false);
+        this.masterPattern = stackPattern;
         
         // Debug: verify parentheses balance
         const openCount = (this.masterPattern.match(/\(/g) || []).length;
@@ -4689,8 +4676,9 @@ class SoundManager {
         }
       }
       
-      // Global settings already applied to individual patterns above
-      console.log(`🎛️ Applied global settings to individual patterns (Tempo: ${this.currentTempo} BPM, Key: ${this.currentKey}, Time Sig: ${this.currentTimeSignature})`);
+      // Global settings now applied to the entire stack (or single pattern)
+      // Note: Tempo is NOT automatically applied - users can manually add .fast() or .slow()
+      console.log(`🎛️ Applied global settings to master pattern (Key: ${this.currentKey}, Time Sig: ${this.currentTimeSignature})`);
       
       
       // If master is active, update the playing pattern
@@ -4722,31 +4710,44 @@ class SoundManager {
   applyVisualizerTargetsToPattern(pattern) {
     if (!pattern || typeof pattern !== 'string') return pattern;
     const canvasId = 'master-punchcard-canvas';
+    const analyserId = 'master-visualizer';
+    const ctxExpression = "window.__strudelVisualizerCtx || (document.getElementById('master-punchcard-canvas') && document.getElementById('master-punchcard-canvas').getContext && document.getElementById('master-punchcard-canvas').getContext('2d'))";
     const canonicalPrefixes = ['spectrum', 'scope', 'tscope', 'fscope', 'visual', 'spiral'];
     let result = pattern;
     const canonicalRegex = new RegExp(`\\.\\s*_(${canonicalPrefixes.join('|')})\\s*\\(`, 'gi');
     result = result.replace(canonicalRegex, (match, name) => match.replace(`_${name}`, name));
 
-    const visualizers = ['spectrum', 'scope', 'tscope', 'fscope', 'visual'];
+    const visualizers = ['spectrum', 'scope', 'tscope', 'fscope', 'visual', 'spiral'];
 
     visualizers.forEach((fn) => {
       const escaped = fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const emptyCallRegex = new RegExp(`\\.\\s*_?${escaped}\\s*\\(\\s*\\)`, 'gi');
       result = result.replace(emptyCallRegex, (match) => {
-        return match.replace(/\(\s*\)/, `({ id: '${canvasId}' })`);
+        return match.replace(/\(\s*\)/, `({ id: '${analyserId}', ctx: ${ctxExpression} })`);
       });
 
       const objectCallRegex = new RegExp(`\\.\\s*_?${escaped}\\s*\\(\\s*\\{([^}]*)\\}\\s*\\)`, 'gi');
       result = result.replace(objectCallRegex, (match, body) => {
-        const hasId = /(^|,)\s*id\s*:/.test(body);
-        if (hasId) {
-          return match;
+        let modifiedBody = body.trim();
+        const hasId = /(^|,)\s*id\s*:/.test(modifiedBody);
+        const hasCtx = /(^|,)\s*ctx\s*:/.test(modifiedBody);
+
+        if (!hasId) {
+          modifiedBody = modifiedBody.length > 0 ? `${modifiedBody}, id: '${analyserId}'` : `id: '${analyserId}'`;
         }
-        const trimmed = body.trim();
-        const insertion = trimmed.length > 0 ? `${trimmed}, id: '${canvasId}'` : `id: '${canvasId}'`;
-        return match.replace(body, insertion);
+        if (!hasCtx) {
+          modifiedBody = modifiedBody.length > 0 ? `${modifiedBody}, ctx: ${ctxExpression}` : `ctx: ${ctxExpression}`;
+        }
+        return match.replace(body, modifiedBody);
       });
     });
+
+    // Log if we modified the pattern to inject canvas IDs
+    if (result !== pattern) {
+      console.log(`🎨 Injected canvas ID into visualizer methods`);
+      console.log(`   Before: ${pattern.substring(0, 150)}...`);
+      console.log(`   After: ${result.substring(0, 150)}...`);
+    }
 
     return result;
   }
@@ -4809,8 +4810,29 @@ class SoundManager {
         }
         
         const code = `${this.masterSlot} = ${patternToEval}`;
-        console.log(`🎼 Evaluating master pattern: ${code.substring(0, 200)}...`);
-        console.log(`🔍 Master pattern code length: ${code.length} characters`);
+        console.log(`🎼 Evaluating master pattern:`);
+        console.log(`   Full code: ${code}`);
+        console.log(`   Code length: ${code.length} characters`);
+        
+        // Check if visualizer methods are present
+        const hasScope = /\.scope\s*\(/.test(code);
+        const hasSpectrum = /\.spectrum\s*\(/.test(code);
+        const hasSpiral = /\.spiral\s*\(/.test(code);
+        if (hasScope || hasSpectrum || hasSpiral) {
+          console.log(`   📊 Visualizer methods detected: scope=${hasScope}, spectrum=${hasSpectrum}, spiral=${hasSpiral}`);
+          
+          // Check if canvas ID is in the pattern
+          const hasCanvasId = /master-punchcard-canvas/.test(code);
+          console.log(`   🎯 Canvas ID present in pattern: ${hasCanvasId}`);
+          
+          // Extract and log the visualizer call
+          const scopeMatch = code.match(/\.scope\([^)]*\)/);
+          const spectrumMatch = code.match(/\.spectrum\([^)]*\)/);
+          const spiralMatch = code.match(/\.spiral\([^)]*\)/);
+          if (scopeMatch) console.log(`   📊 Scope call: ${scopeMatch[0]}`);
+          if (spectrumMatch) console.log(`   📊 Spectrum call: ${spectrumMatch[0]}`);
+          if (spiralMatch) console.log(`   📊 Spiral call: ${spiralMatch[0]}`);
+        }
         
       // Ensure all tracked elements have audio nodes created (for gain/pan control)
       console.log(`🔧 Ensuring audio nodes exist for ${this.trackedPatterns.size} tracked elements...`);
