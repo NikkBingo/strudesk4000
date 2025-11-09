@@ -343,3 +343,25 @@ export function setStrudelEditorValue(textareaOrId, value) {
   }
 }
 
+/**
+ * Enable or disable editing for a Strudel REPL editor
+ * @param {HTMLTextAreaElement|string} textareaOrId - The textarea element or its ID
+ * @param {boolean} editable - Whether the editor should be editable
+ */
+export function setStrudelEditorEditable(textareaOrId, editable) {
+  const editor = getStrudelEditor(textareaOrId);
+  const textarea = typeof textareaOrId === 'string'
+    ? document.getElementById(textareaOrId)
+    : textareaOrId;
+
+  if (editor && editor.contentDOM) {
+    editor.contentDOM.setAttribute('contenteditable', editable ? 'true' : 'false');
+    editor.dom.classList.toggle('cm-readonly', !editable);
+  }
+
+  if (textarea) {
+    textarea.readOnly = !editable;
+    textarea.classList.toggle('pattern-editor-readonly', !editable);
+  }
+}
+

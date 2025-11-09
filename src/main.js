@@ -5,7 +5,7 @@
 import { soundManager } from './soundManager.js';
 import { uiController } from './ui.js';
 import { soundConfig } from './config.js';
-import { initStrudelReplEditors, getStrudelEditorValue, setStrudelEditorValue } from './strudelReplEditor.js';
+import { initStrudelReplEditors, getStrudelEditorValue, setStrudelEditorValue, setStrudelEditorEditable } from './strudelReplEditor.js';
 import { getDrawContext } from '@strudel/draw';
 
 // Drum abbreviation mapping
@@ -624,14 +624,15 @@ class InteractiveSoundApp {
             await soundManager.setMasterPatternCode(currentCode);
           }
           
-          // Prepare canvas FIRST if using a visualizer
           if (this.selectedVisualizer && this.selectedVisualizer !== 'punchcard') {
             console.log(`🎨 Preparing canvas for visualizer "${this.selectedVisualizer}"`);
             this.prepareCanvasForExternalVisualizer();
-            
-            console.log(`🎨 Applying visualizer "${this.selectedVisualizer}" before playing`);
-            await this.applyVisualizerToMaster();
+          } else {
+            this.showMasterPunchcardPlaceholder();
           }
+
+          console.log(`🎨 Applying visualizer "${this.selectedVisualizer || 'punchcard'}" before playing`);
+          await this.applyVisualizerToMaster();
           
           const result = await soundManager.playMasterPattern();
           
@@ -801,7 +802,7 @@ class InteractiveSoundApp {
     }
     
     // Setup visualizer dropdown
-    this.selectedVisualizer = 'punchcard'; // default
+    this.selectedVisualizer = 'scope'; // default
     const visualizerSelect = document.getElementById('visualizer-select');
     if (visualizerSelect) {
       visualizerSelect.value = this.selectedVisualizer;
@@ -809,19 +810,17 @@ class InteractiveSoundApp {
         this.selectedVisualizer = e.target.value;
         console.log(`🎨 Visualizer changed to: ${this.selectedVisualizer}`);
         
-        // If master is currently playing, update it with the new visualizer
-        if (soundManager.masterActive) {
-          // Prepare canvas if using external visualizer
-          if (this.selectedVisualizer !== 'punchcard') {
-            this.prepareCanvasForExternalVisualizer();
-          }
-          await this.applyVisualizerToMaster();
+        if (this.selectedVisualizer !== 'punchcard') {
+          this.prepareCanvasForExternalVisualizer();
         } else {
-          // Just refresh the punchcard display
-          this.refreshMasterPunchcard('visualizer-change').catch(err => {
-            console.warn('⚠️ Unable to refresh punchcard after visualizer change:', err);
-          });
+          this.showMasterPunchcardPlaceholder();
         }
+
+        await this.applyVisualizerToMaster();
+
+        this.refreshMasterPunchcard('visualizer-change').catch(err => {
+          console.warn('⚠️ Unable to refresh punchcard after visualizer change:', err);
+        });
       });
     }
     
@@ -954,22 +953,21 @@ class InteractiveSoundApp {
     const useSpiral = this.shouldUseSpiralVisualizer(patternCode);
     const useScope = !useSpiral && this.shouldUseScopeVisualizer(patternCode);
     const useSpectrum = !useSpiral && !useScope && this.shouldUseSpectrumVisualizer(patternCode);
-    const spiralOptions = useSpiral ? this.extractSpiralOptions(patternCode) : {};
     
-     this.masterPunchcardIsRendering = true;
-     try {
-       const metrics = this.currentTimeSignatureMetrics || getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
-       
-       // For external visualizers (scope, spectrum, spiral), just prepare the canvas and return
-       // Strudel will render to it directly during playback
-       if (useScope || useSpectrum || useSpiral) {
-         this.prepareCanvasForExternalVisualizer();
-         this.hideMasterPunchcardPlaceholder();
-         return;
-       }
-
-       const data = await this.computeMasterPunchcardData(patternCode, metrics);
+    if (useScope || useSpectrum || useSpiral) {
+      // External visualizers (scope, spectrum, spiral) rely on Strudel rendering directly
+      this.prepareCanvasForExternalVisualizer();
+      this.hideMasterPunchcardPlaceholder();
+      this.masterPunchcardIsRendering = false;
+      return;
+    }
+    
+    this.masterPunchcardIsRendering = true;
+    try {
+      const metrics = this.currentTimeSignatureMetrics || getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
       
+      const data = await this.computeMasterPunchcardData(patternCode, metrics);
+
       if (!data || data.error) {
         const message = data?.error ? `Unable to render punchcard: ${data.error}` : 'Unable to render punchcard.';
         console.warn(message, { reason, data });
@@ -1905,7 +1903,7 @@ class InteractiveSoundApp {
     console.log(`🎛️ Effects updated for ${elementId}:`, this.elementEffects[elementId]);
     
     // Apply effects to the pattern (works for both master and individual playback)
-    await this.applyEffectsAndFiltersToPattern(elementId);
+      await this.applyEffectsAndFiltersToPattern(elementId);
   }
   
   /**
@@ -1938,7 +1936,7 @@ class InteractiveSoundApp {
     console.log(`🔊 Filters updated for ${elementId}:`, this.elementFilters[elementId]);
     
     // Apply filters to the pattern (works for both master and individual playback)
-    await this.applyEffectsAndFiltersToPattern(elementId);
+      await this.applyEffectsAndFiltersToPattern(elementId);
   }
   
   /**
@@ -1974,7 +1972,7 @@ class InteractiveSoundApp {
     console.log(`🎹 Synthesis updated for ${elementId}:`, this.elementSynthesis[elementId]);
     
     // Apply synthesis to the pattern (works for both master and individual playback)
-    await this.applyEffectsAndFiltersToPattern(elementId);
+      await this.applyEffectsAndFiltersToPattern(elementId);
   }
   
   /**
@@ -2741,6 +2739,13 @@ class InteractiveSoundApp {
         if (config.title !== undefined) {
           elementConfig.description = config.title;
         }
+        if (config.sampleUrl && config.sampleUrl.trim() !== '') {
+          elementConfig.audioFile = config.sampleUrl;
+          elementConfig.type = 'audio';
+        } else {
+          elementConfig.audioFile = undefined;
+          elementConfig.type = 'strudel';
+        }
       }
       
       // Update title in DOM - show bank name if title is blank
@@ -2871,6 +2876,7 @@ class InteractiveSoundApp {
       active: false,
       totalSteps: 0,
       built: false,
+      patternEditorEnabled: true,
       updatingFromPattern: false,
       updatingFromGrid: false,
       checkboxes: {
@@ -2879,6 +2885,33 @@ class InteractiveSoundApp {
         hh: []
       }
     };
+
+    const patternEditorToggleWrapper = document.getElementById('modal-pattern-editor-toggle-wrapper');
+    const patternEditorToggle = document.getElementById('modal-pattern-editor-toggle');
+    const patternEditorToggleText = document.getElementById('modal-pattern-editor-toggle-text');
+    const updatePatternFieldEditable = (editable) => {
+      setStrudelEditorEditable('modal-pattern', editable);
+      const textarea = document.getElementById('modal-pattern');
+      if (textarea) {
+        textarea.classList.toggle('pattern-editor-readonly', !editable);
+      }
+    };
+
+    const applyPatternEditorState = () => {
+      if (patternEditorToggle) {
+        patternEditorToggle.checked = drumGridState.patternEditorEnabled;
+      }
+      if (patternEditorToggleText) {
+        patternEditorToggleText.textContent = drumGridState.patternEditorEnabled ? 'Enable' : 'Disable';
+      }
+      updatePatternFieldEditable(drumGridState.patternEditorEnabled);
+    };
+
+    const setPatternEditorEnabled = (enabled) => {
+      drumGridState.patternEditorEnabled = !!enabled;
+      applyPatternEditorState();
+    };
+    applyPatternEditorState();
     
     const isDrumBankValue = (value) => value && DRUM_BANK_VALUES.has(value);
     
@@ -3045,11 +3078,35 @@ class InteractiveSoundApp {
       const bankSelect = document.getElementById('modal-pattern-bank');
       if (!bankSelect) return;
       const bankValue = bankSelect.value;
-      if (!isDrumBankValue(bankValue)) {
+      const isDrum = isDrumBankValue(bankValue);
+
+      if (patternEditorToggleWrapper) {
+        patternEditorToggleWrapper.style.display = isDrum ? 'inline-flex' : 'none';
+      }
+
+      applyPatternEditorState();
+
+      if (!isDrum) {
+        setPatternEditorEnabled(true);
         hideDrumGrid();
         return;
       }
+
+      if (drumGridState.patternEditorEnabled) {
+        hideDrumGrid();
+        return;
+      }
+
       const patternValue = getStrudelEditorValue('modal-pattern');
+      const trimmedPattern = patternValue ? patternValue.trim() : '';
+      const tokens = tokenizePattern(patternValue);
+
+      if (trimmedPattern && (!tokens || tokens.length === 0)) {
+        setPatternEditorEnabled(true);
+        hideDrumGrid();
+        return;
+      }
+
       const metrics = getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
       showDrumGrid(metrics, patternValue);
     };
@@ -3060,8 +3117,26 @@ class InteractiveSoundApp {
         if (!drumGridState.active || drumGridState.updatingFromGrid) {
           return;
         }
+        const currentBankSelect = document.getElementById('modal-pattern-bank');
+        if (!currentBankSelect || !isDrumBankValue(currentBankSelect.value)) {
+          return;
+        }
         const metrics = getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
+        const trimmedValue = modalPatternTextarea.value ? modalPatternTextarea.value.trim() : '';
+        const tokens = tokenizePattern(modalPatternTextarea.value);
+        if (trimmedValue && (!tokens || tokens.length === 0)) {
+          setPatternEditorEnabled(true);
+          hideDrumGrid();
+          return;
+        }
         populateDrumGridFromPattern(modalPatternTextarea.value, metrics);
+      });
+    }
+
+    if (patternEditorToggle) {
+      patternEditorToggle.addEventListener('change', (event) => {
+        setPatternEditorEnabled(event.target.checked);
+        refreshDrumGridForCurrentState();
       });
     }
     
@@ -3078,6 +3153,7 @@ class InteractiveSoundApp {
       // Preview removed - no longer needed
       modal.style.display = 'none';
       this.currentEditingElementId = null;
+      setPatternEditorEnabled(true);
       hideDrumGrid();
     };
 
@@ -3135,6 +3211,8 @@ class InteractiveSoundApp {
           patternField.placeholder = '';
         }
       }
+
+      setPatternEditorEnabled(true);
       
       document.getElementById('modal-sample-url').value = savedConfig?.sampleUrl || '';
       document.getElementById('modal-sample-file').value = '';

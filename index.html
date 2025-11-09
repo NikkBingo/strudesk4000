@@ -584,10 +584,8 @@
             <div class="master-visualizer-header">
               <h3>Visualizer</h3>
               <select id="visualizer-select" class="visualizer-select">
-                <option value="punchcard">Bar Chart (default)</option>
                 <option value="scope">Scope (Waveform)</option>
                 <option value="spectrum">Spectrum (Frequency)</option>
-                <option value="spiral">Spiral</option>
               </select>
             </div>
             <div id="master-punchcard" class="punchcard-grid">
@@ -662,7 +660,13 @@
             </div>
           </div>
           <div class="form-group">
-            <label for="modal-pattern">Pattern:</label>
+            <div class="pattern-label-row">
+              <label for="modal-pattern">Pattern</label>
+              <label class="pattern-editor-toggle" id="modal-pattern-editor-toggle-wrapper" style="display: none;">
+                <input type="checkbox" id="modal-pattern-editor-toggle" checked>
+                <span id="modal-pattern-editor-toggle-text">Enable</span>
+              </label>
+            </div>
             <div id="modal-drum-grid-section" class="drum-grid-section" style="display: none;">
               <div class="drum-grid-header">
                 <span class="drum-grid-title">Drum Grid (1 bar)</span>
