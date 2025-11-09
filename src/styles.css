@@ -1434,6 +1434,19 @@ header p {
   font-size: 0.85rem;
 }
 
+.pattern-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.pattern-label-row > label:first-child {
+  font-weight: 600;
+  color: #444;
+}
+
 .drum-grid-section {
   margin-top: 10px;
   margin-bottom: 12px;
@@ -1446,7 +1459,9 @@ header p {
 .drum-grid-header {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
   margin-bottom: 8px;
 }
 
@@ -1459,6 +1474,34 @@ header p {
 .drum-grid-subtitle {
   font-size: 0.75rem;
   color: #777;
+}
+
+.pattern-editor-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: #555;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pattern-editor-toggle input[type="checkbox"] {
+  accent-color: #667eea;
+  cursor: pointer;
+}
+
+.pattern-editor-readonly {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.cm-editor.cm-readonly {
+  opacity: 0.65;
+}
+
+.cm-editor.cm-readonly .cm-content {
+  cursor: not-allowed;
 }
 
 .drum-grid {
