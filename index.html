@@ -583,7 +583,12 @@
           <div class="master-visualizer">
             <div class="master-visualizer-header">
               <h3>Visualizer</h3>
-              <span class="master-visualizer-note">Shows the active master pattern output</span>
+              <select id="visualizer-select" class="visualizer-select">
+                <option value="punchcard">Bar Chart (default)</option>
+                <option value="scope">Scope (Waveform)</option>
+                <option value="spectrum">Spectrum (Frequency)</option>
+                <option value="spiral">Spiral</option>
+              </select>
             </div>
             <div id="master-punchcard" class="punchcard-grid">
               <canvas id="master-punchcard-canvas" aria-label="Master visualizer"></canvas>
@@ -603,6 +608,7 @@
         <textarea 
           id="master-pattern" 
           class="master-pattern-field"
+          data-strudel-repl
           placeholder="Combined pattern will appear here..."
           rows="15"
         ></textarea>
