@@ -103,6 +103,28 @@ header p {
 
 .tempo-controls input[type="range"] {
   flex: 1;
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+#tempo-slider.inactive {
+  opacity: 0.35;
+  filter: grayscale(0.7);
+}
+
+#tempo-slider.inactive::-webkit-slider-thumb {
+  background: #cbd1f3;
+}
+
+#tempo-slider.inactive::-moz-range-thumb {
+  background: #cbd1f3;
+}
+
+#tempo-slider.inactive::-ms-thumb {
+  background: #cbd1f3;
+}
+
+#tempo-value.inactive {
+  color: #9aa0c7;
 }
 
 .control-group input[type="range"] {
@@ -1447,6 +1469,121 @@ header p {
   color: #444;
 }
 
+.pattern-snippet-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.pattern-snippet-container.disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.pattern-snippet-description {
+  font-size: 0.72rem;
+  color: #5160b3;
+  margin-top: 4px;
+}
+
+.pattern-snippet-heading {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5a67d8;
+}
+
+.pattern-snippet-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+}
+
+.pattern-snippet-search {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(102, 126, 234, 0.35);
+  background: rgba(255, 255, 255, 0.85);
+  font-size: 0.78rem;
+  color: #39438a;
+  outline: none;
+  margin: 4px 0 10px 0;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pattern-snippet-search:focus {
+  border-color: rgba(102, 126, 234, 0.65);
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.25);
+}
+
+.pattern-snippet-search:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.pattern-snippet-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  width: 100%;
+}
+
+.pattern-snippet-list::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.pattern-snippet-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pattern-snippet-list::-webkit-scrollbar-thumb {
+  background: rgba(102, 126, 234, 0.25);
+  border-radius: 6px;
+}
+
+.pattern-snippet-tag {
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  background: rgba(102, 126, 234, 0.1);
+  color: #4c51bf;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.1s ease;
+  position: relative;
+}
+
+.pattern-snippet-tag:hover,
+.pattern-snippet-tag:focus-visible {
+  background: rgba(102, 126, 234, 0.2);
+  color: #2a3180;
+}
+
+.pattern-snippet-tag:active {
+  transform: translateY(1px);
+}
+
+.pattern-snippet-tag:focus-visible {
+  outline: 2px solid rgba(102, 126, 234, 0.45);
+  outline-offset: 2px;
+}
+
+.cm-master-highlight {
+  background: rgba(102, 126, 234, 0.3);
+  border-radius: 4px;
+}
+
 .drum-grid-section {
   margin-top: 10px;
   margin-bottom: 12px;
@@ -1484,6 +1621,46 @@ header p {
   color: #555;
   cursor: pointer;
   user-select: none;
+}
+
+.pattern-preview-controls {
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.modal-preview-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(102, 126, 234, 0.35);
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.18), rgba(118, 75, 162, 0.15));
+  color: #4c51bf;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.15);
+}
+
+.modal-preview-button:hover:not(:disabled),
+.modal-preview-button:focus-visible:not(:disabled) {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.28), rgba(118, 75, 162, 0.22));
+  box-shadow: 0 6px 14px rgba(102, 126, 234, 0.24);
+}
+
+.modal-preview-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.modal-preview-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .pattern-editor-toggle input[type="checkbox"] {

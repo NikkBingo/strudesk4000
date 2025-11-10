@@ -646,12 +646,11 @@
                 <option value="sawtooth">Sawtooth</option>
               </optgroup>
               <optgroup label="Sample-based Synths">
-                <option value="superpiano">Piano</option>
+                <option value="piano">Piano</option>
                 <option value="supersaw">Saw Synth</option>
                 <option value="gtr">Guitar</option>
-                <option value="bass">Bass</option>
                 <option value="casio">Casio</option>
-                <option value="jazz">Jazz</option>
+                <option value="wood">Wood</option>
                 <option value="metal">Metal</option>
                 <option value="folkharp">Folk Harp</option>
               </optgroup>
@@ -690,6 +689,9 @@
               <div class="drum-grid-hint">Toggle 16th-note steps to build a 1-bar drum groove. Pattern updates automatically.</div>
             </div>
             <textarea id="modal-pattern" rows="8" placeholder=''></textarea>
+        <div class="pattern-preview-controls">
+          <button id="modal-preview-btn" type="button" class="modal-preview-button" disabled>▶ Preview Pattern</button>
+        </div>
             <div class="pattern-help">
               <small>
                 Drum sounds examples: <a href="https://strudel.cc/workshop/first-sounds/#drum-sounds" target="_blank">https://strudel.cc/workshop/first-sounds/#drum-sounds</a><br>
