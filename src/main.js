@@ -5,8 +5,9 @@
 import { soundManager } from './soundManager.js';
 import { uiController } from './ui.js';
 import { soundConfig } from './config.js';
-import { initStrudelReplEditors, getStrudelEditorValue, setStrudelEditorValue, setStrudelEditorEditable } from './strudelReplEditor.js';
+import { initStrudelReplEditors, getStrudelEditor, getStrudelEditorValue, setStrudelEditorValue, setStrudelEditorEditable, insertStrudelEditorSnippet, setStrudelEditorHighlights } from './strudelReplEditor.js';
 import { getDrawContext } from '@strudel/draw';
+import { transpiler as strudelTranspiler } from '@strudel/transpiler';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -57,6 +58,386 @@ const DRUM_SAMPLE_TO_ROW = new Map([
   ['oh', 'hh'],
   ['hihat', 'hh']
 ]);
+
+const SYNTH_BANK_ALIASES = {
+  superpiano: 'piano',
+  jazz: 'wood'
+};
+
+const OSCILLATOR_SYNTHS = ['sine', 'square', 'triangle', 'sawtooth', 'supersaw', 'pulse'];
+const SAMPLE_SYNTHS = ['piano', 'supersaw', 'gtr', 'casio', 'wood', 'metal', 'folkharp'];
+const LEGACY_SAMPLE_SYNTHS = Object.keys(SYNTH_BANK_ALIASES);
+const SYNTH_NAME_MATCHERS = new Set([
+  ...OSCILLATOR_SYNTHS,
+  ...SAMPLE_SYNTHS,
+  ...LEGACY_SAMPLE_SYNTHS
+]);
+
+const normalizeSnippetLabel = (tag) => (tag || '').replace(/^[^a-z0-9]+/i, '').toLowerCase();
+
+const BASE_PATTERN_SNIPPETS = [
+  'note()',
+  'sound()',
+  'bank()',
+  'vowel()',
+  'chord()',
+  'voicing()',
+  'addVoicings()',
+  'gain()',
+  'adsr()',
+  'scale()',
+  'pan()',
+  'speed()',
+  'slow()',
+  'fast()',
+  'range()',
+  'lpf()',
+  'lpa()',
+  'lpd()',
+  'lps()',
+  'lpq()',
+  'orbit()',
+  'postgain()',
+  'irand()',
+  'seg()',
+  'hpf()',
+  'hpq()',
+  'bpf()',
+  'bpg()',
+  'fancor()',
+  'lpenv()',
+  'ftype()',
+  'attack()',
+  'decay()',
+  'sustain()',
+  'release()',
+  'resonance()',
+  'tremolosync()',
+  'tremoloskew()',
+  'tremolodepth()',
+  'tremolophase()',
+  'tremoloshape()',
+  'sometimes()',
+  'stack()',
+  'clip()',
+  'vib()',
+  'add()',
+  'anchor()',
+  'dict()',
+  'penv()',
+  'segment()',
+  'patt()',
+  'dec()',
+  'mode()',
+  'set()',
+  'struct()',
+  'pick()',
+  'pattack()',
+  'pdecay()',
+  'prelease()',
+  'pcurve()',
+  'velocity()',
+  'compressor()',
+  'control()',
+  'ccn()',
+  'ccv()',
+  'midimap()',
+  'midimaps()',
+  'defaultmidimap()',
+  'midi()',
+  'midiport()',
+  'midicmd()',
+  'midibend()',
+  'miditouch()',
+  'progNum()',
+  'sysex()',
+  'sysexid()',
+  'sysexdata()',
+  'osc()',
+  'mqtt()',
+  'xfade()',
+  'jux()',
+  'juxBy()',
+  'coarse()',
+  'crush()',
+  'distort()',
+  'delay()',
+  'delayfeedback()',
+  'room()',
+  'roomsize()',
+  'roomfade()',
+  'roomlp()',
+  'roomdim()',
+  'iresponse()',
+  'phaser()',
+  'phaserdepth()',
+  'phasercenter()',
+  'phasersweep()',
+  'duckorbit()',
+  'duckattack()',
+  'duckdepth()'
+];
+
+function getSnippetKey(snippet) {
+  if (!snippet || typeof snippet !== 'string') return '';
+  const cleaned = snippet.replace(/^[.]+/, '');
+  const match = cleaned.match(/^([a-zA-Z0-9_]+)/);
+  return (match ? match[1] : cleaned).toLowerCase();
+}
+
+function htmlToPlainText(html) {
+  const placeholder = document.createElement('div');
+  placeholder.innerHTML = html || '';
+  return (placeholder.textContent || placeholder.innerText || '').trim();
+}
+
+let strudelReferenceLoadPromise = null;
+let strudelReferenceMapCache = null;
+
+async function loadStrudelReferenceDocs() {
+  if (strudelReferenceMapCache) {
+    return strudelReferenceMapCache;
+  }
+
+  if (!strudelReferenceLoadPromise) {
+    strudelReferenceLoadPromise = import('@strudel/reference')
+      .then((mod) => {
+        const docs = mod?.reference?.docs || {};
+        const map = new Map();
+        for (const value of Object.values(docs)) {
+          if (!value || !value.name) continue;
+          const key = value.name.trim().toLowerCase();
+          if (!key || map.has(key)) continue;
+          const params = Array.isArray(value.params)
+            ? value.params.map(param => ({
+                name: param?.name || '',
+                types: Array.isArray(param?.type?.names) ? param.type.names.slice() : [],
+                description: htmlToPlainText(param?.description || '')
+              }))
+            : [];
+          map.set(key, {
+            name: value.name.trim(),
+            descriptionHtml: value.description || '',
+            descriptionText: htmlToPlainText(value.description || ''),
+            params
+          });
+        }
+        return map;
+      })
+      .catch((error) => {
+        console.warn('⚠️ Unable to load Strudel reference docs:', error);
+        return new Map();
+      });
+  }
+
+  strudelReferenceMapCache = await strudelReferenceLoadPromise;
+  return strudelReferenceMapCache;
+}
+
+function getReferenceDescriptionText(entry) {
+  if (!entry) return '';
+  if (typeof entry.descriptionText === 'string') {
+    return entry.descriptionText;
+  }
+  entry.descriptionText = htmlToPlainText(entry.descriptionHtml || '');
+  return entry.descriptionText;
+}
+
+function extractRangeFromDescription(description) {
+  if (!description) return null;
+  const text = description.toLowerCase();
+  const betweenMatch = text.match(/between\s+([-\d.]+)\s+and\s+([-\d.]+)/);
+  if (betweenMatch) {
+    return `${betweenMatch[1]}-${betweenMatch[2]}`;
+  }
+  const hyphenMatch = text.match(/([-\d.]+)\s*-\s*([-\d.]+)/);
+  if (hyphenMatch) {
+    return `${hyphenMatch[1]}-${hyphenMatch[2]}`;
+  }
+  return null;
+}
+
+function buildParamPlaceholder(param) {
+  if (!param) return '';
+  const name = param.name || 'value';
+  const types = param.types || [];
+  const description = param.description || '';
+  const range = extractRangeFromDescription(description);
+
+  if (types.includes('number')) {
+    if (range) return `${name}:${range}`;
+    return `${name}:number`;
+  }
+
+  if (types.includes('string')) {
+    return `${name}`;
+  }
+
+  if (types.includes('Pattern')) {
+    return `${name}:pattern`;
+  }
+
+  return name;
+}
+
+function buildParamDescription(param) {
+  if (!param) return '';
+  const name = param.name || 'value';
+  const types = param.types || [];
+  const description = param.description || '';
+  const range = extractRangeFromDescription(description);
+
+  if (types.includes('number')) {
+    if (range) return `${name} (number ${range})`;
+    return `${name} (number)`;
+  }
+
+  if (types.includes('string')) {
+    return `${name} (string)`;
+  }
+
+  if (types.includes('Pattern')) {
+    return `${name} (pattern)`;
+  }
+
+  return description ? `${name} (${description})` : name;
+}
+
+function buildSnippetInsertion(snippet, referenceEntry) {
+  if (!snippet || typeof snippet !== 'string') return snippet;
+  if (!snippet.endsWith('()')) return snippet;
+  const params = referenceEntry?.params || [];
+  if (!params.length) return snippet;
+  const placeholders = params.map(buildParamPlaceholder).filter(Boolean);
+  if (!placeholders.length) return snippet;
+  const base = snippet.slice(0, -1);
+  return `${base}${placeholders.join(', ')})`;
+}
+
+function buildSnippetDescription(referenceEntry) {
+  if (!referenceEntry || !Array.isArray(referenceEntry.params)) return '';
+  const descriptions = referenceEntry.params
+    .map(buildParamDescription)
+    .filter(Boolean);
+  return descriptions.join(', ');
+}
+
+let patternSnippetLoadPromise = null;
+let patternSnippetCache = null;
+
+let lastPatternSnippetBase = '';
+let lastPatternSnippetResult = null;
+
+function normalizePatternForSnippetFilter(pattern) {
+  if (!pattern || typeof pattern !== 'string') {
+    return '';
+  }
+  const strippedComments = pattern
+    .replace(/\/\/.*$/gm, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  return strippedComments.replace(/\s+/g, ' ').trim();
+}
+
+function filterSnippetsForPattern(snippets, pattern) {
+  if (!pattern) {
+    return snippets;
+  }
+
+  const normalized = normalizePatternForSnippetFilter(pattern);
+  const existingMethods = new Set(
+    (normalized.match(/\.[a-zA-Z_][a-zA-Z0-9_]*/g) || []).map((match) => getSnippetKey(match))
+  );
+
+  return snippets.filter((snippet) => {
+    const key = getSnippetKey(snippet);
+    return !existingMethods.has(key);
+  });
+}
+
+async function getPatternSnippets(patternForFilter = '') {
+  const normalizedPattern = normalizePatternForSnippetFilter(patternForFilter);
+
+  if (normalizedPattern === lastPatternSnippetBase && lastPatternSnippetResult) {
+    return lastPatternSnippetResult;
+  }
+
+  if (!patternSnippetCache) {
+    if (!patternSnippetLoadPromise) {
+      patternSnippetLoadPromise = (async () => {
+        const snippetMap = new Map();
+        BASE_PATTERN_SNIPPETS.forEach((snippet) => {
+          const key = getSnippetKey(snippet);
+          if (!snippetMap.has(key) && snippet) {
+            snippetMap.set(key, snippet);
+          }
+        });
+
+        const referenceMap = await loadStrudelReferenceDocs();
+        referenceMap.forEach((entry, key) => {
+          if (snippetMap.has(key)) return;
+          if (!/^[a-z][\w]*$/i.test(entry.name)) return;
+          snippetMap.set(key, `${entry.name}()`);
+        });
+
+        const sortedSnippets = Array.from(snippetMap.entries())
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([, snippet]) => snippet);
+
+        patternSnippetCache = sortedSnippets;
+        return sortedSnippets;
+      })();
+    }
+    await patternSnippetLoadPromise;
+  }
+
+  const baseSnippets = patternSnippetCache || [];
+  const filtered = filterSnippetsForPattern(baseSnippets, normalizedPattern);
+  lastPatternSnippetBase = normalizedPattern;
+  lastPatternSnippetResult = filtered;
+  return filtered;
+}
+
+function normalizeSynthBankName(bankName) {
+  if (!bankName || typeof bankName !== 'string') {
+    return bankName;
+  }
+  const trimmed = bankName.trim();
+  const normalized = SYNTH_BANK_ALIASES[trimmed.toLowerCase()];
+  return normalized || trimmed;
+}
+
+function replaceSynthAliases(pattern) {
+  if (!pattern || typeof pattern !== 'string') {
+    return pattern;
+  }
+
+  let result = pattern;
+  for (const [legacyName, canonicalName] of Object.entries(SYNTH_BANK_ALIASES)) {
+    const escapedLegacy = legacyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const aliasRegex = new RegExp(`(\\.s\\(["'])${escapedLegacy}(["']\\))`, 'gi');
+    result = result.replace(aliasRegex, (_, prefix, suffix) => `${prefix}${canonicalName}${suffix}`);
+
+    const soundRegex = new RegExp(`(sound\\(["'])${escapedLegacy}(["']\\))`, 'gi');
+    result = result.replace(soundRegex, (_, prefix, suffix) => `${prefix}${canonicalName}${suffix}`);
+  }
+  return result;
+}
+
+function patternContainsKnownSynth(pattern) {
+  if (!pattern || typeof pattern !== 'string') {
+    return false;
+  }
+
+  for (const synthName of SYNTH_NAME_MATCHERS) {
+    const escaped = synthName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\.s\\(["']${escaped}["']\\)`, 'i');
+    if (regex.test(pattern)) {
+      return true;
+    }
+  }
+
+  return /\b(note|n)\s*\(/.test(pattern);
+}
 
 /**
  * Convert Strudel pattern to drum abbreviations display
@@ -262,6 +643,11 @@ class InteractiveSoundApp {
     this.masterPunchcardIsRendering = false;
     this.masterPunchcardPendingRefresh = false;
     this.masterPunchcardResizeTimer = null;
+
+    // Master editor highlighting
+    this.masterHighlightData = null;
+    this.masterHighlightRaf = null;
+    this.currentMasterHighlightKey = null;
   }
 
   /**
@@ -334,6 +720,10 @@ class InteractiveSoundApp {
       console.log('🔄 Master pattern updated - refreshing display');
       this.updateMasterPatternDisplay();
       
+      this.updateMasterPatternHighlights().catch(error => {
+        console.warn('⚠️ Could not update master highlight data:', error);
+      });
+
       // If a visualizer is selected and master is active, re-apply it
       // Use a flag to prevent infinite loops
       if (this.selectedVisualizer && this.selectedVisualizer !== 'punchcard' && soundManager.masterActive && !this._applyingVisualizer) {
@@ -364,6 +754,12 @@ class InteractiveSoundApp {
         document.querySelectorAll('.element-circle').forEach(circle => {
           circle.classList.remove('playing');
         });
+      }
+
+      if (isPlaying) {
+        this.startMasterHighlightLoop();
+      } else {
+        this.stopMasterHighlightLoop();
       }
     });
 
@@ -1591,6 +1987,215 @@ class InteractiveSoundApp {
     return { counts, hits, events };
   }
 
+  async computeMasterHighlightData(patternCode) {
+    if (!patternCode || typeof patternCode !== 'string' || patternCode.trim() === '') {
+      return null;
+    }
+
+    let transpiled;
+    try {
+      transpiled = strudelTranspiler(patternCode, { emitMiniLocations: true });
+    } catch (error) {
+      console.warn('⚠️ Could not transpile master pattern for highlighting:', error);
+      return null;
+    }
+
+    const miniLocations = Array.isArray(transpiled?.miniLocations) ? transpiled.miniLocations : [];
+    const locationEntries = miniLocations
+      .map((entry) => {
+        if (!Array.isArray(entry) || entry.length < 2) {
+          return null;
+        }
+        const [from, to] = entry;
+        if (typeof from !== 'number' || typeof to !== 'number' || !Number.isFinite(from) || !Number.isFinite(to) || to <= from) {
+          return null;
+        }
+        const text = patternCode.slice(from, to);
+        const normalized = text.replace(/['"]/g, '').trim().toLowerCase();
+        return { from, to, text, normalized, used: false };
+      })
+      .filter(Boolean);
+
+    const metrics = this.currentTimeSignatureMetrics || getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
+
+    let punchcardData;
+    try {
+      punchcardData = await this.computeMasterPunchcardData(patternCode, metrics);
+    } catch (error) {
+      console.warn('⚠️ Could not compute master punchcard data for highlighting:', error);
+      return null;
+    }
+
+    const events = Array.isArray(punchcardData?.events) ? punchcardData.events : [];
+
+    const labelBuckets = new Map();
+    locationEntries.forEach((entry) => {
+      if (!entry.normalized) {
+        return;
+      }
+      if (!labelBuckets.has(entry.normalized)) {
+        labelBuckets.set(entry.normalized, []);
+      }
+      labelBuckets.get(entry.normalized).push(entry);
+    });
+
+    const assignedEvents = events.map((event, index) => {
+      const normalizedLabel = (event?.label ?? '').toString().trim().toLowerCase();
+      let location = null;
+
+      if (normalizedLabel) {
+        const bucket = labelBuckets.get(normalizedLabel);
+        if (bucket && bucket.length) {
+          location = bucket.shift();
+          if (location) {
+            location.used = true;
+          }
+        }
+      }
+
+      if (!location) {
+        location = locationEntries.find(entry => !entry.used);
+        if (location) {
+          location.used = true;
+        }
+      }
+
+      const begin = Number.isFinite(event?.begin) ? Number(event.begin) : 0;
+      const end = Number.isFinite(event?.end) ? Number(event.end) : begin;
+
+      return {
+        begin,
+        end,
+        label: event?.label ?? '',
+        from: location ? location.from : 0,
+        to: location ? location.to : patternCode.length
+      };
+    });
+
+    assignedEvents.sort((a, b) => {
+      if (a.begin !== b.begin) return a.begin - b.begin;
+      return a.from - b.from;
+    });
+
+    return {
+      events: assignedEvents,
+      patternLength: patternCode.length
+    };
+  }
+
+  async updateMasterPatternHighlights() {
+    const pattern = soundManager.getMasterPatternCode();
+    if (!pattern || pattern.trim() === '') {
+      this.masterHighlightData = null;
+      setStrudelEditorHighlights('master-pattern', []);
+      this.currentMasterHighlightKey = null;
+      return;
+    }
+
+    try {
+      const highlightData = await this.computeMasterHighlightData(pattern);
+      this.masterHighlightData = highlightData;
+      if (!highlightData || !Array.isArray(highlightData.events) || highlightData.events.length === 0) {
+        setStrudelEditorHighlights('master-pattern', []);
+        this.currentMasterHighlightKey = null;
+      } else if (!soundManager.isMasterActive()) {
+        setStrudelEditorHighlights('master-pattern', []);
+        this.currentMasterHighlightKey = null;
+      } else {
+        this.updateMasterHighlightForCurrentPlayback();
+      }
+    } catch (error) {
+      console.warn('⚠️ Unable to update master pattern highlights:', error);
+      this.masterHighlightData = null;
+      setStrudelEditorHighlights('master-pattern', []);
+      this.currentMasterHighlightKey = null;
+    }
+  }
+
+  startMasterHighlightLoop() {
+    if (this.masterHighlightRaf != null) {
+      return;
+    }
+    const tick = () => {
+      this.masterHighlightRaf = requestAnimationFrame(tick);
+      this.updateMasterHighlightForCurrentPlayback();
+    };
+    this.masterHighlightRaf = requestAnimationFrame(tick);
+  }
+
+  stopMasterHighlightLoop() {
+    if (this.masterHighlightRaf != null) {
+      cancelAnimationFrame(this.masterHighlightRaf);
+      this.masterHighlightRaf = null;
+    }
+    this.currentMasterHighlightKey = null;
+    setStrudelEditorHighlights('master-pattern', []);
+  }
+
+  updateMasterHighlightForCurrentPlayback() {
+    const highlightData = this.masterHighlightData;
+    if (!highlightData || !Array.isArray(highlightData.events) || highlightData.events.length === 0) {
+      if (this.currentMasterHighlightKey !== null) {
+        this.currentMasterHighlightKey = null;
+        setStrudelEditorHighlights('master-pattern', []);
+      }
+      return;
+    }
+
+    const playbackInfo = soundManager.getMasterPlaybackInfo ? soundManager.getMasterPlaybackInfo() : null;
+    if (!playbackInfo || !playbackInfo.isPlaying || !playbackInfo.startTime || !Number.isFinite(playbackInfo.speed) || playbackInfo.speed <= 0) {
+      if (this.currentMasterHighlightKey !== null) {
+        this.currentMasterHighlightKey = null;
+        setStrudelEditorHighlights('master-pattern', []);
+      }
+      return;
+    }
+
+    const editor = getStrudelEditor('master-pattern');
+    if (!editor) {
+      return;
+    }
+
+    const audioContext = soundManager.audioContext;
+    const nowSeconds = audioContext ? audioContext.currentTime : performance.now() / 1000;
+    const elapsed = nowSeconds - playbackInfo.startTime;
+    if (!Number.isFinite(elapsed) || elapsed < 0) {
+      return;
+    }
+
+    const rawPhase = (elapsed * playbackInfo.speed) % 1;
+    const phase = ((rawPhase % 1) + 1) % 1;
+
+    const activeEvents = highlightData.events.filter((event) => {
+      const begin = Number.isFinite(event.begin) ? ((event.begin % 1) + 1) % 1 : 0;
+      const endRaw = Number.isFinite(event.end) ? event.end : event.begin;
+      let end = ((endRaw % 1) + 1) % 1;
+
+      if (end === begin) {
+        return Math.abs(phase - begin) < 1e-2;
+      }
+
+      if (end > begin) {
+        return phase >= begin && phase < end;
+      }
+
+      // Wrap-around event
+      return phase >= begin || phase < end;
+    });
+
+    const ranges = activeEvents.map((event) => {
+      const from = Math.max(0, Math.min(highlightData.patternLength, event.from));
+      const to = Math.max(from, Math.min(highlightData.patternLength, event.to));
+      return { from, to };
+    });
+
+    const key = JSON.stringify(ranges);
+    if (key !== this.currentMasterHighlightKey) {
+      setStrudelEditorHighlights('master-pattern', ranges);
+      this.currentMasterHighlightKey = key;
+    }
+  }
+
   /**
    * Update master pattern display field
    */
@@ -2083,12 +2688,8 @@ class InteractiveSoundApp {
     if (!synthesisSection) return;
     
     // Check if pattern uses a synth sound
-    // Common synth names in Strudel: sine, square, sawtooth, triangle, etc.
-    const isSynthPattern = pattern && (
-      /\.s\(["']?(sine|square|sawtooth|triangle|pulse)/i.test(pattern) ||
-      /\.synth\(/i.test(pattern) ||
-      /note\([^)]*\)\.s\(["']?(sine|square|sawtooth|triangle)/i.test(pattern)
-    );
+    const canonicalPattern = replaceSynthAliases(pattern);
+    const isSynthPattern = patternContainsKnownSynth(canonicalPattern);
     
     // Show or hide the synthesis section
     if (isSynthPattern) {
@@ -2714,6 +3315,14 @@ class InteractiveSoundApp {
         // Normalize quotes in pattern if it exists (but don't save back to avoid infinite loop)
         if (config && config.pattern) {
           config.pattern = config.pattern.replace(/[""]/g, '"').replace(/['']/g, "'");
+          config.pattern = replaceSynthAliases(config.pattern);
+        }
+        if (config && config.bank) {
+          const normalizedBank = normalizeSynthBankName(config.bank);
+          if (normalizedBank !== config.bank) {
+            console.log(`🔁 Normalized synth bank from "${config.bank}" to "${normalizedBank}" for ${elementId}`);
+          }
+          config.bank = normalizedBank;
         }
         return config;
       }
@@ -2728,6 +3337,22 @@ class InteractiveSoundApp {
    */
   saveElementConfig(elementId, config) {
     try {
+      if (config.bank && typeof config.bank === 'string') {
+        const normalizedBank = normalizeSynthBankName(config.bank);
+        if (normalizedBank !== config.bank) {
+          console.log(`🔁 Normalized bank selection from "${config.bank}" to "${normalizedBank}" before saving`);
+          config.bank = normalizedBank;
+        }
+      }
+
+      if (config.pattern && typeof config.pattern === 'string') {
+        const normalizedPattern = replaceSynthAliases(config.pattern);
+        if (normalizedPattern !== config.pattern) {
+          console.log(`🔁 Updated pattern to use canonical synth names before saving`);
+          config.pattern = normalizedPattern;
+        }
+      }
+
       localStorage.setItem(`element-config-${elementId}`, JSON.stringify(config));
       
       // Update elementConfig array
@@ -2782,12 +3407,7 @@ class InteractiveSoundApp {
         }
         
         // Show Synthesis section if this is a synth pattern
-    const synthSounds = ['sine', 'square', 'triangle', 'sawtooth', 'superpiano', 'supersaw', 'gtr', 'bass', 'casio', 'jazz', 'metal', 'folkharp'];
-        const isSynthPattern = config.pattern && (
-          config.pattern.includes('note(') || 
-          config.pattern.includes('n(') ||
-          synthSounds.some(synth => config.pattern.includes(`.s("${synth}"`))
-        );
+        const isSynthPattern = config.pattern && patternContainsKnownSynth(config.pattern);
         
         const synthesisSection = element.querySelector('.synthesis-section');
         if (synthesisSection && isSynthPattern) {
@@ -2889,11 +3509,185 @@ class InteractiveSoundApp {
     const patternEditorToggleWrapper = document.getElementById('modal-pattern-editor-toggle-wrapper');
     const patternEditorToggle = document.getElementById('modal-pattern-editor-toggle');
     const patternEditorToggleText = document.getElementById('modal-pattern-editor-toggle-text');
+    const patternLabelRow = modal.querySelector('.pattern-label-row');
+    let patternSnippetContainer = modal.querySelector('.pattern-snippet-container');
+    let patternSnippetListEl = patternSnippetContainer ? patternSnippetContainer.querySelector('.pattern-snippet-list') : null;
+    let patternSnippetSearchInput = patternSnippetContainer ? patternSnippetContainer.querySelector('.pattern-snippet-search') : null;
+    const previewButton = document.getElementById('modal-preview-btn');
+
+    const updatePreviewButtonState = () => {
+      if (!previewButton) return;
+      const pattern = getStrudelEditorValue('modal-pattern');
+      const hasPattern = !!(pattern && pattern.trim().length > 0);
+      previewButton.disabled = !hasPattern;
+    };
+
+    let refreshSnippetButtons = null;
+
+    const ensurePatternSnippetContainer = async () => {
+      const currentPattern = getStrudelEditorValue('modal-pattern');
+      const searchTerm = patternSnippetSearchInput ? patternSnippetSearchInput.value.trim().toLowerCase() : '';
+      const [snippets, referenceMap] = await Promise.all([
+        getPatternSnippets(currentPattern),
+        loadStrudelReferenceDocs()
+      ]);
+
+      if (!patternSnippetContainer) {
+        patternSnippetContainer = document.createElement('div');
+        patternSnippetContainer.className = 'pattern-snippet-container';
+        patternSnippetContainer.setAttribute('aria-disabled', 'false');
+
+        const snippetHeading = document.createElement('span');
+        snippetHeading.className = 'pattern-snippet-heading';
+        snippetHeading.textContent = 'Add to pattern:';
+        patternSnippetContainer.appendChild(snippetHeading);
+
+        patternSnippetSearchInput = document.createElement('input');
+        patternSnippetSearchInput.type = 'search';
+        patternSnippetSearchInput.className = 'pattern-snippet-search';
+        patternSnippetSearchInput.setAttribute('placeholder', 'Search tags…');
+        patternSnippetSearchInput.setAttribute('aria-label', 'Search snippet tags');
+        patternSnippetContainer.appendChild(patternSnippetSearchInput);
+
+        patternSnippetListEl = document.createElement('div');
+        patternSnippetListEl.className = 'pattern-snippet-list';
+        patternSnippetContainer.appendChild(patternSnippetListEl);
+
+        if (patternLabelRow) {
+          patternLabelRow.insertAdjacentElement('afterend', patternSnippetContainer);
+        } else {
+          modal.querySelector('.form-group')?.insertAdjacentElement('afterbegin', patternSnippetContainer);
+        }
+      }
+
+      if (!patternSnippetListEl) {
+        patternSnippetListEl = patternSnippetContainer.querySelector('.pattern-snippet-list');
+      }
+
+      if (!patternSnippetSearchInput) {
+        patternSnippetSearchInput = patternSnippetContainer.querySelector('.pattern-snippet-search');
+      }
+
+      const renderSnippets = (listEl, items, reference, searchTermValue) => {
+        listEl.innerHTML = '';
+        items.forEach((snippet) => {
+          const key = getSnippetKey(snippet);
+          const referenceEntry = reference.get(key);
+          const rawInsertion = buildSnippetInsertion(snippet, referenceEntry);
+          const insertionSnippet = snippet.startsWith('.')
+            ? rawInsertion
+            : `.${rawInsertion.replace(/^[.]+/, '')}`;
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'pattern-snippet-tag';
+          button.dataset.snippet = snippet;
+          button.dataset.insertion = insertionSnippet;
+          const displayLabel = insertionSnippet.startsWith('.') ? insertionSnippet : `.${insertionSnippet}`;
+
+          const lowerLabel = displayLabel.toLowerCase();
+          if (searchTermValue && !lowerLabel.includes(searchTermValue) && !key.includes(searchTermValue)) {
+            return;
+          }
+
+          button.textContent = displayLabel;
+          button.setAttribute('aria-label', displayLabel);
+
+          const itemWrapper = document.createElement('div');
+          itemWrapper.className = 'pattern-snippet-item';
+          itemWrapper.appendChild(button);
+
+          const paramDescription = buildSnippetDescription(referenceEntry);
+          if (paramDescription) {
+            const descEl = document.createElement('div');
+            descEl.className = 'pattern-snippet-description';
+            descEl.textContent = paramDescription;
+            itemWrapper.appendChild(descEl);
+          }
+
+          listEl.appendChild(itemWrapper);
+        });
+      };
+
+      if (patternSnippetListEl) {
+        renderSnippets(patternSnippetListEl, snippets, referenceMap, searchTerm);
+      }
+
+      refreshSnippetButtons = async () => {
+        if (!patternSnippetListEl) return;
+        const updatedSnippets = await getPatternSnippets(getStrudelEditorValue('modal-pattern'));
+        const ref = await loadStrudelReferenceDocs();
+        const term = patternSnippetSearchInput ? patternSnippetSearchInput.value.trim().toLowerCase() : '';
+        renderSnippets(patternSnippetListEl, updatedSnippets, ref, term);
+      };
+
+      if (patternSnippetListEl && !patternSnippetListEl.dataset.listenersAttached) {
+        patternSnippetListEl.addEventListener('click', (event) => {
+          const button = event.target.closest('.pattern-snippet-tag');
+          if (!button || patternSnippetContainer.classList.contains('disabled')) {
+            return;
+          }
+          if (!drumGridState.patternEditorEnabled) {
+            return;
+          }
+          const snippet = button.dataset.insertion || button.dataset.snippet;
+          if (!snippet) {
+            return;
+          }
+          insertStrudelEditorSnippet('modal-pattern', snippet);
+        });
+
+        patternSnippetListEl.dataset.listenersAttached = 'true';
+      }
+
+      if (patternSnippetSearchInput && !patternSnippetSearchInput.dataset.listenerAttached) {
+        patternSnippetSearchInput.addEventListener('input', () => {
+          if (typeof refreshSnippetButtons === 'function') {
+            refreshSnippetButtons().catch(err => console.warn('⚠️ Unable to refresh snippet tags:', err));
+          }
+        });
+        patternSnippetSearchInput.dataset.listenerAttached = 'true';
+      }
+    };
+
+    ensurePatternSnippetContainer().catch((error) => {
+      console.warn('⚠️ Unable to prepare pattern snippet tags:', error);
+    });
+    updatePreviewButtonState();
+
+    if (previewButton && !previewButton.dataset.listenerAttached) {
+      previewButton.addEventListener('click', async () => {
+        const patternValue = getStrudelEditorValue('modal-pattern');
+        if (!patternValue || !patternValue.trim()) {
+          uiController.updateStatus('⚠️ No pattern to preview');
+          return;
+        }
+
+        const elementId = this.currentEditingElementId || 'modal-preview';
+        uiController.updateStatus('▶ Previewing pattern…');
+
+        try {
+          await soundManager.previewPattern(patternValue, elementId);
+          uiController.updateStatus('✅ Preview playing (preview slot d16)');
+        } catch (error) {
+          console.error('Preview failed:', error);
+          uiController.updateStatus('⚠️ Preview failed – check console for details');
+        }
+      });
+      previewButton.dataset.listenerAttached = 'true';
+    }
+
     const updatePatternFieldEditable = (editable) => {
       setStrudelEditorEditable('modal-pattern', editable);
       const textarea = document.getElementById('modal-pattern');
       if (textarea) {
         textarea.classList.toggle('pattern-editor-readonly', !editable);
+      }
+      if (patternSnippetContainer) {
+        patternSnippetContainer.classList.toggle('disabled', !editable);
+        patternSnippetContainer.setAttribute('aria-disabled', (!editable).toString());
+      }
+      if (patternSnippetSearchInput) {
+        patternSnippetSearchInput.disabled = !editable;
       }
     };
 
@@ -2906,6 +3700,17 @@ class InteractiveSoundApp {
       }
       updatePatternFieldEditable(drumGridState.patternEditorEnabled);
     };
+
+    const modalPatternTextareaForPreview = document.getElementById('modal-pattern');
+    if (modalPatternTextareaForPreview && !modalPatternTextareaForPreview.dataset.previewListenerAttached) {
+      modalPatternTextareaForPreview.addEventListener('input', () => {
+        updatePreviewButtonState();
+        if (typeof refreshSnippetButtons === 'function') {
+          refreshSnippetButtons().catch(err => console.warn('⚠️ Unable to refresh snippet tags:', err));
+        }
+      });
+      modalPatternTextareaForPreview.dataset.previewListenerAttached = 'true';
+    }
 
     const setPatternEditorEnabled = (enabled) => {
       drumGridState.patternEditorEnabled = !!enabled;
@@ -3292,26 +4097,28 @@ class InteractiveSoundApp {
           }
         } else {
           // Check if this is a synth sound (not a drum bank)
-          const synthSounds = ['sine', 'square', 'triangle', 'sawtooth', 'superpiano', 'supersaw', 'gtr', 'bass', 'casio', 'jazz', 'metal', 'folkharp'];
-          const isSynthSound = synthSounds.includes(bankValue);
+          const canonicalBankValue = normalizeSynthBankName(bankValue);
+          const synthSounds = [...OSCILLATOR_SYNTHS, ...SAMPLE_SYNTHS];
+          const isSynthSound = synthSounds.includes(canonicalBankValue) || LEGACY_SAMPLE_SYNTHS.includes(bankValue);
           
           if (isSynthSound) {
             // Update title with better display names
             const titleInput = document.getElementById('modal-title');
             const displayNames = {
-              'superpiano': 'Piano',
+              'piano': 'Piano',
               'supersaw': 'Saw Synth',
               'gtr': 'Guitar',
-              'bass': 'Bass',
               'casio': 'Casio',
-              'jazz': 'Jazz',
+              'wood': 'Wood',
               'metal': 'Metal',
-              'folkharp': 'Folk Harp'
+              'folkharp': 'Folk Harp',
+              'superpiano': 'Piano',
+              'jazz': 'Wood'
             };
-            const displayName = displayNames[bankValue] || bankValue.charAt(0).toUpperCase() + bankValue.slice(1);
+            const displayName = displayNames[canonicalBankValue] || displayNames[bankValue] || canonicalBankValue.charAt(0).toUpperCase() + canonicalBankValue.slice(1);
             
             // Handle synth sound - no bank loading needed
-            console.log(`🎹 Using synth sound: ${bankValue}`);
+            console.log(`🎹 Using synth sound: ${canonicalBankValue}`);
             if (statusText) {
               statusText.textContent = `🎹 Using ${displayName}`;
             }
@@ -3351,12 +4158,13 @@ class InteractiveSoundApp {
               }
               
               // Always use note().s() format
-              strudelPattern = `note("${notes}").s("${bankValue}")`;
-              console.log(`🎹 BANK CHANGE: Created note("${notes}").s("${bankValue}")`);
+              strudelPattern = `note("${notes}").s("${canonicalBankValue}")`;
+              console.log(`🎹 BANK CHANGE: Created note("${notes}").s("${canonicalBankValue}")`);
             } else {
               // Create default pattern when empty
-              strudelPattern = `note("c3 d3 e3 f3").s("${bankValue}")`;
-              console.log(`🎹 BANK CHANGE: Created default pattern with ${bankValue}`);
+              const defaultNotes = 'c3 d3 e3 f3';
+              strudelPattern = `note("${defaultNotes}").s("${canonicalBankValue}")`;
+              console.log(`🎹 BANK CHANGE: Created default pattern with ${canonicalBankValue}`);
             }
             
             console.log(`🎹 BANK CHANGE: Setting textarea to: ${strudelPattern}`);
@@ -3379,13 +4187,14 @@ class InteractiveSoundApp {
             // All drum banks are loaded from dough-samples CDN
             // TR-808 and TR-909 have local fallback in assets folder
             const builtInDrumBanks = [
-              'RolandTR808', 'RolandTR909', 'RolandTR707', 'RhythmAce', 
+              'RolandTR808', 'RolandTR909', 'RolandTR707', 'RhythmAce',
               'AkaiLinn', 'ViscoSpaceDrum', 'EmuSP1200', 'CasioRZ1'
             ];
             const builtInSynthSounds = [
-              'sine', 'square', 'triangle', 'sawtooth',
-              'superpiano', 'supersaw', 'gtr', 'bass', 'folkharp',
-              'casio', 'insect', 'wind', 'jazz', 'metal', 'east', 'crow', 'space', 'numbers'
+              ...OSCILLATOR_SYNTHS,
+              ...SAMPLE_SYNTHS,
+              'insect', 'wind', 'east', 'crow', 'space', 'numbers',
+              'superpiano', 'jazz'
             ];
             const isBuiltInBank = builtInDrumBanks.includes(bankValue) || builtInSynthSounds.includes(bankValue.toLowerCase());
             

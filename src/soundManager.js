@@ -37,6 +37,28 @@ async function getStrudelModules() {
   return strudelModulesPromise;
 }
 
+const SYNTH_NAME_ALIASES = {
+  superpiano: 'piano',
+  jazz: 'wood'
+};
+
+function replaceSynthAliasesInPattern(pattern) {
+  if (!pattern || typeof pattern !== 'string') {
+    return pattern;
+  }
+
+  let result = pattern;
+  for (const [legacyName, canonicalName] of Object.entries(SYNTH_NAME_ALIASES)) {
+    const escapedLegacy = legacyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const sRegex = new RegExp(`(\\.s\\(["'])${escapedLegacy}(["']\\))`, 'gi');
+    result = result.replace(sRegex, (_, prefix, suffix) => `${prefix}${canonicalName}${suffix}`);
+
+    const soundRegex = new RegExp(`(sound\\(["'])${escapedLegacy}(["']\\))`, 'gi');
+    result = result.replace(soundRegex, (_, prefix, suffix) => `${prefix}${canonicalName}${suffix}`);
+  }
+  return result;
+}
+
 // Global AudioContext warning suppression
 let audioContextWarningSuppressed = false;
 let originalConsoleError = null;
@@ -311,6 +333,9 @@ class SoundManager {
     this.masterSlot = 'd0'; // Dedicated slot for master output
     this.trackedPatterns = new Map(); // elementId -> {pattern, gain, pan, muted, soloed}
     this.masterActive = false; // Is master pattern playing
+    this.masterPlaybackStartTime = null;
+    this.masterPlaybackSpeed = 1;
+    this.masterPlaybackTempo = this.currentTempo;
     
     // Audio export state
     this.mediaRecorder = null;
@@ -975,6 +1000,13 @@ class SoundManager {
       // Set default values
       const gainValue = this.elementGainValues.get(elementId) || 0.8;
       const panValue = this.elementPanValues.get(elementId) || 0;
+
+      // Store nodes before wiring them so intercepted connections don't recurse
+      this.elementGainNodes.set(elementId, gainNode);
+      this.elementPanNodes.set(elementId, panNode);
+      this.elementAnalysers.set(elementId, analyser);
+      this.elementGainValues.set(elementId, gainValue);
+      this.elementPanValues.set(elementId, panValue);
       
       gainNode.gain.value = gainValue * this.volume;
       panNode.pan.value = panValue;
@@ -987,12 +1019,6 @@ class SoundManager {
       // Connect analyser to master so the chain is complete
       analyser.connect(this.masterPanNode || this.gainNode);
       
-      this.elementGainNodes.set(elementId, gainNode);
-      this.elementPanNodes.set(elementId, panNode);
-      this.elementAnalysers.set(elementId, analyser);
-      this.elementGainValues.set(elementId, gainValue);
-      this.elementPanValues.set(elementId, panValue);
-
       console.log(`🎚️ Created element audio chain for ${elementId}: gain -> pan -> analyser -> master (total analysers: ${this.elementAnalysers.size})`);
 
       // Reset warning flag now that at least one analyser exists
@@ -1081,6 +1107,9 @@ class SoundManager {
     
     // Clean up any double dots again
     patternToEval = patternToEval.replace(/\.\.+/g, '.').trim();
+
+    // Normalize legacy synth names to their canonical counterparts
+    patternToEval = replaceSynthAliasesInPattern(patternToEval);
     
     
     // Validate pattern after processing
@@ -3076,8 +3105,34 @@ class SoundManager {
       return;
     }
 
+    const sampleSource = (() => {
+      if (customConfig && typeof customConfig.sampleUrl === 'string' && customConfig.sampleUrl.trim() !== '') {
+        return customConfig.sampleUrl.trim();
+      }
+      if (elementConfig && elementConfig.audioFile && typeof elementConfig.audioFile === 'string' && elementConfig.audioFile.trim() !== '') {
+        return elementConfig.audioFile.trim();
+      }
+      return null;
+    })();
+
+    if (sampleSource) {
+      try {
+        const initialized = await this.initialize();
+        if (!initialized) {
+          console.warn('⚠️ Audio engine not fully initialized; attempting custom sample playback anyway.');
+        }
+      } catch (error) {
+        console.warn('⚠️ Unable to initialize audio engine for custom sample playback:', error);
+      }
+
+      this.stopSound(elementId);
+
+      console.log(`🔊 Playing custom sample for ${elementId}`);
+      this.playAudioFile(elementId, sampleSource);
+      return;
+    }
+
     // Use custom config if available, otherwise fall back to default config
-    const config = customConfig || elementConfig;
     let pattern = customConfig?.pattern !== undefined ? customConfig.pattern : elementConfig?.pattern;
     const type = elementConfig?.type || 'strudel'; // Default to strudel
 
@@ -3349,6 +3404,19 @@ class SoundManager {
   async setTempo(bpm) {
     // Store current tempo
     this.currentTempo = bpm;
+    this.masterPlaybackTempo = bpm;
+    const newSpeed = Number.isFinite(bpm) && bpm > 0 ? bpm / 120 : 1;
+    if (this.masterActive && this.masterPlaybackStartTime != null) {
+      const audioContext = this.audioContext;
+      const nowSeconds = audioContext ? audioContext.currentTime : performance.now() / 1000;
+      const oldSpeed = this.masterPlaybackSpeed || 1;
+      const elapsed = Math.max(0, nowSeconds - this.masterPlaybackStartTime);
+      const phase = oldSpeed > 0 ? (elapsed * oldSpeed) % 1 : 0;
+      this.masterPlaybackSpeed = newSpeed > 0 ? newSpeed : 1;
+      this.masterPlaybackStartTime = nowSeconds - (phase / this.masterPlaybackSpeed);
+    } else {
+      this.masterPlaybackSpeed = newSpeed > 0 ? newSpeed : 1;
+    }
     
     if (!window.strudel || !window.strudel.evaluate) {
       console.warn('⚠️ Strudel not loaded yet - cannot set tempo');
@@ -4266,8 +4334,10 @@ class SoundManager {
     
     // Built-in synth waveforms (used with .s() modifier)
     const builtInSynthWaveforms = [
-      'casio', 'insect', 'wind', 'jazz', 'metal', 'east', 'crow', 'space', 'numbers',
-      'sawtooth', 'sine', 'square', 'triangle', 'saw', 'saw2', 'saw3', 'saw4', 'saw8'
+      'casio', 'insect', 'wind', 'wood', 'metal', 'east', 'crow', 'space', 'numbers',
+      'piano', 'supersaw', 'gtr', 'folkharp',
+      'sawtooth', 'sine', 'square', 'triangle', 'saw', 'saw2', 'saw3', 'saw4', 'saw8',
+      'superpiano', 'jazz'
     ];
     
     // Check if this is a local custom drum bank
@@ -4539,6 +4609,21 @@ class SoundManager {
     return { success: false, reason: 'Element not tracked in master' };
   }
 
+  formatMasterPatternWithTempoComment(pattern) {
+    if (!pattern || typeof pattern !== 'string' || pattern.trim() === '') {
+      return pattern;
+    }
+
+    const tempo = this.currentTempo || 120;
+    const tempoPrefix = '// Controls Selected Tempo:';
+    const filteredLines = pattern
+      .split('\n')
+      .filter(line => !line.trim().startsWith(tempoPrefix));
+    const cleanedPattern = filteredLines.join('\n').trimEnd();
+
+    return `${cleanedPattern}\n\n${tempoPrefix} ${tempo} BPM`;
+  }
+
   /**
    * Update master pattern by combining all tracked patterns
    */
@@ -4603,6 +4688,9 @@ class SoundManager {
         }
         
         let needsWrapping = false;
+
+        // Normalize synth aliases to ensure consistency across master pattern
+        patternCode = replaceSynthAliasesInPattern(patternCode);
         
         // Add gain/pan modifiers to pattern string for display purposes
         // The actual gain/pan control is done via Web Audio API nodes for real-time response
@@ -4676,6 +4764,10 @@ class SoundManager {
         }
       }
       
+      if (this.masterPattern && this.masterPattern.trim() !== '') {
+        this.masterPattern = this.formatMasterPatternWithTempoComment(this.masterPattern);
+      }
+
       // Global settings now applied to the entire stack (or single pattern)
       // Note: Tempo is NOT automatically applied - users can manually add .fast() or .slow()
       console.log(`🎛️ Applied global settings to master pattern (Key: ${this.currentKey}, Time Sig: ${this.currentTimeSignature})`);
@@ -4797,6 +4889,7 @@ class SoundManager {
           return { success: false, error: 'Master pattern is empty' };
         }
         
+        patternToEval = replaceSynthAliasesInPattern(patternToEval);
         patternToEval = this.applyVisualizerTargetsToPattern(patternToEval);
         
         // Normalize quotes as a final safety measure before evaluation
@@ -4869,6 +4962,11 @@ class SoundManager {
           await window.strudel.scheduler.start();
         }
         
+        const nowSeconds = this.audioContext ? this.audioContext.currentTime : performance.now() / 1000;
+        this.masterPlaybackStartTime = nowSeconds;
+        this.masterPlaybackTempo = this.currentTempo || 120;
+        const speedMultiplier = this.masterPlaybackTempo / 120;
+        this.masterPlaybackSpeed = Number.isFinite(speedMultiplier) && speedMultiplier > 0 ? speedMultiplier : 1;
         this.masterActive = true;
         console.log(`✅ Master pattern playing on ${this.masterSlot} (volume/pan/mute via Web Audio API)`);
         console.log(`🔊 Audio context state: ${this.audioContext?.state || 'unknown'}`);
@@ -4920,6 +5018,7 @@ class SoundManager {
           }
         }
         
+        this.masterPlaybackStartTime = null;
         this.masterActive = false;
         console.log(`✅ Master pattern stopped`);
         
@@ -4947,7 +5046,29 @@ class SoundManager {
    * Get the current master pattern code for display
    */
   getMasterPatternCode() {
+    if (this.masterPattern && this.masterPattern.trim() !== '') {
+      const tempoPrefix = '// Controls Selected Tempo:';
+      const hasTempoComment = this.masterPattern
+        .split('\n')
+        .some(line => line.trim().startsWith(tempoPrefix));
+      if (!hasTempoComment) {
+        this.masterPattern = this.formatMasterPatternWithTempoComment(this.masterPattern);
+      }
+    }
     return this.masterPattern;
+  }
+
+  isMasterActive() {
+    return !!this.masterActive;
+  }
+
+  getMasterPlaybackInfo() {
+    return {
+      isPlaying: !!this.masterActive,
+      startTime: this.masterPlaybackStartTime,
+      speed: this.masterPlaybackSpeed || 1,
+      tempo: this.masterPlaybackTempo || this.currentTempo || 120
+    };
   }
 
   /**
@@ -4957,7 +5078,11 @@ class SoundManager {
     try {
       console.log(`✏️ Setting master pattern code: ${code.substring(0, 100)}...`);
       
-      this.masterPattern = code;
+      if (code && code.trim() !== '') {
+        this.masterPattern = this.formatMasterPatternWithTempoComment(code);
+      } else {
+        this.masterPattern = '';
+      }
       
       // If master is active, update playback
       if (this.masterActive) {
