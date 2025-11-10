@@ -41,6 +41,28 @@ const DRUM_BANK_VALUES = new Set([
   'CasioRZ1'
 ]);
 
+const DRUM_BANK_DISPLAY_NAMES = {
+  RolandTR808: 'Roland TR-808',
+  RolandTR909: 'Roland TR-909',
+  RolandTR707: 'Roland TR-707',
+  RhythmAce: 'Rhythm Ace',
+  AkaiLinn: 'Akai Linn',
+  ViscoSpaceDrum: 'Visco Space Drum',
+  EmuSP1200: 'Emu SP-1200',
+  CasioRZ1: 'Casio RZ-1'
+};
+
+const getDrumBankDisplayName = (bank) => {
+  if (!bank) return '';
+  if (Object.prototype.hasOwnProperty.call(DRUM_BANK_DISPLAY_NAMES, bank)) {
+    return DRUM_BANK_DISPLAY_NAMES[bank];
+  }
+  return bank
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([A-Za-z])(\d+)/g, '$1 $2')
+    .trim();
+};
+
 const DRUM_GRID_ROWS = [
   { key: 'bd', label: 'BD', sample: 'bd' },
   { key: 'sn', label: 'SN', sample: 'sd' },
@@ -757,7 +779,13 @@ class InteractiveSoundApp {
       }
 
       if (isPlaying) {
-        this.startMasterHighlightLoop();
+        this.updateMasterPatternHighlights()
+          .catch(error => {
+            console.warn('⚠️ Could not refresh master highlight data on play start:', error);
+          })
+          .finally(() => {
+            this.startMasterHighlightLoop();
+          });
       } else {
         this.stopMasterHighlightLoop();
       }
@@ -1852,104 +1880,111 @@ class InteractiveSoundApp {
     
     console.log('📝 Final pattern to evaluate:', patternForEval);
     
-    const evalScript = `
-      (function(patternCode){
-        console.log('🔍 Inside eval function, patternCode:', patternCode);
-        try {
-          const pattern = eval(patternCode);
-          console.log('🔍 Pattern eval result:', typeof pattern, pattern);
-          if (!pattern || typeof pattern.queryArc !== 'function') {
-            console.warn('⚠️ Pattern did not return a valid Strudel pattern');
-            return JSON.stringify({ error: 'Pattern expression did not return a Strudel pattern.' });
-          }
-          const toNumber = (value) => {
-            if (value == null) return 0;
-            if (typeof value === 'number') return value;
-            if (typeof value.valueOf === 'function') {
-              const result = value.valueOf();
-              if (typeof result === 'number' && !Number.isNaN(result)) {
-                return result;
-              }
-            }
-            if (typeof value === 'object' && value !== null && 'n' in value && 'd' in value) {
-              const numerator = Number(value.n ?? 0);
-              const denominator = Number(value.d ?? 1);
-              return denominator !== 0 ? numerator / denominator : 0;
-            }
-            const coerced = Number(value);
-            return Number.isFinite(coerced) ? coerced : 0;
-          };
-          
-          const describeValue = (hapValue) => {
-            if (!hapValue) return null;
-            if (typeof hapValue === 'string') return hapValue;
-            if (hapValue.label) return hapValue.label;
-            if (hapValue.sample) return hapValue.sample;
-            if (hapValue.s) return hapValue.s;
-            if (hapValue.note) return hapValue.note;
-            if (hapValue.n) return hapValue.n;
-            if (hapValue.sound) return hapValue.sound;
-            if (hapValue.instrument) return hapValue.instrument;
-            return null;
-          };
-          
-          const haps = pattern.queryArc(0, 1) || [];
-          const data = haps.map((hap) => {
-            const part = hap?.part;
-            const whole = hap?.whole;
-            const begin = part ? toNumber(part.begin ?? part.start ?? 0) : toNumber(whole?.begin ?? 0);
-            let end = part ? toNumber(part.end ?? part.finish ?? part.begin ?? 0) : toNumber(whole?.end ?? whole?.begin ?? 0);
-            if (!Number.isFinite(end) || end < begin) {
-              end = begin;
-            }
-            const value = hap?.value ?? null;
-            const label = describeValue(value);
-            const velocity = value && typeof value === 'object' && value.velocity != null ? Number(value.velocity) : 1;
-            const gain = value && typeof value === 'object' && value.gain != null ? Number(value.gain) : 1;
-            const weight = (Number.isFinite(velocity) ? velocity : 1) * (Number.isFinite(gain) ? gain : 1);
-            return {
-              begin,
-              end,
-              endClipped: toNumber(hap?.endClipped ?? end),
-              wholeBegin: toNumber(whole?.begin ?? begin),
-              wholeEnd: toNumber(whole?.end ?? end),
-              label,
-              weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
-              color: value && typeof value === 'object' && value.color ? value.color : null,
-              tags: Array.isArray(hap?.tags) ? hap.tags : []
-            };
-          });
-          
-          return JSON.stringify({ events: data });
-        } catch (error) {
-          return JSON.stringify({ error: error?.message || String(error) });
+    const toNumber = (value) => {
+      if (value == null) return 0;
+      if (typeof value === 'number') return value;
+      if (typeof value.valueOf === 'function') {
+        const result = value.valueOf();
+        if (typeof result === 'number' && !Number.isNaN(result)) {
+          return result;
         }
-      })(${JSON.stringify(patternForEval)})
-    `;
+      }
+      if (typeof value === 'object' && value !== null && 'n' in value && 'd' in value) {
+        const numerator = Number(value.n ?? 0);
+        const denominator = Number(value.d ?? 1);
+        return denominator !== 0 ? numerator / denominator : 0;
+      }
+      const coerced = Number(value);
+      return Number.isFinite(coerced) ? coerced : 0;
+    };
     
-    let evaluationResult;
+    const describeValue = (hapValue) => {
+      if (!hapValue) return null;
+      if (typeof hapValue === 'string') return hapValue;
+      if (hapValue.label) return hapValue.label;
+      if (hapValue.sample) return hapValue.sample;
+      if (hapValue.s) return hapValue.s;
+      if (hapValue.note) return hapValue.note;
+      if (hapValue.n) return hapValue.n;
+      if (hapValue.sound) return hapValue.sound;
+      if (hapValue.instrument) return hapValue.instrument;
+      return null;
+    };
+    
+    let patternObject;
     try {
-      evaluationResult = await window.strudel.evaluate(evalScript);
-      console.log('🔍 Evaluation result:', evaluationResult);
+      patternObject = window.eval(patternForEval);
+      console.log('🔍 Evaluated pattern object:', patternObject);
     } catch (error) {
-      console.error('❌ Strudel evaluation error:', error);
-      return { error: error?.message || 'Strudel evaluation failed.' };
+      console.error('❌ Failed to evaluate pattern for punchcard:', error);
+      return { error: error?.message || 'Pattern evaluation failed.' };
     }
     
-    // Check if evaluationResult is undefined
-    if (evaluationResult === undefined || evaluationResult === null) {
-      console.warn('⚠️ Pattern assignment returned undefined:', evalScript.substring(0, 200));
-      console.warn('   This usually means the pattern is invalid or samples aren\'t loaded');
-      return { error: 'Pattern evaluation returned undefined. Pattern may be invalid.' };
+    if (!patternObject || typeof patternObject.queryArc !== 'function') {
+      console.warn('⚠️ Pattern did not return a valid Strudel pattern object');
+      return { error: 'Pattern expression did not return a Strudel pattern.' };
     }
     
-    let parsed;
+    let haps;
     try {
-      parsed = typeof evaluationResult === 'string' ? JSON.parse(evaluationResult) : evaluationResult;
-    } catch (parseError) {
-      console.error('❌ Failed to parse evaluation result:', parseError);
-      return { error: 'Failed to parse Strudel response.' };
+      haps = patternObject.queryArc(0, 1) || [];
+    } catch (error) {
+      console.error('❌ Failed to query pattern arc for punchcard:', error);
+      return { error: error?.message || 'Pattern queryArc failed.' };
     }
+    
+    const parsed = {
+      events: haps.map((hap) => {
+        const part = hap?.part;
+        const whole = hap?.whole;
+        const begin = part ? toNumber(part.begin ?? part.start ?? 0) : toNumber(whole?.begin ?? 0);
+        let end = part ? toNumber(part.end ?? part.finish ?? part.begin ?? 0) : toNumber(whole?.end ?? whole?.begin ?? 0);
+        if (!Number.isFinite(end) || end < begin) {
+          end = begin;
+        }
+        const value = hap?.value ?? null;
+        const label = describeValue(value);
+        const note = value && typeof value === 'object'
+          ? (value.note ?? value.n ?? null)
+          : null;
+        const sound = value && typeof value === 'object'
+          ? (value.sound ?? value.s ?? null)
+          : null;
+        const sample = value && typeof value === 'object'
+          ? (value.sample ?? null)
+          : null;
+        const instrument = value && typeof value === 'object'
+          ? (value.instrument ?? null)
+          : null;
+        const source = value && typeof value === 'object'
+          ? (value.source ?? value.path ?? null)
+          : null;
+        const rawString = typeof value === 'string' ? value : null;
+        const velocity = value && typeof value === 'object' && value.velocity != null ? Number(value.velocity) : 1;
+        const gain = value && typeof value === 'object' && value.gain != null ? Number(value.gain) : 1;
+        const weight = (Number.isFinite(velocity) ? velocity : 1) * (Number.isFinite(gain) ? gain : 1);
+        return {
+          begin,
+          end,
+          endClipped: toNumber(hap?.endClipped ?? end),
+          wholeBegin: toNumber(whole?.begin ?? begin),
+          wholeEnd: toNumber(whole?.end ?? end),
+          label,
+          weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
+          color: value && typeof value === 'object' && value.color ? value.color : null,
+          tags: Array.isArray(hap?.tags) ? hap.tags : [],
+          meta: {
+            label,
+            note,
+            sound,
+            sample,
+            instrument,
+            source,
+            rawString
+          }
+        };
+      })
+    };
     
     if (!parsed || parsed.error) {
       console.warn('⚠️ Parsed result has error:', parsed?.error);
@@ -2029,26 +2064,82 @@ class InteractiveSoundApp {
     const events = Array.isArray(punchcardData?.events) ? punchcardData.events : [];
 
     const labelBuckets = new Map();
+    const addEntryToBucket = (key, entry) => {
+      if (!key) return;
+      if (!labelBuckets.has(key)) {
+        labelBuckets.set(key, []);
+      }
+      labelBuckets.get(key).push(entry);
+    };
+
     locationEntries.forEach((entry) => {
       if (!entry.normalized) {
         return;
       }
-      if (!labelBuckets.has(entry.normalized)) {
-        labelBuckets.set(entry.normalized, []);
-      }
-      labelBuckets.get(entry.normalized).push(entry);
+      addEntryToBucket(entry.normalized, entry);
+
+      // Split on whitespace and punctuation to allow matching individual tokens
+      entry.normalized.split(/[\s,;:()[\]{}<>]+/).forEach((part) => {
+        const token = part.trim();
+        if (token && token.length <= entry.normalized.length) {
+          addEntryToBucket(token, entry);
+        }
+      });
     });
 
     const assignedEvents = events.map((event, index) => {
-      const normalizedLabel = (event?.label ?? '').toString().trim().toLowerCase();
+      const labelCandidates = new Set();
+      const addCandidate = (value) => {
+        if (typeof value === 'number') {
+          labelCandidates.add(String(value));
+        } else if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if (trimmed) {
+            labelCandidates.add(trimmed.toLowerCase());
+            labelCandidates.add(trimmed.replace(/['"]/g, '').trim().toLowerCase());
+            trimmed.split(/[:/\\\s]+/).forEach(part => {
+              const p = part.trim().toLowerCase();
+              if (p) {
+                labelCandidates.add(p);
+              }
+            });
+          }
+        } else if (Array.isArray(value)) {
+          value.forEach(item => addCandidate(item));
+        }
+      };
+
+      addCandidate(event?.label);
+      addCandidate(event?.meta?.label);
+      addCandidate(event?.meta?.sound);
+      addCandidate(event?.meta?.sample);
+      addCandidate(event?.meta?.instrument);
+      addCandidate(event?.meta?.source);
+      addCandidate(event?.meta?.rawString);
+      addCandidate(event?.meta?.note);
+
+      const normalizedLabel = Array.from(labelCandidates).find(Boolean) || '';
       let location = null;
 
       if (normalizedLabel) {
-        const bucket = labelBuckets.get(normalizedLabel);
-        if (bucket && bucket.length) {
-          location = bucket.shift();
-          if (location) {
+        for (const candidate of labelCandidates) {
+          if (!candidate) continue;
+          const bucket = labelBuckets.get(candidate);
+          if (!bucket || bucket.length === 0) {
+            continue;
+          }
+          let next = null;
+          while (bucket.length > 0) {
+            const entry = bucket.shift();
+            if (entry && !entry.used) {
+              next = entry;
+              break;
+            }
+          }
+          if (next) {
+            location = next;
             location.used = true;
+            break;
           }
         }
       }
@@ -3484,6 +3575,68 @@ class InteractiveSoundApp {
     const modal = document.getElementById('config-modal');
     if (!modal) return;
     
+    const bankSelect = document.getElementById('modal-pattern-bank');
+
+    const ensurePatternBankOptions = (selectedValue = bankSelect ? bankSelect.value : '') => {
+      if (!bankSelect) {
+        return;
+      }
+
+      const previousValue = bankSelect.value;
+      const targetValue = selectedValue != null ? selectedValue : previousValue;
+
+      let drumsGroup = Array.from(bankSelect.children).find(
+        (child) => child.tagName === 'OPTGROUP' && child.label && child.label.toLowerCase() === 'drums'
+      );
+
+      if (!drumsGroup) {
+        drumsGroup = document.createElement('optgroup');
+        drumsGroup.label = 'Drums';
+        bankSelect.insertBefore(drumsGroup, bankSelect.firstChild);
+      }
+
+      drumsGroup.innerHTML = '';
+
+      const defaultOption = document.createElement('option');
+      defaultOption.value = '';
+      defaultOption.textContent = 'Default';
+      drumsGroup.appendChild(defaultOption);
+
+      const sortedBanks = Array.from(DRUM_BANK_VALUES).sort((a, b) =>
+        getDrumBankDisplayName(a).localeCompare(getDrumBankDisplayName(b))
+      );
+
+      sortedBanks.forEach((bank) => {
+        const option = document.createElement('option');
+        option.value = bank;
+        option.textContent = getDrumBankDisplayName(bank);
+        drumsGroup.appendChild(option);
+      });
+
+      if (targetValue && targetValue !== '' && !DRUM_BANK_VALUES.has(targetValue)) {
+        const option = document.createElement('option');
+        option.value = targetValue;
+        option.textContent = getDrumBankDisplayName(targetValue);
+        drumsGroup.appendChild(option);
+      }
+
+      const availableValues = new Set(
+        Array.from(drumsGroup.children)
+          .filter((child) => child.tagName === 'OPTION')
+          .map((option) => option.value)
+      );
+
+      if (availableValues.has(targetValue)) {
+        bankSelect.value = targetValue;
+      } else if (availableValues.has(previousValue)) {
+        bankSelect.value = previousValue;
+      } else {
+        bankSelect.value = '';
+      }
+    };
+
+    ensurePatternBankOptions();
+    
     const drumGridSection = document.getElementById('modal-drum-grid-section');
     const drumGridTimesigLabel = document.getElementById('modal-drum-grid-timesig');
     const drumGridStepsContainers = {
@@ -3850,7 +4003,6 @@ class InteractiveSoundApp {
     };
     
     const updatePatternFromGrid = () => {
-      const bankSelect = document.getElementById('modal-pattern-bank');
       if (!drumGridSection || !drumGridState.active || !bankSelect) return;
       const metrics = getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
       const tokens = generateTokensFromGrid(metrics);
@@ -3880,7 +4032,6 @@ class InteractiveSoundApp {
     };
     
     const refreshDrumGridForCurrentState = () => {
-      const bankSelect = document.getElementById('modal-pattern-bank');
       if (!bankSelect) return;
       const bankValue = bankSelect.value;
       const isDrum = isDrumBankValue(bankValue);
@@ -3922,8 +4073,7 @@ class InteractiveSoundApp {
         if (!drumGridState.active || drumGridState.updatingFromGrid) {
           return;
         }
-        const currentBankSelect = document.getElementById('modal-pattern-bank');
-        if (!currentBankSelect || !isDrumBankValue(currentBankSelect.value)) {
+        if (!bankSelect || !isDrumBankValue(bankSelect.value)) {
           return;
         }
         const metrics = getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
@@ -3943,6 +4093,7 @@ class InteractiveSoundApp {
         setPatternEditorEnabled(event.target.checked);
         refreshDrumGridForCurrentState();
       });
+      bankSelect.dataset.listenerAttached = 'true';
     }
     
     this.applyTimeSignatureToDrumGrid = (timeSignature) => {
@@ -3991,8 +4142,11 @@ class InteractiveSoundApp {
       // Convert Strudel pattern to drum display if it's a drum pattern
       // Only set value if there's a user-added pattern (not auto-generated default), otherwise leave empty to show placeholder
       const patternField = document.getElementById('modal-pattern');
-      const bankSelect = document.getElementById('modal-pattern-bank');
-      bankSelect.value = savedConfig?.bank || '';
+      const savedBankValue = savedConfig?.bank || '';
+      ensurePatternBankOptions(savedBankValue);
+      if (bankSelect) {
+        bankSelect.value = savedBankValue;
+      }
       
       // Check if pattern is just an auto-generated default (not user-edited)
       const isAutoGeneratedDefault = rawPattern && (
@@ -4010,7 +4164,7 @@ class InteractiveSoundApp {
       } else {
         // No user-added pattern or just auto-generated default - leave empty and show placeholder if bank is selected
         setStrudelEditorValue('modal-pattern', '');
-        if (bankSelect.value && bankSelect.value !== '') {
+        if (savedBankValue) {
           patternField.placeholder = 'Drums and Percussion: s("bd sd rim cp hh oh cr rd ht mt lt sh cb tb perc misc fx"), Synths: note("c3 d3 [e3 f3]")';
         } else {
           patternField.placeholder = '';
@@ -4034,10 +4188,10 @@ class InteractiveSoundApp {
     }
 
     // Bank dropdown - load bank when changed
-    const bankSelect = document.getElementById('modal-pattern-bank');
-    if (bankSelect) {
+    if (bankSelect && !bankSelect.dataset.listenerAttached) {
       bankSelect.addEventListener('change', async (e) => {
         const bankValue = e.target.value;
+        ensurePatternBankOptions(bankValue);
         const elementId = this.currentEditingElementId;
         
         if (!elementId) return;
@@ -4539,7 +4693,7 @@ class InteractiveSoundApp {
         }
         const sampleUrl = document.getElementById('modal-sample-url').value.trim();
         const fileInput = document.getElementById('modal-sample-file');
-        const bankValue = document.getElementById('modal-pattern-bank').value;
+        const bankValue = bankSelect ? bankSelect.value : '';
         
         let finalSampleUrl = sampleUrl;
         

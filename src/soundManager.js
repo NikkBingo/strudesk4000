@@ -1087,7 +1087,12 @@ class SoundManager {
    * @param {string} elementId - Element ID for logging and gain/pan lookup
    * @returns {string|null} - Processed pattern string or null if invalid
    */
-  async processPattern(pattern, elementId) {
+  async processPattern(pattern, elementId, options = {}) {
+    const {
+      preserveBanks = false,
+      attemptBankLoad = false
+    } = options || {};
+
     if (!pattern || (typeof pattern !== 'string') || pattern.trim() === '') {
       return null;
     }
@@ -1139,11 +1144,31 @@ class SoundManager {
         const localFallbackBanks = ['RolandTR808', 'RolandTR909']; // Have local fallback in assets folder
         const builtInDrumBanks = ['RolandTR808', 'RolandTR909', 'RolandTR707', 'RhythmAce', 'AkaiLinn', 'ViscoSpaceDrum', 'EmuSP1200', 'CasioRZ1'];
         const isBuiltInBank = builtInDrumBanks.includes(strudelBankName);
+
+        let isLoaded = this.loadedBanks.has(strudelBankName) || isBuiltInBank;
+
+        if (!isLoaded && attemptBankLoad && typeof this.loadBank === 'function') {
+          try {
+            console.log(`[${elementId}] Attempting to load bank "${strudelBankName}" for pattern processing`);
+            const loadResult = await this.loadBank(strudelBankName);
+            if (loadResult) {
+              this.loadedBanks.add(strudelBankName);
+              isLoaded = true;
+              console.log(`[${elementId}] Bank "${strudelBankName}" loaded successfully for pattern processing`);
+            } else {
+              console.warn(`[${elementId}] Bank "${strudelBankName}" could not be loaded on demand`);
+            }
+          } catch (loadError) {
+            console.warn(`[${elementId}] Error loading bank "${strudelBankName}":`, loadError);
+          }
+        }
         
-        if (!this.loadedBanks.has(strudelBankName) && !isBuiltInBank) {
+        if (!isLoaded && !preserveBanks) {
           console.warn(`⚠️ Bank "${strudelBankName}" not loaded - removing .bank() modifier from pattern`);
           patternToEval = patternToEval.replace(new RegExp(`\\.bank\(["']${strudelBankName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']\)`, 'g'), '');
           hadUnloadedBank = true;
+        } else if (!isLoaded && preserveBanks) {
+          console.warn(`⚠️ Bank "${strudelBankName}" is not loaded but preserving .bank() for preview`);
         } else if (isBuiltInBank) {
           // Built-in drum banks (loaded from CDN or local fallback)
           console.log(`[${elementId}] Bank "${strudelBankName}" is built-in - keeping .bank() modifier`);
@@ -1157,7 +1182,7 @@ class SoundManager {
       patternToEval = patternToEval.replace(/\.+$/, '').trim();
       
       // If we removed banks and pattern is now invalid, return null
-      if (hadUnloadedBank && (!patternToEval || patternToEval.trim() === '')) {
+      if (hadUnloadedBank && !preserveBanks && (!patternToEval || patternToEval.trim() === '')) {
         console.warn(`⚠️ Pattern became empty after removing unloaded banks`);
         return null;
       }
@@ -5164,7 +5189,10 @@ class SoundManager {
       console.log(`🔍 Preview - Pattern type check: isNotePattern=${this.isNotePattern(pattern)}, contains s(${pattern.includes('s(')}, contains sound(${pattern.includes('sound(')}, contains note(${pattern.includes('note(')})`);
       
       // Use processPattern to get the same processing as playStrudelPattern
-      let processedPattern = await this.processPattern(pattern, elementId);
+      let processedPattern = await this.processPattern(pattern, elementId, {
+        preserveBanks: true,
+        attemptBankLoad: true
+      });
       
       if (!processedPattern) {
         console.error(`❌ Pattern processing failed for preview`);
