@@ -310,8 +310,9 @@ class SoundManager {
     // Current tempo (BPM) - defaults to 120
     this.currentTempo = 120;
     
-    // Current key - no default (user must select)
+    // Current key/scale - no default (user must select)
     this.currentKey = '';
+    this.currentScale = '';
     
     // Current time signature - no default (user must select)
     this.currentTimeSignature = '';
@@ -323,10 +324,10 @@ class SoundManager {
     // Master channel routing
     this.masterGainNode = null; // Master gain node - all channels route here
     this.masterPanNode = null; // Master pan node
-    this.masterVolume = 1.0; // Master volume (0-1)
+    this.masterVolume = 0.7; // Master volume (0-1)
     this.masterPan = 0; // Master pan (-1 to 1)
     this.masterMuted = false; // Master mute state
-    this.masterVolumeBeforeMute = 1.0; // Store volume before mute
+    this.masterVolumeBeforeMute = 0.7; // Store volume before mute
     
     // Master pattern system
     this.masterPattern = ''; // Combined pattern code
@@ -3470,7 +3471,7 @@ class SoundManager {
   setKey(key) {
     // Store current key (empty string means no key selected)
     this.currentKey = key || '';
-    
+
     if (this.currentKey) {
       console.log(`🎹 Key set to ${key}`);
     } else {
@@ -3485,6 +3486,24 @@ class SoundManager {
     // Update master pattern with new key (even if not actively playing)
     if (this.trackedPatterns.size > 0) {
       console.log(`🔄 Updating master with new key`);
+      this.updateMasterPattern();
+    }
+  }
+
+  /**
+   * Set the scale/mode
+   */
+  setScale(scale) {
+    this.currentScale = (scale || '').trim();
+
+    if (this.currentScale) {
+      console.log(`🎼 Scale set to ${this.currentScale}`);
+    } else {
+      console.log(`🎼 Scale cleared (no scale selected)`);
+    }
+
+    if (this.trackedPatterns.size > 0) {
+      console.log(`🔄 Updating master with new scale`);
       this.updateMasterPattern();
     }
   }
@@ -3516,10 +3535,82 @@ class SoundManager {
     }
   }
 
+  extractChannelNumber(elementId, fallbackIndex = 0) {
+    if (!elementId || typeof elementId !== 'string') {
+      return fallbackIndex + 1;
+    }
+    const match = elementId.match(/(\d+)$/);
+    if (match && match[1]) {
+      const parsed = parseInt(match[1], 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+    return fallbackIndex + 1;
+  }
+
+  formatNumberForPattern(value, precision = 6) {
+    if (!Number.isFinite(value)) {
+      return '0';
+    }
+    if (value === 0) {
+      return '0';
+    }
+    const fixed = value.toFixed(precision);
+    const trimmed = fixed
+      .replace(/(\.\d*?[1-9])0+$/, '$1')
+      .replace(/\.0+$/, '')
+      .replace(/^-0$/, '0');
+    return trimmed;
+  }
+
+  applyMasterMixModifiers(pattern) {
+    if (!pattern || typeof pattern !== 'string' || pattern.trim() === '') {
+      return pattern;
+    }
+
+    const modifiers = [];
+    if (Number.isFinite(this.masterVolume) && Math.abs(this.masterVolume - 1) > 1e-6) {
+      modifiers.push(`.gain(${this.formatNumberForPattern(this.masterVolume, 4)})`);
+    }
+
+    if (Number.isFinite(this.masterPan) && Math.abs(this.masterPan) > 1e-6) {
+      modifiers.push(`.pan(${this.formatNumberForPattern(this.masterPan, 4)})`);
+    }
+
+    const tempo = Number.isFinite(this.currentTempo) && this.currentTempo > 0 ? this.currentTempo : 120;
+    if (Math.abs(tempo - 120) > 1e-6) {
+      const cyclesPerMinute = tempo / 4;
+      modifiers.push(`.cpm(${this.formatNumberForPattern(cyclesPerMinute, 6)})`);
+    }
+
+    if (!modifiers.length) {
+      return pattern;
+    }
+
+    const commentMatch = pattern.match(/^(\s*\/\/[^\n]*\n)+/);
+    let prefix = '';
+    let body = pattern;
+    if (commentMatch) {
+      prefix = commentMatch[0];
+      body = pattern.slice(prefix.length);
+    }
+
+    const trailingWhitespaceMatch = body.match(/\s*$/);
+    const trailingWhitespace = trailingWhitespaceMatch ? trailingWhitespaceMatch[0] : '';
+    const trimmedBody = body.trim();
+    if (!trimmedBody) {
+      return pattern;
+    }
+
+    const wrappedBody = `(${trimmedBody})${modifiers.join('')}`;
+    return `${prefix}${wrappedBody}${trailingWhitespace}`;
+  }
+
   /**
    * Apply global control settings (tempo, key, time signature) to a pattern
    */
-    applyGlobalSettingsToPattern(pattern, alreadyWrapped = false, preserveStructure = false) {
+  applyGlobalSettingsToPattern(pattern, alreadyWrapped = false, preserveStructure = false) {
     if (!pattern || pattern === 'silence') {
       return pattern;
     }
@@ -3536,40 +3627,57 @@ class SoundManager {
     // It does NOT work with explicit note names like note("c3 e3 d3")
     // Check if pattern uses notes but NOT explicit note names with octaves
     const hasNoteFunction = /\b(note|n)\s*\(/.test(modifiedPattern);
-    const hasExplicitNotes = /\b(note|n)\s*\(\s*["'][a-g][#b]?\d/.test(modifiedPattern); // Matches note("c3", n("a4", etc.
+    const hasExplicitNotes = /\b(note|n)\s*\(\s*["'][a-g][#b]?\d/.test(modifiedPattern);
     const isNumericPattern = hasNoteFunction && !hasExplicitNotes;
-    
-    
-    // Only apply key if one is selected (not empty string)
-    if (this.currentKey && this.currentKey.trim() !== '' && isNumericPattern) {
+
+    const hasKey = this.currentKey && this.currentKey.trim() !== '';
+    const selectedScale = this.currentScale && this.currentScale.trim() !== '' ? this.currentScale.trim() : '';
+    let rootNote = '';
+    let defaultScaleFromKey = '';
+
+    if (hasKey) {
       const keyLower = this.currentKey.toLowerCase();
-      
-      // Determine if it's minor or major
-      let scaleName, rootNote;
       if (keyLower.includes('m') && !keyLower.includes('major')) {
-        // Minor key (e.g., "Am", "Dm")
-        rootNote = keyLower.replace('m', '');
-        scaleName = 'minor';
+        rootNote = keyLower.replace('m', '').trim();
+        defaultScaleFromKey = 'minor';
       } else {
-        // Major key (e.g., "C", "D", "G")
         rootNote = keyLower.replace('major', '').trim();
-        scaleName = 'major';
+        defaultScaleFromKey = 'major';
       }
-      
-      // Apply scale to the pattern
-      if (needsWrapping) {
-        modifiedPattern = `${modifiedPattern}.scale('${rootNote}:${scaleName}')`;
-      } else {
-        modifiedPattern = `(${modifiedPattern}).scale('${rootNote}:${scaleName}')`;
-        needsWrapping = true;
+      if (!rootNote) {
+        rootNote = keyLower.trim();
       }
-      console.log(`  🎹 Applied key: ${this.currentKey} (${rootNote}:${scaleName} scale)`);
-    } else if (this.currentKey && this.currentKey.trim() !== '' && hasExplicitNotes) {
-      console.log(`  ⏭️  Skipped key for explicit note pattern (use numeric n() for key changes)`);
-    } else if (this.currentKey && this.currentKey.trim() !== '' && !hasNoteFunction) {
-      console.log(`  ⏭️  Skipped key for non-note pattern (Key: ${this.currentKey})`);
-    } else if (!this.currentKey || this.currentKey.trim() === '') {
-      console.log(`  ⏭️  No key selected - skipping scale application`);
+    }
+
+    if (isNumericPattern) {
+      let scaleIdentifier = '';
+      let appliedScaleName = '';
+
+      if (hasKey) {
+        const scaleName = selectedScale || defaultScaleFromKey || 'major';
+        appliedScaleName = scaleName;
+        const root = rootNote || this.currentKey.trim().toLowerCase();
+        scaleIdentifier = root ? `${root}:${scaleName}` : scaleName;
+      } else if (selectedScale) {
+        appliedScaleName = selectedScale;
+        scaleIdentifier = selectedScale;
+      }
+
+      if (scaleIdentifier) {
+        if (needsWrapping) {
+          modifiedPattern = `${modifiedPattern}.scale('${scaleIdentifier}')`;
+        } else {
+          modifiedPattern = `(${modifiedPattern}).scale('${scaleIdentifier}')`;
+          needsWrapping = true;
+        }
+        console.log(`  🎼 Applied scale: ${scaleIdentifier}`);
+      } else if (hasKey || selectedScale) {
+        console.log(`  ⏭️  Skipped scale application (pattern not compatible with key/scale settings)`);
+      }
+    } else if (hasExplicitNotes && (hasKey || selectedScale)) {
+      console.log(`  ⏭️  Skipped scale for explicit note pattern (use numeric n() for scale/key changes)`);
+    } else if (!hasNoteFunction && (hasKey || selectedScale)) {
+      console.log(`  ⏭️  Skipped scale for non-note pattern (Key: ${this.currentKey || 'none'}, Scale: ${selectedScale || 'none'})`);
     }
 
     // 2. Time Signature (informational - affects pattern interpretation)
@@ -4658,12 +4766,15 @@ class SoundManager {
       
       const patterns = [];
       const patternComments = []; // Store comments for each pattern
+      const patternChannels = [];
       const hasSolo = soloedElements.size > 0;
-      let channelNumber = 0;
       
+      let iterationIndex = 0;
       for (const [elementId, trackData] of this.trackedPatterns.entries()) {
         const isMuted = mutedElements.has(elementId);
         const isSoloed = soloedElements.has(elementId);
+        const channelNumber = this.extractChannelNumber(elementId, iterationIndex);
+        iterationIndex += 1;
         
         // Skip if muted OR (solo exists and this track is not soloed)
         if (isMuted || (hasSolo && !isSoloed)) {
@@ -4744,34 +4855,37 @@ class SoundManager {
         // Note: Global settings (tempo, key, etc.) will be applied to the entire stack at the end
         // Not to individual patterns
         
-        channelNumber++;
         patterns.push(patternCode);
+        patternChannels.push(channelNumber);
         patternComments.push(`// Channel ${channelNumber}`);
         console.log(`  ✅ Added ${elementId}: ${patternCode.substring(0, 60)}...`);
       }
       
-      if (patterns.length === 0) {
+    if (patterns.length === 0) {
         this.masterPattern = '';
         console.log(`🔇 No active patterns - master pattern cleared`);
       } else if (patterns.length === 1) {
         // Single pattern - add comment
-        let singlePattern = `${patternComments[0]}\n${patterns[0]}`;
-        
-        // Apply global settings to the single pattern
-        singlePattern = this.applyGlobalSettingsToPattern(patterns[0], false);
-        this.masterPattern = `${patternComments[0]}\n${singlePattern}`;
+        let singlePatternBody = this.applyGlobalSettingsToPattern(patterns[0], false);
+        singlePatternBody = this.applyMasterMixModifiers(singlePatternBody);
+        const channelNumber = patternChannels[0] ?? 1;
+        const commentPrefix = `// Channel ${channelNumber}\n`;
+        this.masterPattern = `${commentPrefix}${singlePatternBody}`;
         console.log(`🎵 Master pattern (single): ${this.masterPattern.substring(0, 100)}...`);
       } else {
         // Multiple patterns - use stack() with comments and formatting
         // Build formatted pattern with comments and blank lines
         const formattedPatterns = patterns.map((pattern, index) => {
-          return `  ${patternComments[index]}\n  ${pattern}`;
+          const channelNumber = patternChannels[index] ?? (index + 1);
+          const comment = `// Channel ${channelNumber}`;
+          return `  ${comment}\n  ${pattern}`;
         }).join(',\n\n');
         
         let stackPattern = `stack(\n${formattedPatterns}\n)`;
         
         // Apply global settings to the entire stack
         stackPattern = this.applyGlobalSettingsToPattern(stackPattern, false);
+        stackPattern = this.applyMasterMixModifiers(stackPattern);
         this.masterPattern = stackPattern;
         
         // Debug: verify parentheses balance
@@ -4795,7 +4909,7 @@ class SoundManager {
 
       // Global settings now applied to the entire stack (or single pattern)
       // Note: Tempo is NOT automatically applied - users can manually add .fast() or .slow()
-      console.log(`🎛️ Applied global settings to master pattern (Key: ${this.currentKey}, Time Sig: ${this.currentTimeSignature})`);
+      console.log(`🎛️ Applied global settings to master pattern (Key: ${this.currentKey || 'none'}, Scale: ${this.currentScale || (this.currentKey ? 'derived' : 'none')}, Time Sig: ${this.currentTimeSignature || 'none'}, Volume: ${this.formatNumberForPattern(this.masterVolume, 4)}, Pan: ${this.formatNumberForPattern(this.masterPan, 4)}, Tempo: ${this.currentTempo || 120} BPM)`);
       
       
       // If master is active, update the playing pattern

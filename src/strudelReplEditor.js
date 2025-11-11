@@ -432,10 +432,8 @@ export function insertStrudelEditorSnippet(textareaOrId, snippet, options = {}) 
     return;
   }
 
-  const autoCursorOffset =
-    typeof options.cursorOffset === 'number'
-      ? options.cursorOffset
-      : (snippet.endsWith('()') || snippet.endsWith('{}') ? 1 : 0);
+  const requestedCursorOffset =
+    typeof options.cursorOffset === 'number' ? options.cursorOffset : null;
 
   const editor = getStrudelEditor(textareaOrId);
   if (editor) {
@@ -445,10 +443,27 @@ export function insertStrudelEditorSnippet(textareaOrId, snippet, options = {}) 
     const from = selection.from;
     const to = selection.to;
 
+    const finalSnippet = prepareSnippetWithDot(snippet, () => {
+      let pos = from;
+      while (pos > 0) {
+        const ch = state.doc.sliceString(pos - 1, pos);
+        pos -= 1;
+        if (!/\s/.test(ch)) {
+          return ch;
+        }
+      }
+      return '';
+    });
+
+    const autoCursorOffset =
+      requestedCursorOffset !== null
+        ? requestedCursorOffset
+        : (finalSnippet.endsWith('()') || finalSnippet.endsWith('{}') ? 1 : 0);
+
     view.dispatch({
-      changes: { from, to, insert: snippet },
+      changes: { from, to, insert: finalSnippet },
       selection: EditorSelection.cursor(
-        Math.max(from + snippet.length - autoCursorOffset, 0)
+        Math.max(from + finalSnippet.length - autoCursorOffset, 0)
       ),
       scrollIntoView: true
     });
@@ -477,14 +492,59 @@ export function insertStrudelEditorSnippet(textareaOrId, snippet, options = {}) 
 
   const before = textarea.value.slice(0, start);
   const after = textarea.value.slice(end);
-  textarea.value = `${before}${snippet}${after}`;
 
-  const cursorPos = Math.max(start + snippet.length - autoCursorOffset, 0);
+  const finalSnippet = prepareSnippetWithDot(snippet, () => {
+    let pos = start;
+    while (pos > 0) {
+      const ch = textarea.value.charAt(pos - 1);
+      pos -= 1;
+      if (!/\s/.test(ch)) {
+        return ch;
+      }
+    }
+    return '';
+  });
+
+  textarea.value = `${before}${finalSnippet}${after}`;
+
+  const autoCursorOffset =
+    requestedCursorOffset !== null
+      ? requestedCursorOffset
+      : (finalSnippet.endsWith('()') || finalSnippet.endsWith('{}') ? 1 : 0);
+
+  const cursorPos = Math.max(start + finalSnippet.length - autoCursorOffset, 0);
   if (typeof textarea.setSelectionRange === 'function') {
     textarea.setSelectionRange(cursorPos, cursorPos);
   }
 
   textarea.dispatchEvent(new Event('input', { bubbles: true }));
   textarea.focus();
+}
+
+function prepareSnippetWithDot(snippet, getPrecedingChar) {
+  if (!snippet) {
+    return snippet;
+  }
+
+  const trimmedSnippet = snippet.trimStart();
+  if (trimmedSnippet.startsWith('.') || /^\s/.test(snippet)) {
+    return snippet;
+  }
+
+  const precedingChar =
+    typeof getPrecedingChar === 'function' ? getPrecedingChar() : '';
+  if (!precedingChar) {
+    return snippet;
+  }
+
+  if (precedingChar === '.' || /\s/.test(precedingChar)) {
+    return snippet;
+  }
+
+  if (/[\(\[\{,]/.test(precedingChar)) {
+    return snippet;
+  }
+
+  return `.${snippet}`;
 }
 

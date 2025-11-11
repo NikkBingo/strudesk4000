@@ -101,6 +101,7 @@ const BASE_PATTERN_SNIPPETS = [
   'note()',
   'sound()',
   'bank()',
+  'beat()',
   'vowel()',
   'chord()',
   'voicing()',
@@ -112,12 +113,29 @@ const BASE_PATTERN_SNIPPETS = [
   'speed()',
   'slow()',
   'fast()',
+  'early()',
+  'late()',
+  'legato()',
+  'euclid()',
+  'euclidRot()',
+  'euclidLegato()',
+  'rev()',
+  'palindrome()',
+  'iter()',
+  'iterBack()',
+  'ply()',
   'range()',
+  'rangex()',
+  'range2()',
   'lpf()',
   'lpa()',
   'lpd()',
   'lps()',
   'lpq()',
+  'lpattack()',
+  'lpdecay()',
+  'lpsustain()',
+  'lprelease()',
   'orbit()',
   'postgain()',
   'irand()',
@@ -126,6 +144,7 @@ const BASE_PATTERN_SNIPPETS = [
   'hpq()',
   'bpf()',
   'bpg()',
+  'bpq()',
   'fancor()',
   'lpenv()',
   'ftype()',
@@ -133,7 +152,10 @@ const BASE_PATTERN_SNIPPETS = [
   'decay()',
   'sustain()',
   'release()',
+  'tremolo()',
   'resonance()',
+  'cutoff()',
+  'noise()',
   'tremolosync()',
   'tremoloskew()',
   'tremolodepth()',
@@ -142,12 +164,111 @@ const BASE_PATTERN_SNIPPETS = [
   'sometimes()',
   'stack()',
   'clip()',
+  'sub()',
+  'mul()',
+  'div()',
+  'floor()',
+  'ceil()',
+  'ratio()',
+  'as()',
+  'saw()',
+  'sine()',
+  'cosine()',
+  'tri()',
+  'square()',
+  'rand()',
+  'saw2()',
+  'sine2()',
+  'cosine2()',
+  'tri2()',
+  'square2()',
+  'rand2()',
+  'perlin()',
+  'brand()',
+  'brandBy()',
+  'mouseX()',
+  'mouseY()',
+  'choose()',
+  'wchoose()',
+  'chooseCycles()',
+  'wchooseCycles()',
+  'degradeBy()',
+  'degrade()',
+  'undegradeBy()',
+  'undegrade()',
+  'sometimesBy()',
+  'sometimes()',
+  'someCyclesBy()',
+  'someCycles()',
+  'often()',
+  'rarely()',
+  'almostNever()',
+  'almostAlways()',
+  'never()',
+  'always()',
+  'lastOf()',
+  'firstOf()',
+  'when()',
+  'chunk()',
+  'chunkBack()',
+  'fastChunk()',
+  'arp()',
+  'arpWith()',
+  'struct()',
+  'mask()',
+  'reset()',
+  'restart()',
+  'hush()',
+  'invert()',
+  'pick()',
+  'pickmod()',
+  'pickF()',
+  'pickmodF()',
+  'pickRestart()',
+  'pickmodRestart()',
+  'pickReset()',
+  'pickmodReset()',
+  'inhabit()',
+  'inhabitmod()',
+  'squeeze()',
+  'superimpose()',
+  'layer()',
+  'off()',
+  'echo()',
+  'echoWith()',
+  'transpose()',
+  'scaleTranspose()',
+  'rootNotes()',
+  'pace()',
+  'stepcat()',
+  'stepalt()',
+  'expand()',
+  'contract()',
+  'extend()',
+  'take()',
+  'drop()',
+  'polymeter()',
+  'shrink()',
+  'grow()',
+  'tour()',
+  'zip()',
   'vib()',
+  'vibmod()',
   'add()',
   'anchor()',
   'dict()',
   'penv()',
   'segment()',
+  'compress()',
+  'zoom()',
+  'linger()',
+  'fastGap()',
+  'inside()',
+  'outside()',
+  'cpm()',
+  'ribbon()',
+  'swingBy()',
+  'swing()',
   'patt()',
   'dec()',
   'mode()',
@@ -158,7 +279,24 @@ const BASE_PATTERN_SNIPPETS = [
   'pdecay()',
   'prelease()',
   'pcurve()',
+  'panchor()',
   'velocity()',
+  'fm()',
+  'fmh()',
+  'fmattack()',
+  'fmdecay()',
+  'fmsustain()',
+  'fmenv()',
+  'zrand()',
+  'curve()',
+  'slide()',
+  'deltaSlide()',
+  'zmod()',
+  'zcrush()',
+  'zdelay()',
+  'pitchJump()',
+  'pitchJumpTime()',
+  'lfo()',
   'compressor()',
   'control()',
   'ccn()',
@@ -184,6 +322,7 @@ const BASE_PATTERN_SNIPPETS = [
   'crush()',
   'distort()',
   'delay()',
+  'delaytime()',
   'delayfeedback()',
   'room()',
   'roomsize()',
@@ -200,11 +339,468 @@ const BASE_PATTERN_SNIPPETS = [
   'duckdepth()'
 ];
 
+const PINNED_PATTERN_SNIPPETS = ['stack()', 'vowel()', 'beat()', 'bank()', 'sound()', 'chord()', 'note()'];
+
+const SYNTH_VARIANT_SNIPPETS = [
+  'sound("sawtooth")',
+  'sound("square")',
+  'sound("triangle")',
+  'sound("sine")',
+  'sound("white")',
+  'sound("pink")',
+  'sound("brown")'
+];
+
+const CORE_STYLE_KEYWORDS = ['beat', 'chord', 'note', 'sound', 'stack', 'vowel'];
+const SOUND_COLOR_CLASS_MAP = new Map([
+  ['sound("brown")', 'pattern-snippet-tag-sound-brown'],
+  ['sound("pink")', 'pattern-snippet-tag-sound-pink'],
+  ['sound("white")', 'pattern-snippet-tag-sound-white']
+]);
+
+const DEFAULT_OPEN_SNIPPET_GROUP_IDS = new Set(['core']);
+const snippetGroupOpenState = new Map();
+
+const PATTERN_SNIPPET_GROUPS = [
+  {
+    id: 'core',
+    order: 0,
+    label: 'Core',
+    heading: 'Core',
+    matcher: (key) => ['stack', 'vowel', 'beat', 'bank', 'sound', 'chord', 'note'].includes(key),
+    className: 'snippet-group-core'
+  },
+  {
+    id: 'amplitude-modulation',
+    order: 1,
+    label: 'Amplitude Modulation',
+    heading: 'Amplitude Modulation',
+    matcher: (key) => ['tremolo', 'tremolosync', 'tremolodepth', 'tremoloskew', 'tremolophase', 'tremoloshape'].includes(key),
+    className: 'snippet-group-amplitude-modulation'
+  },
+  {
+    id: 'amplitude-envelope',
+    order: 2,
+    label: 'Amplitude Envelope',
+    heading: 'Amplitude Envelope',
+    matcher: (key) => ['attack', 'decay', 'sustain', 'release', 'adsr'].includes(key),
+    className: 'snippet-group-amplitude-envelope'
+  },
+  {
+    id: 'filter-envelope',
+    order: 3,
+    label: 'Filter Envelope',
+    heading: 'Filter Envelope',
+    matcher: (key) => ['lpattack', 'lpdecay', 'lpsustain', 'lprelease', 'lpenv'].includes(key),
+    className: 'snippet-group-filter-envelope'
+  },
+  {
+    id: 'pitch-envelope',
+    order: 4,
+    label: 'Pitch Envelope',
+    heading: 'Pitch Envelope',
+    matcher: (key) => ['pattack', 'pdecay', 'prelease', 'penv', 'pcurve', 'panchor'].includes(key),
+    className: 'snippet-group-pitch-envelope'
+  },
+  {
+    id: 'dynamics',
+    order: 5,
+    label: 'Dynamics',
+    heading: 'Dynamics',
+    matcher: (key) => ['gain', 'velocity', 'compressor', 'postgain', 'xfade'].includes(key),
+    className: 'snippet-group-dynamics'
+  },
+  {
+    id: 'panning',
+    order: 6,
+    label: 'Panning',
+    heading: 'Panning',
+    matcher: (key) => ['jux', 'juxby', 'pan'].includes(key),
+    className: 'snippet-group-panning'
+  },
+  {
+    id: 'waveshaping',
+    order: 7,
+    label: 'Waveshaping',
+    heading: 'Waveshaping',
+    matcher: (key) => ['coarse', 'crush', 'distort'].includes(key),
+    className: 'snippet-group-waveshaping'
+  },
+  {
+    id: 'global-effects',
+    order: 8,
+    label: 'Global Effects',
+    heading: 'Global Effects',
+    matcher: (key) => ['orbit'].includes(key),
+    className: 'snippet-group-global-effects'
+  },
+  {
+    id: 'delay',
+    order: 9,
+    label: 'Delay',
+    heading: 'Delay',
+    matcher: (key) => ['delay', 'delaytime', 'delayfeedback'].includes(key),
+    className: 'snippet-group-delay'
+  },
+  {
+    id: 'reverb',
+    order: 10,
+    label: 'Reverb',
+    heading: 'Reverb',
+    matcher: (key) => ['room', 'roomsize', 'roomfade', 'roomlp', 'roomdim', 'iresponse'].includes(key),
+    className: 'snippet-group-reverb'
+  },
+  {
+    id: 'phaser',
+    order: 11,
+    label: 'Phaser',
+    heading: 'Phaser',
+    matcher: (key) => ['phaser', 'phaserdepth', 'phasercenter', 'phasersweep'].includes(key),
+    className: 'snippet-group-phaser'
+  },
+  {
+    id: 'duck',
+    order: 12,
+    label: 'Duck',
+    heading: 'Duck',
+    matcher: (key) => ['duckorbit', 'duckattack', 'duckdepth'].includes(key),
+    className: 'snippet-group-duck'
+  },
+  {
+    id: 'filters-hp',
+    order: 5,
+    label: 'Filters · High-pass',
+    heading: 'Filters · High-pass',
+    matcher: (key) => key.startsWith('hp'),
+    className: 'snippet-group-filters-hp'
+  },
+  {
+    id: 'filters-bp',
+    order: 6,
+    label: 'Filters · Band-pass',
+    heading: 'Filters · Band-pass',
+    matcher: (key) => key.startsWith('bp'),
+    className: 'snippet-group-filters-bp'
+  },
+  {
+    id: 'filters-lp',
+    order: 7,
+    label: 'Filters · Low-pass',
+    heading: 'Filters · Low-pass',
+    matcher: (key) => key.startsWith('lp') || key === 'ftype',
+    className: 'snippet-group-filters-lp'
+  },
+  {
+    id: 'time',
+    order: 8,
+    label: 'Time Modifiers',
+    heading: 'Time Modifiers',
+    matcher: (key) =>
+      [
+        'slow',
+        'fast',
+        'early',
+        'late',
+        'clip',
+        'legato',
+        'euclid',
+        'euclidrot',
+        'euclidlegato',
+        'rev',
+        'palindrome',
+        'iter',
+        'iterback',
+        'ply',
+        'segment',
+        'compress',
+        'zoom',
+        'linger',
+        'fastgap',
+        'inside',
+        'outside',
+        'cpm',
+        'ribbon',
+        'swingby',
+        'swing'
+      ].includes(key),
+    className: 'snippet-group-time'
+  },
+  {
+    id: 'control-operators',
+    order: 9,
+    label: 'Control · Operators',
+    heading: 'Control Parameters · Operators',
+    matcher: (key) =>
+      ['add', 'sub', 'mul', 'div', 'floor', 'ceil', 'range', 'rangex', 'range2', 'ratio', 'as'].includes(key),
+    className: 'snippet-group-controls'
+  },
+  {
+    id: 'signals',
+    order: 10,
+    label: 'Signals',
+    heading: 'Signals',
+    matcher: (key) =>
+      [
+        'saw',
+        'sine',
+        'cosine',
+        'tri',
+        'square',
+        'rand',
+        'saw2',
+        'sine2',
+        'cosine2',
+        'tri2',
+        'square2',
+        'rand2',
+        'perlin',
+        'irand',
+        'brand',
+        'brandby',
+        'mousex',
+        'mousey'
+      ].includes(key),
+    className: 'snippet-group-signals'
+  },
+  {
+    id: 'visual-feedback',
+    order: 11,
+    label: 'Visual Feedback',
+    heading: 'Visual Feedback',
+    matcher: (key, snippet) => {
+      if (key === 'color' || key === 'markcss') {
+        return true;
+      }
+      if (!snippet || typeof snippet !== 'string') {
+        return false;
+      }
+      const normalized = snippet.toLowerCase();
+      return normalized.includes('_punchcard') ||
+        normalized.includes('_pianoroll') ||
+        normalized.includes('_scope') ||
+        normalized.includes('_spiral') ||
+        normalized.includes('_pitchwheel') ||
+        normalized.includes('_spectrum');
+    },
+    className: 'snippet-group-visual-feedback'
+  },
+  {
+    id: 'synths',
+    order: 12,
+    label: 'Synths',
+    heading: 'Synths',
+    matcher: (key, snippet) => {
+      if (key === 'sound') {
+        return typeof snippet === 'string' && snippet.includes('sound("');
+      }
+      return [
+        'decay',
+        'sustain',
+        'attack',
+        'release',
+        'cutoff',
+        'noise',
+        'vib',
+        'vibmod',
+        'fm',
+        'fmh',
+        'fmattack',
+        'fmdecay',
+        'fmsustain',
+        'fmenv',
+        'zrand',
+        'curve',
+        'slide',
+        'deltaslide',
+        'zmod',
+        'zcrush',
+        'zdelay',
+        'pitchjump',
+        'pitchjumptime',
+        'lfo',
+        'tremolo'
+      ].includes(key);
+    },
+    className: 'snippet-group-synths'
+  },
+  {
+    id: 'tonal',
+    order: 13,
+    label: 'Tonal Functions',
+    heading: 'Tonal Functions',
+    matcher: (key) => ['voicing', 'scale', 'transpose', 'scaletranspose', 'rootnotes'].includes(key),
+    className: 'snippet-group-tonal'
+  },
+  {
+    id: 'stepwise',
+    order: 14,
+    label: 'Stepwise Patterning',
+    heading: 'Stepwise Patterning',
+    matcher: (key) =>
+      [
+        'pace',
+        'stepcat',
+        'stepalt',
+        'expand',
+        'contract',
+        'extend',
+        'take',
+        'drop',
+        'polymeter',
+        'shrink',
+        'grow',
+        'tour',
+        'zip'
+      ].includes(key),
+    className: 'snippet-group-stepwise'
+  },
+  {
+    id: 'random',
+    order: 15,
+    label: 'Random Modifiers',
+    heading: 'Random Modifiers',
+    matcher: (key) =>
+      [
+        'choose',
+        'wchoose',
+        'choosecycles',
+        'wchoosecycles',
+        'degradeby',
+        'degrade',
+        'undegradeby',
+        'undegrade',
+        'sometimesby',
+        'sometimes',
+        'somecyclesby',
+        'somecycles',
+        'often',
+        'rarely',
+        'almostnever',
+        'almostalways',
+        'never',
+        'always'
+      ].includes(key),
+    className: 'snippet-group-random'
+  },
+  {
+    id: 'conditional',
+    order: 16,
+    label: 'Conditional Modifiers',
+    heading: 'Conditional Modifiers',
+    matcher: (key) =>
+      [
+        'lastof',
+        'firstof',
+        'when',
+        'chunk',
+        'chunkback',
+        'fastchunk',
+        'arp',
+        'arpwith',
+        'struct',
+        'mask',
+        'reset',
+        'restart',
+        'hush',
+        'invert',
+        'pick',
+        'pickmod',
+        'pickf',
+        'pickmodf',
+        'pickrestart',
+        'pickmodrestart',
+        'pickreset',
+        'pickmodreset',
+        'inhabit',
+        'inhabitmod',
+        'squeeze'
+      ].includes(key),
+    className: 'snippet-group-conditional'
+  },
+  {
+    id: 'accumulation',
+    order: 17,
+    label: 'Accumulation Modifiers',
+    heading: 'Accumulation Modifiers',
+    matcher: (key) => ['superimpose', 'layer', 'off', 'echo', 'echowith'].includes(key),
+    className: 'snippet-group-accumulation'
+  },
+  {
+    id: 'midi',
+    order: 18,
+    label: 'MIDI',
+    heading: 'MIDI',
+    matcher: (key) =>
+      key.includes('midi') ||
+      key.startsWith('ccn') ||
+      key.startsWith('ccv') ||
+      key === 'prognum' ||
+      key === 'sysex' ||
+      key === 'sysexid' ||
+      key === 'sysexdata' ||
+      key === 'control',
+    className: 'snippet-group-midi',
+    exclude: ['pianoroll']
+  },
+  {
+    id: 'device',
+    order: 19,
+    label: 'Device Motion',
+    heading: 'Device Motion',
+    matcher: (key) => ['orientation', 'acceleration', 'accelerate', 'accelerationx', 'accelerationy', 'accelerationz', 'rotationx', 'rotationy', 'rotationz'].some((token) => key.includes(token)),
+    className: 'snippet-group-device'
+  },
+  {
+    id: 'other',
+    order: Number.MAX_SAFE_INTEGER,
+    label: 'Other',
+    heading: 'Other',
+    matcher: () => true,
+    className: 'snippet-group-other'
+  }
+];
+
+const SNIPPET_GROUP_LOOKUP = PATTERN_SNIPPET_GROUPS.reduce((acc, group) => {
+  acc.set(group.id, group);
+  return acc;
+}, new Map());
+
 function getSnippetKey(snippet) {
   if (!snippet || typeof snippet !== 'string') return '';
   const cleaned = snippet.replace(/^[.]+/, '');
   const match = cleaned.match(/^([a-zA-Z0-9_]+)/);
   return (match ? match[1] : cleaned).toLowerCase();
+}
+
+function shouldUseCoreStyle(snippet) {
+  if (!snippet || typeof snippet !== 'string') {
+    return false;
+  }
+
+  if (PINNED_PATTERN_SNIPPETS.includes(snippet)) {
+    return true;
+  }
+
+  const normalized = snippet.toLowerCase();
+  return CORE_STYLE_KEYWORDS.some((keyword) => {
+    const dotPattern = `.${keyword}`;
+    const fnPattern = `${keyword}(`;
+    return normalized.includes(dotPattern) || normalized.includes(fnPattern);
+  });
+}
+
+function getCustomSnippetClass(snippet) {
+  if (!snippet || typeof snippet !== 'string') {
+    return '';
+  }
+  const normalized = snippet.replace(/^[.]+/, '').toLowerCase();
+  for (const [key, className] of SOUND_COLOR_CLASS_MAP.entries()) {
+    const normalizedKey = key.toLowerCase();
+    if (normalized === normalizedKey || normalized.includes(normalizedKey)) {
+      return className;
+    }
+  }
+  return '';
 }
 
 function htmlToPlainText(html) {
@@ -344,6 +940,166 @@ function buildSnippetDescription(referenceEntry) {
   return descriptions.join(', ');
 }
 
+let snippetTooltipElement = null;
+let snippetTooltipActiveButton = null;
+let snippetTooltipListenersAttached = false;
+
+function ensureSnippetTooltipElement() {
+  if (snippetTooltipElement && document.body.contains(snippetTooltipElement)) {
+    return snippetTooltipElement;
+  }
+
+  snippetTooltipElement = document.createElement('div');
+  snippetTooltipElement.id = 'pattern-snippet-tooltip';
+  snippetTooltipElement.className = 'pattern-snippet-tooltip';
+  snippetTooltipElement.setAttribute('role', 'tooltip');
+  snippetTooltipElement.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(snippetTooltipElement);
+
+  if (!snippetTooltipListenersAttached) {
+    snippetTooltipListenersAttached = true;
+    const handleGlobalHide = () => hideSnippetTooltip();
+    window.addEventListener('scroll', handleGlobalHide, true);
+    window.addEventListener('resize', handleGlobalHide, { passive: true });
+    document.addEventListener(
+      'keydown',
+      (event) => {
+        if (event.key === 'Escape') {
+          hideSnippetTooltip();
+        }
+      },
+      true
+    );
+  }
+
+  return snippetTooltipElement;
+}
+
+function hideSnippetTooltip(button = snippetTooltipActiveButton) {
+  if (!snippetTooltipElement) {
+    return;
+  }
+
+  snippetTooltipElement.classList.remove('visible');
+  snippetTooltipElement.style.display = 'none';
+  snippetTooltipElement.style.visibility = 'hidden';
+  snippetTooltipElement.innerHTML = '';
+  snippetTooltipElement.setAttribute('aria-hidden', 'true');
+
+  if (button && button instanceof HTMLElement) {
+    button.removeAttribute('aria-describedby');
+  }
+
+  if (snippetTooltipActiveButton && snippetTooltipActiveButton !== button) {
+    snippetTooltipActiveButton.removeAttribute('aria-describedby');
+  }
+
+  snippetTooltipActiveButton = null;
+}
+
+function showSnippetTooltip(button) {
+  if (!button || !(button instanceof HTMLElement) || !document.body.contains(button)) {
+    return;
+  }
+
+  const tooltipEl = ensureSnippetTooltipElement();
+
+  if (snippetTooltipActiveButton && snippetTooltipActiveButton !== button) {
+    hideSnippetTooltip(snippetTooltipActiveButton);
+  }
+
+  const title = button.dataset.tooltipTitle || button.textContent || '';
+  const description = button.dataset.tooltipDescription || '';
+  const params = button.dataset.tooltipParams || '';
+
+  tooltipEl.innerHTML = '';
+
+  if (title) {
+    const titleEl = document.createElement('div');
+    titleEl.className = 'pattern-snippet-tooltip-title';
+    titleEl.textContent = title;
+    tooltipEl.appendChild(titleEl);
+  }
+
+  if (description) {
+    const descEl = document.createElement('div');
+    descEl.className = 'pattern-snippet-tooltip-body';
+    description.split('\n').forEach((line, index) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return;
+      }
+      if (index > 0) {
+        descEl.appendChild(document.createElement('br'));
+      }
+      descEl.appendChild(document.createTextNode(trimmed));
+    });
+    if (descEl.childNodes.length > 0) {
+      tooltipEl.appendChild(descEl);
+    }
+  }
+
+  if (params) {
+    const paramsWrapper = document.createElement('div');
+    paramsWrapper.className = 'pattern-snippet-tooltip-params';
+    params.split('\n').forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return;
+      }
+      const paramLine = document.createElement('div');
+      paramLine.textContent = trimmed;
+      paramsWrapper.appendChild(paramLine);
+    });
+    if (paramsWrapper.childElementCount > 0) {
+      tooltipEl.appendChild(paramsWrapper);
+    }
+  }
+
+  tooltipEl.style.display = 'block';
+  tooltipEl.style.visibility = 'hidden';
+  tooltipEl.classList.remove('visible');
+
+  const buttonRect = button.getBoundingClientRect();
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+
+  const tooltipRect = tooltipEl.getBoundingClientRect();
+  const margin = 8;
+
+  let top = buttonRect.bottom + margin;
+  if (top + tooltipRect.height > viewportHeight - 12) {
+    const aboveTop = buttonRect.top - tooltipRect.height - margin;
+    if (aboveTop >= 12) {
+      top = aboveTop;
+    } else {
+      top = Math.max(12, viewportHeight - tooltipRect.height - 12);
+    }
+  }
+
+  let left = buttonRect.left + buttonRect.width / 2 - tooltipRect.width / 2;
+  const maxLeft = viewportWidth - tooltipRect.width - 12;
+  if (left > maxLeft) {
+    left = maxLeft;
+  }
+  if (left < 12) {
+    left = 12;
+  }
+
+  tooltipEl.style.left = `${Math.round(left)}px`;
+  tooltipEl.style.top = `${Math.round(top)}px`;
+  tooltipEl.style.visibility = 'visible';
+  tooltipEl.classList.add('visible');
+  tooltipEl.setAttribute('aria-hidden', 'false');
+
+  if (!tooltipEl.id) {
+    tooltipEl.id = 'pattern-snippet-tooltip';
+  }
+  button.setAttribute('aria-describedby', tooltipEl.id);
+
+  snippetTooltipActiveButton = button;
+}
+
 let patternSnippetLoadPromise = null;
 let patternSnippetCache = null;
 
@@ -401,22 +1157,105 @@ async function getPatternSnippets(patternForFilter = '') {
           snippetMap.set(key, `${entry.name}()`);
         });
 
-        const sortedSnippets = Array.from(snippetMap.entries())
-          .sort((a, b) => a[0].localeCompare(b[0]))
-          .map(([, snippet]) => snippet);
+        const referenceEntries = PATTERN_SNIPPET_GROUPS.reduce((acc, group) => {
+          acc.set(group.id, { snippets: [] });
+          return acc;
+        }, new Map());
 
-        patternSnippetCache = sortedSnippets;
-        return sortedSnippets;
+        const pinnedKeys = new Set(PINNED_PATTERN_SNIPPETS.map((snippet) => getSnippetKey(snippet)));
+        const pinnedMap = new Map();
+
+        Array.from(snippetMap.entries())
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .forEach(([key, snippet]) => {
+            const referenceEntry = referenceMap.get(key);
+            const matchedGroup =
+              PATTERN_SNIPPET_GROUPS.find((group) => {
+                if (group.exclude && group.exclude.includes(key)) {
+                  return false;
+                }
+                return group.matcher(key, snippet, referenceEntry);
+              }) || SNIPPET_GROUP_LOOKUP.get('other');
+
+            const groupData = referenceEntries.get(matchedGroup.id);
+            if (groupData) {
+              groupData.snippets.push({ snippet, groupId: matchedGroup.id, className: matchedGroup.className, heading: matchedGroup.heading });
+            }
+
+            if (pinnedKeys.has(key)) {
+              pinnedMap.set(key, { snippet, groupId: matchedGroup.id, className: matchedGroup.className, heading: matchedGroup.heading });
+            }
+          });
+
+        const orderedPinned = PINNED_PATTERN_SNIPPETS.map((snippet) => {
+          const key = getSnippetKey(snippet);
+          return pinnedMap.get(key) || { snippet, groupId: 'core', className: SNIPPET_GROUP_LOOKUP.get('core').className, heading: SNIPPET_GROUP_LOOKUP.get('core').heading };
+        })
+          .filter(Boolean)
+          .sort((a, b) => a.snippet.localeCompare(b.snippet));
+
+        const combined = [];
+        const seenGroups = new Set();
+
+        orderedPinned.forEach((entry) => {
+          const { snippet, groupId, className, heading } = entry;
+          combined.push({ snippet, groupId, className, heading });
+        });
+
+        const orderedGroups = [...PATTERN_SNIPPET_GROUPS].sort((a, b) => a.heading.localeCompare(b.heading));
+        orderedGroups.forEach((group) => {
+          const groupData = referenceEntries.get(group.id);
+          if (!groupData || !groupData.snippets.length) {
+            return;
+          }
+          if (!seenGroups.has(group.id)) {
+            seenGroups.add(group.id);
+          }
+          groupData.snippets
+            .slice()
+            .sort((a, b) => a.snippet.localeCompare(b.snippet))
+            .forEach(({ snippet, className, heading: groupHeading }) => {
+            const isPinned = PINNED_PATTERN_SNIPPETS.includes(snippet);
+            if (isPinned) {
+              return;
+            }
+            combined.push({ snippet, groupId: group.id, className, heading: groupHeading });
+          });
+        });
+
+        const synthGroup = SNIPPET_GROUP_LOOKUP.get('synths');
+        if (synthGroup) {
+          SYNTH_VARIANT_SNIPPETS.forEach((snippet) => {
+            if (combined.some((entry) => entry.snippet === snippet)) {
+              return;
+            }
+            combined.push({
+              snippet,
+              groupId: synthGroup.id,
+              className: synthGroup.className,
+              heading: synthGroup.heading
+            });
+          });
+        }
+
+        patternSnippetCache = combined;
+        return combined;
       })();
     }
     await patternSnippetLoadPromise;
   }
 
   const baseSnippets = patternSnippetCache || [];
-  const filtered = filterSnippetsForPattern(baseSnippets, normalizedPattern);
+  const filtered = filterSnippetsForPattern(
+    baseSnippets.map((entry) => entry.snippet),
+    normalizedPattern
+  );
+
+  const filteredEntries = baseSnippets.filter((entry) => filtered.includes(entry.snippet));
+
   lastPatternSnippetBase = normalizedPattern;
-  lastPatternSnippetResult = filtered;
-  return filtered;
+  lastPatternSnippetResult = filteredEntries;
+  return filteredEntries;
 }
 
 function normalizeSynthBankName(bankName) {
@@ -691,6 +1530,11 @@ class InteractiveSoundApp {
       console.log(`🎹 Key changed to: ${key}`);
     });
 
+    uiController.onUpdate('scale', (scale) => {
+      soundManager.setScale(scale);
+      console.log(`🎼 Scale changed to: ${scale || '(none)'}`);
+    });
+
     uiController.onUpdate('timeSignature', (timeSignature) => {
       this.currentTimeSignature = timeSignature || '4/4';
       this.currentTimeSignatureMetrics = getTimeSignatureMetrics(this.currentTimeSignature);
@@ -935,20 +1779,22 @@ class InteractiveSoundApp {
     // Setup master volume slider
     if (masterVolumeSlider) {
       const initialVolume = parseFloat(masterVolumeSlider.value);
-      // Initialize master volume - will be set when audio context is ready
-      soundManager.masterVolume = initialVolume / 100; // Store value for later
+      soundManager.masterVolume = initialVolume / 100;
+      if (masterVolumeValue) {
+        masterVolumeValue.textContent = Math.round(initialVolume);
+      }
       console.log(`🎚️ Master volume slider initialized: ${initialVolume}% (${soundManager.masterVolume})`);
 
       masterVolumeSlider.addEventListener('input', (e) => {
         const value = parseFloat(e.target.value);
         console.log(`🎚️ Master volume slider changed: ${value}%`);
-        soundManager.setMasterVolume(value / 100); // Convert 0-100 to 0-1
+        soundManager.setMasterVolume(value / 100);
         if (masterVolumeValue) {
           masterVolumeValue.textContent = Math.round(value);
         }
+        soundManager.updateMasterPattern(this.soloedElements, this.mutedElements);
       });
-      
-      // Try to set initial value if audio is already initialized
+
       if (soundManager.isAudioReady() && soundManager.masterGainNode) {
         console.log(`🎚️ Audio already ready, setting master volume to ${initialVolume}%`);
         soundManager.setMasterVolume(initialVolume / 100);
@@ -959,11 +1805,12 @@ class InteractiveSoundApp {
       console.warn('⚠️ Master volume slider not found in DOM');
     }
 
-    // Setup master pan slider
     if (masterPanSlider) {
       const initialPan = parseFloat(masterPanSlider.value);
-      // Initialize master pan - will be set when audio context is ready
-      soundManager.masterPan = initialPan; // Store value for later
+      soundManager.masterPan = initialPan;
+      if (masterPanValue) {
+        masterPanValue.textContent = initialPan.toFixed(2);
+      }
       console.log(`🎚️ Master pan slider initialized: ${initialPan}`);
 
       masterPanSlider.addEventListener('input', (e) => {
@@ -973,9 +1820,9 @@ class InteractiveSoundApp {
         if (masterPanValue) {
           masterPanValue.textContent = value.toFixed(2);
         }
+        soundManager.updateMasterPattern(this.soloedElements, this.mutedElements);
       });
-      
-      // Try to set initial value if audio is already initialized
+
       if (soundManager.isAudioReady() && soundManager.masterPanNode) {
         console.log(`🎚️ Audio already ready, setting master pan to ${initialPan}`);
         soundManager.setMasterPan(initialPan);
@@ -995,8 +1842,6 @@ class InteractiveSoundApp {
         masterMuteBtn.title = isMuted ? 'Unmute Master' : 'Mute Master';
         console.log(`🎚️ Master mute toggled: ${isMuted ? 'MUTED' : 'UNMUTED'}`);
       });
-    } else {
-      console.warn('⚠️ Master mute button not found in DOM');
     }
     
     // Setup master pattern controls
@@ -2036,20 +2881,46 @@ class InteractiveSoundApp {
     }
 
     const miniLocations = Array.isArray(transpiled?.miniLocations) ? transpiled.miniLocations : [];
-    const locationEntries = miniLocations
-      .map((entry) => {
-        if (!Array.isArray(entry) || entry.length < 2) {
-          return null;
-        }
-        const [from, to] = entry;
-        if (typeof from !== 'number' || typeof to !== 'number' || !Number.isFinite(from) || !Number.isFinite(to) || to <= from) {
-          return null;
-        }
-        const text = patternCode.slice(from, to);
-        const normalized = text.replace(/['"]/g, '').trim().toLowerCase();
-        return { from, to, text, normalized, used: false };
-      })
-      .filter(Boolean);
+    const tokenEntries = [];
+
+    const pushToken = (from, to, text) => {
+      if (typeof from !== 'number' || typeof to !== 'number') {
+        return;
+      }
+      const length = to - from;
+      if (!Number.isFinite(length) || length <= 0) {
+        return;
+      }
+      const normalized = (text || '').replace(/['"]/g, '').trim().toLowerCase();
+      if (!normalized) {
+        return;
+      }
+      tokenEntries.push({ from, to, text, normalized, used: false, length });
+    };
+
+    miniLocations.forEach((entry) => {
+      if (!Array.isArray(entry) || entry.length < 2) {
+        return;
+      }
+      const [from, to] = entry;
+      if (typeof from !== 'number' || typeof to !== 'number' || !Number.isFinite(from) || !Number.isFinite(to) || to <= from) {
+        return;
+      }
+      const text = patternCode.slice(from, to);
+      pushToken(from, to, text);
+
+      const localText = text || '';
+      const tokenRegex = /"[^"]*"|'[^']*'|[A-Za-z0-9_#:+-]+/g;
+      let match;
+      while ((match = tokenRegex.exec(localText)) !== null) {
+        const raw = match[0];
+        const tokenFrom = from + match.index;
+        const tokenTo = tokenFrom + raw.length;
+        pushToken(tokenFrom, tokenTo, raw);
+      }
+    });
+
+    tokenEntries.sort((a, b) => a.length - b.length);
 
     const metrics = this.currentTimeSignatureMetrics || getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
 
@@ -2072,7 +2943,7 @@ class InteractiveSoundApp {
       labelBuckets.get(key).push(entry);
     };
 
-    locationEntries.forEach((entry) => {
+    tokenEntries.forEach((entry) => {
       if (!entry.normalized) {
         return;
       }
@@ -2087,7 +2958,35 @@ class InteractiveSoundApp {
       });
     });
 
-    const assignedEvents = events.map((event, index) => {
+    const meaningfulEvents = events.filter((event) => {
+      if (!event || typeof event !== 'object') {
+        return false;
+      }
+      const label = typeof event.label === 'string' ? event.label.trim() : '';
+      const meta = event.meta || {};
+      const metaNote = meta.note != null ? String(meta.note).trim() : '';
+      const metaSound = meta.sound != null ? String(meta.sound).trim() : '';
+      const metaSample = meta.sample != null ? String(meta.sample).trim() : '';
+      const metaInstrument = meta.instrument != null ? String(meta.instrument).trim() : '';
+      const metaRaw = meta.rawString != null ? String(meta.rawString).trim() : '';
+      return (
+        label ||
+        metaNote ||
+        metaSound ||
+        metaSample ||
+        metaInstrument ||
+        metaRaw
+      );
+    });
+
+    if (!meaningfulEvents.length) {
+      return {
+        events: [],
+        patternLength: patternCode.length
+      };
+    }
+
+    const assignedEvents = meaningfulEvents.map((event) => {
       const labelCandidates = new Set();
       const addCandidate = (value) => {
         if (typeof value === 'number') {
@@ -2125,12 +3024,12 @@ class InteractiveSoundApp {
         for (const candidate of labelCandidates) {
           if (!candidate) continue;
           const bucket = labelBuckets.get(candidate);
-          if (!bucket || bucket.length === 0) {
-            continue;
-          }
+          if (!bucket || bucket.length === 0) continue;
           let next = null;
-          while (bucket.length > 0) {
-            const entry = bucket.shift();
+          let index = 0;
+          while (index < bucket.length) {
+            const entry = bucket[index];
+            index += 1;
             if (entry && !entry.used) {
               next = entry;
               break;
@@ -2145,9 +3044,10 @@ class InteractiveSoundApp {
       }
 
       if (!location) {
-        location = locationEntries.find(entry => !entry.used);
-        if (location) {
-          location.used = true;
+        const fallback = tokenEntries.find(entry => !entry.used);
+        if (fallback) {
+          fallback.used = true;
+          location = fallback;
         }
       }
 
@@ -3630,7 +4530,7 @@ class InteractiveSoundApp {
         bankSelect.value = targetValue;
       } else if (availableValues.has(previousValue)) {
         bankSelect.value = previousValue;
-      } else {
+    } else {
         bankSelect.value = '';
       }
     };
@@ -3722,43 +4622,160 @@ class InteractiveSoundApp {
       }
 
       const renderSnippets = (listEl, items, reference, searchTermValue) => {
+        hideSnippetTooltip();
         listEl.innerHTML = '';
-        items.forEach((snippet) => {
+        const hasSearch = !!(searchTermValue && searchTermValue.trim().length);
+        const normalizedSearch = searchTermValue || '';
+
+        const groupMap = new Map();
+        const groupOrder = [];
+
+        items.forEach((entry) => {
+          const snippet = typeof entry === 'string' ? entry : entry.snippet;
+          const groupId = typeof entry === 'string' ? 'other' : (entry.groupId || 'other');
+          const className = typeof entry === 'string' ? '' : (entry.className || '');
+          const heading = (typeof entry === 'string' ? 'Other' : entry.heading) || 'Other';
           const key = getSnippetKey(snippet);
           const referenceEntry = reference.get(key);
           const rawInsertion = buildSnippetInsertion(snippet, referenceEntry);
-          const insertionSnippet = snippet.startsWith('.')
-            ? rawInsertion
-            : `.${rawInsertion.replace(/^[.]+/, '')}`;
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'pattern-snippet-tag';
-          button.dataset.snippet = snippet;
-          button.dataset.insertion = insertionSnippet;
-          const displayLabel = insertionSnippet.startsWith('.') ? insertionSnippet : `.${insertionSnippet}`;
-
+          const insertionSnippet = rawInsertion.replace(/^[.]+/, '');
+          const displayLabel = insertionSnippet;
           const lowerLabel = displayLabel.toLowerCase();
-          if (searchTermValue && !lowerLabel.includes(searchTermValue) && !key.includes(searchTermValue)) {
+          const headingLower = heading.toLowerCase();
+
+          if (
+            normalizedSearch &&
+            !lowerLabel.includes(normalizedSearch) &&
+            !key.includes(normalizedSearch) &&
+            !headingLower.includes(normalizedSearch)
+          ) {
             return;
           }
 
-          button.textContent = displayLabel;
-          button.setAttribute('aria-label', displayLabel);
-
-          const itemWrapper = document.createElement('div');
-          itemWrapper.className = 'pattern-snippet-item';
-          itemWrapper.appendChild(button);
-
-          const paramDescription = buildSnippetDescription(referenceEntry);
-          if (paramDescription) {
-            const descEl = document.createElement('div');
-            descEl.className = 'pattern-snippet-description';
-            descEl.textContent = paramDescription;
-            itemWrapper.appendChild(descEl);
+          if (!groupMap.has(groupId)) {
+            groupMap.set(groupId, {
+              id: groupId,
+              heading,
+              className,
+              items: []
+            });
+            groupOrder.push(groupMap.get(groupId));
           }
 
-          listEl.appendChild(itemWrapper);
+          groupMap.get(groupId).items.push({
+            snippet,
+            insertionSnippet,
+            displayLabel,
+            key,
+            className,
+            heading,
+            referenceEntry
+          });
         });
+
+        let renderedAny = false;
+
+        groupOrder.forEach((group) => {
+          if (!Array.isArray(group.items) || !group.items.length) {
+            return;
+          }
+
+          group.items.sort((a, b) => {
+            const labelA = (a.displayLabel || '').toLowerCase();
+            const labelB = (b.displayLabel || '').toLowerCase();
+            if (labelA < labelB) return -1;
+            if (labelA > labelB) return 1;
+            return 0;
+          });
+
+          renderedAny = true;
+          const groupWrapper = document.createElement('div');
+          groupWrapper.className = 'pattern-snippet-group';
+          groupWrapper.dataset.groupId = group.id;
+
+          const storedState = snippetGroupOpenState.has(group.id)
+            ? snippetGroupOpenState.get(group.id)
+            : DEFAULT_OPEN_SNIPPET_GROUP_IDS.has(group.id);
+          const shouldOpen = hasSearch ? true : storedState;
+          if (!snippetGroupOpenState.has(group.id)) {
+            snippetGroupOpenState.set(group.id, storedState);
+          }
+
+          const headingButton = document.createElement('button');
+          headingButton.type = 'button';
+          headingButton.className = 'pattern-snippet-group-heading';
+          headingButton.textContent = group.heading;
+          headingButton.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+
+          const itemsContainer = document.createElement('div');
+          itemsContainer.className = 'pattern-snippet-group-items';
+
+          if (!shouldOpen) {
+            groupWrapper.classList.add('collapsed');
+          }
+
+          headingButton.addEventListener('click', () => {
+            hideSnippetTooltip();
+            const isCollapsed = groupWrapper.classList.toggle('collapsed');
+            const newState = !isCollapsed;
+            headingButton.setAttribute('aria-expanded', newState ? 'true' : 'false');
+            snippetGroupOpenState.set(group.id, newState);
+          });
+
+          group.items.forEach((item) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            const customClass = getCustomSnippetClass(item.snippet);
+            const applyCoreStyle = !customClass && item.groupId !== 'core' && shouldUseCoreStyle(item.snippet);
+            const extraClassNames = [
+              item.className || '',
+              customClass,
+              applyCoreStyle ? 'pattern-snippet-tag-core' : ''
+            ]
+              .filter(Boolean)
+              .join(' ');
+            button.className = `pattern-snippet-tag ${extraClassNames}`.trim();
+            button.dataset.snippet = item.snippet;
+            button.dataset.insertion = item.insertionSnippet;
+            button.textContent = item.displayLabel;
+            button.setAttribute('aria-label', item.displayLabel);
+
+            const tooltipTitle = item.referenceEntry?.name || item.displayLabel.replace(/^[.]+/, '').trim();
+            const tooltipDescription = getReferenceDescriptionText(item.referenceEntry);
+            const tooltipParams = Array.isArray(item.referenceEntry?.params)
+              ? item.referenceEntry.params.map(buildParamDescription).filter(Boolean).join('\n')
+              : '';
+
+            button.dataset.tooltipTitle = tooltipTitle || item.displayLabel;
+            button.dataset.tooltipDescription = tooltipDescription || '';
+            button.dataset.tooltipParams = tooltipParams || '';
+
+            const handleShowTooltip = () => showSnippetTooltip(button);
+            const handleHideTooltip = () => hideSnippetTooltip(button);
+
+            button.addEventListener('mouseenter', handleShowTooltip);
+            button.addEventListener('mouseleave', handleHideTooltip);
+            button.addEventListener('focus', handleShowTooltip);
+            button.addEventListener('blur', handleHideTooltip);
+            button.addEventListener('click', handleHideTooltip);
+
+            const itemWrapper = document.createElement('div');
+            itemWrapper.className = 'pattern-snippet-item';
+            itemWrapper.appendChild(button);
+            itemsContainer.appendChild(itemWrapper);
+          });
+
+          groupWrapper.appendChild(headingButton);
+          groupWrapper.appendChild(itemsContainer);
+          listEl.appendChild(groupWrapper);
+        });
+
+        if (!renderedAny) {
+          const emptyState = document.createElement('div');
+          emptyState.className = 'pattern-snippet-empty';
+          emptyState.textContent = 'No tags match your search.';
+          listEl.appendChild(emptyState);
+        }
       };
 
       if (patternSnippetListEl) {
@@ -3786,7 +4803,16 @@ class InteractiveSoundApp {
           if (!snippet) {
             return;
           }
+          hideSnippetTooltip(button);
           insertStrudelEditorSnippet('modal-pattern', snippet);
+        });
+
+        patternSnippetListEl.addEventListener('mouseleave', () => {
+          hideSnippetTooltip();
+        });
+
+        patternSnippetListEl.addEventListener('scroll', () => {
+          hideSnippetTooltip();
         });
 
         patternSnippetListEl.dataset.listenersAttached = 'true';
@@ -3794,6 +4820,7 @@ class InteractiveSoundApp {
 
       if (patternSnippetSearchInput && !patternSnippetSearchInput.dataset.listenerAttached) {
         patternSnippetSearchInput.addEventListener('input', () => {
+          hideSnippetTooltip();
           if (typeof refreshSnippetButtons === 'function') {
             refreshSnippetButtons().catch(err => console.warn('⚠️ Unable to refresh snippet tags:', err));
           }
@@ -3830,6 +4857,7 @@ class InteractiveSoundApp {
     }
 
     const updatePatternFieldEditable = (editable) => {
+      hideSnippetTooltip();
       setStrudelEditorEditable('modal-pattern', editable);
       const textarea = document.getElementById('modal-pattern');
       if (textarea) {
