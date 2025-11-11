@@ -14,83 +14,6 @@
       <p>Strudel Pattern Mixer — click elements to start/stop patterns. Each channel routes to master.</p>
     </header>
 
-    <!-- Controls Panel -->
-    <div class="controls-panel">
-      <h2>Controls</h2>
-      <div class="control-group">
-        <label for="tempo-slider">
-          Tempo: <span id="tempo-value">120</span> BPM
-        </label>
-        <div class="tempo-controls">
-          <input 
-            type="range" 
-            id="tempo-slider" 
-            min="60" 
-            max="240" 
-            value="120"
-          />
-          <button id="tap-tempo-btn" class="tap-tempo-button" title="Tap to set tempo">TAP</button>
-        </div>
-      </div>
-      <div class="control-group">
-        <label for="key-select">
-          Key: <span id="key-value">Select Key</span>
-        </label>
-        <select id="key-select" class="control-select">
-          <option value="" selected>Select Key</option>
-          <option value="C">C Major</option>
-          <option value="C#">C# Major</option>
-          <option value="Db">Db Major</option>
-          <option value="D">D Major</option>
-          <option value="D#">D# Major</option>
-          <option value="Eb">Eb Major</option>
-          <option value="E">E Major</option>
-          <option value="F">F Major</option>
-          <option value="F#">F# Major</option>
-          <option value="Gb">Gb Major</option>
-          <option value="G">G Major</option>
-          <option value="G#">G# Major</option>
-          <option value="Ab">Ab Major</option>
-          <option value="A">A Major</option>
-          <option value="A#">A# Major</option>
-          <option value="Bb">Bb Major</option>
-          <option value="B">B Major</option>
-          <option value="Cm">C Minor</option>
-          <option value="C#m">C# Minor</option>
-          <option value="Dm">D Minor</option>
-          <option value="D#m">D# Minor</option>
-          <option value="Em">E Minor</option>
-          <option value="Fm">F Minor</option>
-          <option value="F#m">F# Minor</option>
-          <option value="Gm">G Minor</option>
-          <option value="G#m">G# Minor</option>
-          <option value="Am">A Minor</option>
-          <option value="A#m">A# Minor</option>
-          <option value="Bm">B Minor</option>
-        </select>
-      </div>
-      <div class="control-group">
-        <label for="time-signature-select">
-          Time Signature: <span id="time-signature-value">Select Time Signature</span>
-        </label>
-        <select id="time-signature-select" class="control-select">
-          <option value="" selected>Select Time Signature</option>
-          <option value="4/4">4/4 (Common Time)</option>
-          <option value="3/4">3/4 (Waltz)</option>
-          <option value="6/8">6/8</option>
-          <option value="2/4">2/4 (March)</option>
-          <option value="5/4">5/4</option>
-          <option value="7/8">7/8</option>
-          <option value="12/8">12/8</option>
-          <option value="2/2">2/2 (Cut Time)</option>
-          <option value="3/8">3/8</option>
-          <option value="9/8">9/8</option>
-          <option value="5/8">5/8</option>
-          <option value="7/4">7/4</option>
-        </select>
-      </div>
-    </div>
-
     <!-- Status Indicator -->
     <div class="status-panel">
       <div id="status-text">Ready</div>
@@ -542,37 +465,148 @@
 
     <!-- Master Channel -->
     <div class="master-section">
+      <div class="master-visualizer">
+        <div class="master-visualizer-header">
+          <h3>Visualizer</h3>
+          <select id="visualizer-select" class="visualizer-select">
+            <option value="scope">Scope (Waveform)</option>
+            <option value="spectrum">Spectrum (Frequency)</option>
+          </select>
+        </div>
+        <div id="master-punchcard" class="punchcard-grid">
+          <canvas id="master-punchcard-canvas" aria-label="Master visualizer"></canvas>
+          <div class="punchcard-placeholder">
+            <span class="punchcard-note">Play the master pattern to render the current visual.</span>
+          </div>
+        </div>
+      </div>
       <h2>Master</h2>
       <div class="master-channel">
         <div class="master-controls">
+          <div class="master-controls-row">
+            <div class="control-group">
+          <label for="master-volume">
+            Master Volume: <span id="master-volume-value">70</span>%
+              </label>
+              <input 
+                type="range" 
+                id="master-volume" 
+                class="master-volume-slider"
+                min="0" 
+                max="100" 
+              value="70"
+              />
+            </div>
+            <div class="control-group">
+              <label for="master-pan">
+                Master Pan: <span id="master-pan-value">0</span>
+              </label>
+              <input 
+                type="range" 
+                id="master-pan" 
+                class="master-pan-slider"
+                min="-1" 
+                max="1" 
+                step="0.01" 
+                value="0"
+              />
+            </div>
           <div class="control-group">
-            <label for="master-volume">
-              Master Volume: <span id="master-volume-value">100</span>%
-            </label>
-            <input 
-              type="range" 
-              id="master-volume" 
-              class="master-volume-slider"
-              min="0" 
-              max="100" 
-              value="100"
-            />
+            <label for="tempo-slider">
+              Tempo: <span id="tempo-value" class="inactive">120</span> BPM
+              </label>
+              <div class="tempo-controls">
+                <input 
+                  type="range" 
+                  id="tempo-slider" 
+                  min="60" 
+                  max="240" 
+                  value="120"
+                class="inactive"
+                />
+                <button id="tap-tempo-btn" class="tap-tempo-button" title="Tap to set tempo">TAP</button>
+              </div>
+            </div>
           </div>
-          <div class="control-group">
-            <label for="master-pan">
-              Master Pan: <span id="master-pan-value">0</span>
-            </label>
-            <input 
-              type="range" 
-              id="master-pan" 
-              class="master-pan-slider"
-              min="-1" 
-              max="1" 
-              step="0.01" 
-              value="0"
-            />
+          <div class="master-controls-row master-controls-row--secondary">
+            <div class="control-group">
+              <label for="key-select">
+                Key: <span id="key-value">Select Key</span>
+              </label>
+              <select id="key-select" class="control-select">
+                <option value="" selected>Select Key</option>
+                <option value="C">C Major</option>
+                <option value="C#">C# Major</option>
+                <option value="Db">Db Major</option>
+                <option value="D">D Major</option>
+                <option value="D#">D# Major</option>
+                <option value="Eb">Eb Major</option>
+                <option value="E">E Major</option>
+                <option value="F">F Major</option>
+                <option value="F#">F# Major</option>
+                <option value="Gb">Gb Major</option>
+                <option value="G">G Major</option>
+                <option value="G#">G# Major</option>
+                <option value="Ab">Ab Major</option>
+                <option value="A">A Major</option>
+                <option value="A#">A# Major</option>
+                <option value="Bb">Bb Major</option>
+                <option value="B">B Major</option>
+                <option value="Cm">C Minor</option>
+                <option value="C#m">C# Minor</option>
+                <option value="Dm">D Minor</option>
+                <option value="D#m">D# Minor</option>
+                <option value="Em">E Minor</option>
+                <option value="Fm">F Minor</option>
+                <option value="F#m">F# Minor</option>
+                <option value="Gm">G Minor</option>
+                <option value="G#m">G# Minor</option>
+                <option value="Am">A Minor</option>
+                <option value="A#m">A# Minor</option>
+                <option value="Bm">B Minor</option>
+              </select>
+            </div>
+            <div class="control-group">
+              <label for="scale-select">
+                Scale: <span id="scale-value">Select Scale</span>
+              </label>
+              <select id="scale-select" class="control-select">
+                <option value="" selected>Select Scale</option>
+                <option value="major">Major</option>
+                <option value="minor">Minor</option>
+                <option value="harmonicMinor">Harmonic Minor</option>
+                <option value="melodicMinor">Melodic Minor</option>
+                <option value="dorian">Dorian</option>
+                <option value="phrygian">Phrygian</option>
+                <option value="lydian">Lydian</option>
+                <option value="mixolydian">Mixolydian</option>
+                <option value="locrian">Locrian</option>
+                <option value="blues">Blues</option>
+                <option value="pentatonicMajor">Pentatonic Major</option>
+                <option value="pentatonicMinor">Pentatonic Minor</option>
+              </select>
+            </div>
+            <div class="control-group">
+              <label for="time-signature-select">
+                Time Signature: <span id="time-signature-value">Select Time Signature</span>
+              </label>
+              <select id="time-signature-select" class="control-select">
+                <option value="" selected>Select Time Signature</option>
+                <option value="4/4">4/4 (Common Time)</option>
+                <option value="3/4">3/4 (Waltz)</option>
+                <option value="6/8">6/8</option>
+                <option value="2/4">2/4 (March)</option>
+                <option value="5/4">5/4</option>
+                <option value="7/8">7/8</option>
+                <option value="12/8">12/8</option>
+                <option value="2/2">2/2 (Cut Time)</option>
+                <option value="3/8">3/8</option>
+                <option value="9/8">9/8</option>
+                <option value="5/8">5/8</option>
+                <option value="7/4">7/4</option>
+              </select>
+            </div>
           </div>
-          <button id="master-mute-btn" class="master-mute-button" title="Mute Master">🔊</button>
         </div>
         <div class="master-status">
           <div class="status-dots">
@@ -580,26 +614,10 @@
       </div>
         </div>
       </div>
-          <div class="master-visualizer">
-            <div class="master-visualizer-header">
-              <h3>Visualizer</h3>
-              <select id="visualizer-select" class="visualizer-select">
-                <option value="scope">Scope (Waveform)</option>
-                <option value="spectrum">Spectrum (Frequency)</option>
-              </select>
-            </div>
-            <div id="master-punchcard" class="punchcard-grid">
-              <canvas id="master-punchcard-canvas" aria-label="Master visualizer"></canvas>
-              <div class="punchcard-placeholder">
-                <span class="punchcard-note">Play the master pattern to render the current visual.</span>
-              </div>
-            </div>
-          </div>
       <div class="master-pattern-container">
         <div class="master-pattern-header">
           <label for="master-pattern">Master Pattern Code</label>
           <div class="header-buttons">
-            <button id="update-master-btn" class="update-master-button">💾 Apply Changes</button>
             <button id="copy-code-btn" class="copy-code-button" title="Copy Code">📋 Copy Code</button>
           </div>
         </div>
@@ -614,7 +632,6 @@
           <button id="play-master-btn" class="play-master-button">▶ Play Master</button>
           <button id="stop-master-btn" class="stop-master-button">⏹ Stop Master</button>
           <button id="reset-master-btn" class="reset-master-button">🔄 Reset All</button>
-          <button id="export-audio-btn" class="export-audio-button" title="Export as WAV">🎵 Export Audio</button>
     </div>
       </div>
     </div>

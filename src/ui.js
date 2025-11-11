@@ -11,6 +11,7 @@ class UIController {
     this.soundTrigger = null;
     this.controlSoundTimers = new Map(); // Debounce timers for control sounds
     this.activeSliders = new Set(); // Track which sliders are currently being dragged
+    this.tempoSliderActivated = false;
     // Tap tempo tracking
     this.tapTimes = []; // Array of timestamps for taps
     this.tapTimeout = null; // Timeout to reset tap sequence
@@ -63,7 +64,18 @@ class UIController {
     const tempoValue = document.getElementById('tempo-value');
     
     if (tempoSlider && tempoValue) {
+      tempoSlider.classList.add('inactive');
+      tempoValue.classList.add('inactive');
+
+      const activateTempoSlider = () => this.markTempoSliderActive(tempoSlider, tempoValue);
+
+      if (tempoSlider.addEventListener) {
+        tempoSlider.addEventListener('pointerdown', activateTempoSlider, { once: true });
+        tempoSlider.addEventListener('focus', activateTempoSlider, { once: true });
+      }
+
       tempoSlider.addEventListener('input', (e) => {
+        activateTempoSlider();
         const bpm = parseInt(e.target.value);
         tempoValue.textContent = bpm;
         this.notify('tempo', bpm);
@@ -96,6 +108,24 @@ class UIController {
       });
     }
 
+    // Scale select
+    const scaleSelect = document.getElementById('scale-select');
+    const scaleValue = document.getElementById('scale-value');
+
+    if (scaleSelect && scaleValue) {
+      scaleSelect.addEventListener('change', (e) => {
+        const scale = e.target.value;
+        if (scale === '') {
+          scaleValue.textContent = 'Select Scale';
+          this.notify('scale', '');
+          return;
+        }
+        const selectedOption = e.target.options[e.target.selectedIndex];
+        scaleValue.textContent = selectedOption.text;
+        this.notify('scale', scale);
+      });
+    }
+
     // Time signature select
     const timeSignatureSelect = document.getElementById('time-signature-select');
     const timeSignatureValue = document.getElementById('time-signature-value');
@@ -115,11 +145,24 @@ class UIController {
     }
   }
 
+  markTempoSliderActive(tempoSlider, tempoValue) {
+    if (this.tempoSliderActivated) return;
+    this.tempoSliderActivated = true;
+    if (tempoSlider) {
+      tempoSlider.classList.remove('inactive');
+    }
+    if (tempoValue) {
+      tempoValue.classList.remove('inactive');
+    }
+  }
+
   /**
    * Handle tap tempo button clicks
    * Calculates tempo from tap intervals after 3 or more taps
    */
   handleTapTempo(tempoSlider, tempoValue, tapTempoBtn) {
+    this.markTempoSliderActive(tempoSlider, tempoValue);
+
     const now = Date.now();
     
     // Clear any existing timeout
