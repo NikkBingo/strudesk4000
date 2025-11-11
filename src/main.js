@@ -8,6 +8,7 @@ import { soundConfig } from './config.js';
 import { initStrudelReplEditors, getStrudelEditor, getStrudelEditorValue, setStrudelEditorValue, setStrudelEditorEditable, insertStrudelEditorSnippet, setStrudelEditorHighlights } from './strudelReplEditor.js';
 import { getDrawContext } from '@strudel/draw';
 import { transpiler as strudelTranspiler } from '@strudel/transpiler';
+import { evaluate as strudelCoreEvaluate } from '@strudel/core';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -50,6 +51,25 @@ const DRUM_BANK_DISPLAY_NAMES = {
   ViscoSpaceDrum: 'Visco Space Drum',
   EmuSP1200: 'Emu SP-1200',
   CasioRZ1: 'Casio RZ-1'
+};
+
+const NOTE_CALL_REGEX = /\bnote\s*\(/i;
+const NUMERIC_NOTE_REGEX = /\bn\(\s*["'][^"']*["']\s*\)/i;
+
+const containsNoteCall = (value) => {
+  if (!value || typeof value !== 'string') {
+    return false;
+  }
+  NOTE_CALL_REGEX.lastIndex = 0;
+  return NOTE_CALL_REGEX.test(value);
+};
+
+const containsNumericNotePattern = (value) => {
+  if (!value || typeof value !== 'string') {
+    return false;
+  }
+  NUMERIC_NOTE_REGEX.lastIndex = 0;
+  return NUMERIC_NOTE_REGEX.test(value);
 };
 
 const getDrumBankDisplayName = (bank) => {
@@ -1353,7 +1373,7 @@ function drumDisplayToPattern(display) {
   if (!trimmed) return '';
   
   // Check if it's already in Strudel format (contains sound() or s() or note())
-  if (trimmed.includes('sound(') || trimmed.includes('s(') || trimmed.includes('note(')) {
+  if (trimmed.includes('sound(') || trimmed.includes('s(') || containsNoteCall(trimmed)) {
     return trimmed; // Already in Strudel format
   }
   
@@ -1414,7 +1434,7 @@ function getTimeSignatureMetrics(signature) {
   
   const stepsPerBeatRaw = 16 / denominator;
   const stepsPerBeat = Math.max(1, Math.round(stepsPerBeatRaw));
-  const totalSteps = Math.max(numerator * stepsPerBeat, 1);
+    const totalSteps = Math.max(numerator, 1) * stepsPerBeat;
   
   return {
     signature: `${numerator}/${denominator}`,
@@ -1623,6 +1643,7 @@ class InteractiveSoundApp {
       }
 
       if (isPlaying) {
+        this.hideMasterPunchcardPlaceholder();
         this.updateMasterPatternHighlights()
           .catch(error => {
             console.warn('⚠️ Could not refresh master highlight data on play start:', error);
@@ -1632,6 +1653,7 @@ class InteractiveSoundApp {
           });
       } else {
         this.stopMasterHighlightLoop();
+        this.showMasterPunchcardPlaceholder();
       }
     });
 
@@ -1794,7 +1816,7 @@ class InteractiveSoundApp {
         }
         soundManager.updateMasterPattern(this.soloedElements, this.mutedElements);
       });
-
+      
       if (soundManager.isAudioReady() && soundManager.masterGainNode) {
         console.log(`🎚️ Audio already ready, setting master volume to ${initialVolume}%`);
         soundManager.setMasterVolume(initialVolume / 100);
@@ -1822,7 +1844,7 @@ class InteractiveSoundApp {
         }
         soundManager.updateMasterPattern(this.soloedElements, this.mutedElements);
       });
-
+      
       if (soundManager.isAudioReady() && soundManager.masterPanNode) {
         console.log(`🎚️ Audio already ready, setting master pan to ${initialPan}`);
         soundManager.setMasterPan(initialPan);
@@ -2188,14 +2210,10 @@ class InteractiveSoundApp {
     });
   }
 
-  showMasterPunchcardPlaceholder(message) {
+  showMasterPunchcardPlaceholder() {
     if (!this.masterPunchcardContainer) return;
     
     if (this.masterPunchcardPlaceholder) {
-      const noteEl = this.masterPunchcardPlaceholder.querySelector('.punchcard-note');
-      if (noteEl) {
-        noteEl.textContent = message || 'Play the master pattern to render the current visual.';
-      }
       this.masterPunchcardPlaceholder.classList.remove('hidden');
     }
 
@@ -2216,7 +2234,7 @@ class InteractiveSoundApp {
     
     const patternCode = soundManager.getMasterPatternCode();
     if (!patternCode || patternCode.trim() === '') {
-      this.showMasterPunchcardPlaceholder('Add patterns to populate the punchcard.');
+      this.showMasterPunchcardPlaceholder();
       return;
     }
     const useSpiral = this.shouldUseSpiralVisualizer(patternCode);
@@ -2240,18 +2258,18 @@ class InteractiveSoundApp {
       if (!data || data.error) {
         const message = data?.error ? `Unable to render punchcard: ${data.error}` : 'Unable to render punchcard.';
         console.warn(message, { reason, data });
-        this.showMasterPunchcardPlaceholder(message);
+        this.showMasterPunchcardPlaceholder();
         return;
       }
        
        if (!data.counts || data.counts.length === 0) {
-        this.showMasterPunchcardPlaceholder('No events found in the first bar of the master pattern.');
+        this.showMasterPunchcardPlaceholder();
         return;
       }
       
       const maxValue = Math.max(...data.counts);
       if (maxValue <= 0) {
-        this.showMasterPunchcardPlaceholder('No audible hits detected in the first bar.');
+        this.showMasterPunchcardPlaceholder();
         return;
       }
       
@@ -2508,7 +2526,7 @@ class InteractiveSoundApp {
     if (!this.masterPunchcardContainer || !this.masterPunchcardCanvas) return;
     const events = data.events || [];
     if (!events.length) {
-      this.showMasterPunchcardPlaceholder('No spiral data detected for the first bar.');
+      this.showMasterPunchcardPlaceholder();
       return;
     }
     this.hideMasterPunchcardPlaceholder();
@@ -2758,7 +2776,12 @@ class InteractiveSoundApp {
     
     let patternObject;
     try {
-      patternObject = window.eval(patternForEval);
+      const evaluation = await strudelCoreEvaluate(patternForEval, strudelTranspiler, {
+        wrapAsync: false,
+        addReturn: false,
+        emitMiniLocations: false
+      });
+      patternObject = evaluation?.pattern;
       console.log('🔍 Evaluated pattern object:', patternObject);
     } catch (error) {
       console.error('❌ Failed to evaluate pattern for punchcard:', error);
@@ -2898,7 +2921,7 @@ class InteractiveSoundApp {
       tokenEntries.push({ from, to, text, normalized, used: false, length });
     };
 
-    miniLocations.forEach((entry) => {
+  miniLocations.forEach((entry) => {
       if (!Array.isArray(entry) || entry.length < 2) {
         return;
       }
@@ -2906,21 +2929,97 @@ class InteractiveSoundApp {
       if (typeof from !== 'number' || typeof to !== 'number' || !Number.isFinite(from) || !Number.isFinite(to) || to <= from) {
         return;
       }
-      const text = patternCode.slice(from, to);
-      pushToken(from, to, text);
+    const text = patternCode.slice(from, to);
+    const commentIndex = text.indexOf('//');
+    if (commentIndex !== -1) {
+      const beforeComment = text.slice(0, commentIndex);
+      if (beforeComment.trim()) {
+        pushToken(from, from + beforeComment.length, beforeComment);
+      const beforeRegex = /"[^"]*"|'[^']*'|[A-Za-z0-9_#:+-]+/g;
+      let beforeMatch;
+      while ((beforeMatch = beforeRegex.exec(beforeComment)) !== null) {
+          const raw = beforeMatch[0];
+          const tokenFrom = from + beforeMatch.index;
+          const tokenTo = tokenFrom + raw.length;
+          pushToken(tokenFrom, tokenTo, raw);
+        }
 
-      const localText = text || '';
-      const tokenRegex = /"[^"]*"|'[^']*'|[A-Za-z0-9_#:+-]+/g;
-      let match;
-      while ((match = tokenRegex.exec(localText)) !== null) {
-        const raw = match[0];
-        const tokenFrom = from + match.index;
+      const beforeDigitRegex = /\b\d+\b/g;
+      let beforeDigitMatch;
+      while ((beforeDigitMatch = beforeDigitRegex.exec(beforeComment)) !== null) {
+        const raw = beforeDigitMatch[0];
+        const tokenFrom = from + beforeDigitMatch.index;
         const tokenTo = tokenFrom + raw.length;
         pushToken(tokenFrom, tokenTo, raw);
       }
+      }
+      const newlineIndex = text.indexOf('\n', commentIndex);
+      if (newlineIndex === -1) {
+        return;
+      }
+      const afterComment = text.slice(newlineIndex + 1);
+      const trimmed = afterComment.replace(/^\s+/, '');
+      const offset = afterComment.length - trimmed.length;
+      const trimmedFrom = from + newlineIndex + 1 + offset;
+      if (trimmed.trim()) {
+        pushToken(trimmedFrom, trimmedFrom + trimmed.length, trimmed);
+      const afterRegex = /"[^"]*"|'[^']*'|[A-Za-z0-9_#:+-]+/g;
+      let afterMatch;
+      while ((afterMatch = afterRegex.exec(trimmed)) !== null) {
+          const raw = afterMatch[0];
+          const tokenFrom = trimmedFrom + afterMatch.index;
+          const tokenTo = tokenFrom + raw.length;
+          pushToken(tokenFrom, tokenTo, raw);
+        }
+
+      const afterDigitRegex = /\b\d+\b/g;
+      let afterDigitMatch;
+      while ((afterDigitMatch = afterDigitRegex.exec(trimmed)) !== null) {
+        const raw = afterDigitMatch[0];
+        const tokenFrom = trimmedFrom + afterDigitMatch.index;
+        const tokenTo = tokenFrom + raw.length;
+        pushToken(tokenFrom, tokenTo, raw);
+      }
+      }
+      return;
+    }
+    pushToken(from, to, text);
+
+    const localText = text || '';
+    const tokenRegex = /"[^"]*"|'[^']*'|[A-Za-z0-9_#:+-]+/g;
+    let match;
+    while ((match = tokenRegex.exec(localText)) !== null) {
+      const raw = match[0];
+      const tokenFrom = from + match.index;
+      const tokenTo = tokenFrom + raw.length;
+      pushToken(tokenFrom, tokenTo, raw);
+    }
+
+    const digitRegex = /\b\d+\b/g;
+    let digitMatch;
+    while ((digitMatch = digitRegex.exec(localText)) !== null) {
+      const raw = digitMatch[0];
+      const tokenFrom = from + digitMatch.index;
+      const tokenTo = tokenFrom + raw.length;
+      pushToken(tokenFrom, tokenTo, raw);
+    }
     });
 
-    tokenEntries.sort((a, b) => a.length - b.length);
+  tokenEntries.sort((a, b) => a.length - b.length);
+  const numericTokenEntries = tokenEntries
+    .filter((entry) => /^[0-9]+$/.test(entry.normalized))
+    .sort((a, b) => a.from - b.from || a.to - b.to);
+
+  const takeNextNumericToken = () => {
+    while (numericTokenEntries.length > 0) {
+      const entry = numericTokenEntries.shift();
+      if (entry && !entry.used) {
+        entry.used = true;
+        return entry;
+      }
+    }
+    return null;
+  };
 
     const metrics = this.currentTimeSignatureMetrics || getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
 
@@ -2933,6 +3032,10 @@ class InteractiveSoundApp {
     }
 
     const events = Array.isArray(punchcardData?.events) ? punchcardData.events : [];
+    if (typeof window !== 'undefined') {
+      window.__lastHighlightEvents = events;
+      window.__lastHighlightTokens = tokenEntries.slice();
+    }
 
     const labelBuckets = new Map();
     const addEntryToBucket = (key, entry) => {
@@ -2986,7 +3089,20 @@ class InteractiveSoundApp {
       };
     }
 
-    const assignedEvents = meaningfulEvents.map((event) => {
+    const eventsWithIndex = meaningfulEvents
+      .map((event, idx) => ({ event, idx }))
+      .sort((a, b) => {
+        const aBegin = Number.isFinite(a.event?.begin) ? a.event.begin : 0;
+        const bBegin = Number.isFinite(b.event?.begin) ? b.event.begin : 0;
+        if (aBegin !== bBegin) {
+          return aBegin - bBegin;
+        }
+        const aEnd = Number.isFinite(a.event?.end) ? a.event.end : aBegin;
+        const bEnd = Number.isFinite(b.event?.end) ? b.event.end : bBegin;
+        return aEnd - bEnd;
+      });
+
+    const assignedEvents = eventsWithIndex.map(({ event }) => {
       const labelCandidates = new Set();
       const addCandidate = (value) => {
         if (typeof value === 'number') {
@@ -2994,8 +3110,12 @@ class InteractiveSoundApp {
         } else if (typeof value === 'string') {
           const trimmed = value.trim();
           if (trimmed) {
-            labelCandidates.add(trimmed.toLowerCase());
-            labelCandidates.add(trimmed.replace(/['"]/g, '').trim().toLowerCase());
+      const lower = trimmed.toLowerCase();
+      labelCandidates.add(lower);
+      labelCandidates.add(trimmed.replace(/['"]/g, '').trim().toLowerCase());
+      if (/^\d+$/.test(trimmed)) {
+        labelCandidates.add(trimmed);
+      }
             trimmed.split(/[:/\\\s]+/).forEach(part => {
               const p = part.trim().toLowerCase();
               if (p) {
@@ -3044,6 +3164,10 @@ class InteractiveSoundApp {
       }
 
       if (!location) {
+        location = takeNextNumericToken();
+      }
+
+      if (!location) {
         const fallback = tokenEntries.find(entry => !entry.used);
         if (fallback) {
           fallback.used = true;
@@ -3051,8 +3175,14 @@ class InteractiveSoundApp {
         }
       }
 
-      const begin = Number.isFinite(event?.begin) ? Number(event.begin) : 0;
-      const end = Number.isFinite(event?.end) ? Number(event.end) : begin;
+      const begin = Number.isFinite(event?.begin) ? (Number(event.begin) % 1 + 1) % 1 : 0;
+      const duration = Number.isFinite(event?.duration) ? Math.abs(Number(event.duration)) : null;
+      let end;
+      if (duration !== null && duration >= (1 / (metrics.totalSteps || 16))) {
+        end = (begin + duration) % 1;
+      } else {
+        end = Number.isFinite(event?.end) ? (Number(event.end) % 1 + 1) % 1 : begin;
+      }
 
       return {
         begin,
@@ -3068,10 +3198,38 @@ class InteractiveSoundApp {
       return a.from - b.from;
     });
 
-    return {
-      events: assignedEvents,
-      patternLength: patternCode.length
-    };
+    const numericTokensOrdered = tokenEntries
+      .filter((entry) => /^[0-9]+$/.test(entry.normalized))
+      .sort((a, b) => a.from - b.from || a.to - b.to);
+
+    if (numericTokensOrdered.length) {
+      assignedEvents.forEach((event, idx) => {
+        const token = numericTokensOrdered[idx % numericTokensOrdered.length];
+        if (token) {
+          event.from = token.from;
+          event.to = token.to;
+        }
+      });
+    }
+
+    if (!assignedEvents.length && numericTokensOrdered.length) {
+      const fallbackEvents = numericTokensOrdered.map((token, index) => {
+        const begin = index / Math.max(numericTokensOrdered.length, 1);
+        const end = Math.max(begin + 1e-6, (index + 1) / Math.max(numericTokensOrdered.length, 1));
+        return {
+          begin,
+          end,
+          label: '',
+          from: token.from,
+          to: token.to
+        };
+      });
+
+      return {
+        events: fallbackEvents,
+        patternLength: patternCode.length
+      };
+    }
   }
 
   async updateMasterPatternHighlights() {
@@ -3134,7 +3292,15 @@ class InteractiveSoundApp {
     }
 
     const playbackInfo = soundManager.getMasterPlaybackInfo ? soundManager.getMasterPlaybackInfo() : null;
-    if (!playbackInfo || !playbackInfo.isPlaying || !playbackInfo.startTime || !Number.isFinite(playbackInfo.speed) || playbackInfo.speed <= 0) {
+    if (
+      !playbackInfo ||
+      !playbackInfo.isPlaying ||
+      !playbackInfo.startTime ||
+      !Number.isFinite(playbackInfo.speed) ||
+      playbackInfo.speed <= 0 ||
+      !Number.isFinite(playbackInfo.tempo) ||
+      playbackInfo.tempo <= 0
+    ) {
       if (this.currentMasterHighlightKey !== null) {
         this.currentMasterHighlightKey = null;
         setStrudelEditorHighlights('master-pattern', []);
@@ -3154,8 +3320,7 @@ class InteractiveSoundApp {
       return;
     }
 
-    const rawPhase = (elapsed * playbackInfo.speed) % 1;
-    const phase = ((rawPhase % 1) + 1) % 1;
+    const phase = ((elapsed * playbackInfo.speed) % 1 + 1) % 1;
 
     const activeEvents = highlightData.events.filter((event) => {
       const begin = Number.isFinite(event.begin) ? ((event.begin % 1) + 1) % 1 : 0;
@@ -5463,7 +5628,7 @@ class InteractiveSoundApp {
                     console.log(`📝 Converted from drum to synth pattern with waveform: ${bankValue}`);
                   }
                   // If pattern uses note(), add .s() modifier  
-                  else if (strudelPattern.includes('note(')) {
+                  else if (containsNoteCall(strudelPattern)) {
                     // Remove any existing .s() or .synth() modifiers first
                     strudelPattern = strudelPattern.replace(/\.s\(["'][^"']*["']\)/g, '');
                     strudelPattern = strudelPattern.replace(/\.synth\(["'][^"']*["']\)/g, '');
@@ -5529,7 +5694,7 @@ class InteractiveSoundApp {
                     }
                     
                     // Check if current pattern is a synth pattern (note() or has .s() or .synth())
-                    const isSynthPattern = strudelPattern.includes('note(') || strudelPattern.includes('n(') || 
+                    const isSynthPattern = containsNoteCall(strudelPattern) || strudelPattern.includes('n(') || 
                                          strudelPattern.includes('.s(') || strudelPattern.includes('.synth(');
                     
                     if (isSynthPattern) {
@@ -5635,6 +5800,16 @@ class InteractiveSoundApp {
           finalPattern = displayPattern;
         }
         
+        if (finalPattern && containsNoteCall(finalPattern) && !containsNumericNotePattern(finalPattern)) {
+          const convertedPattern = soundManager.convertPatternForScale(finalPattern);
+          if (convertedPattern && convertedPattern !== finalPattern) {
+            finalPattern = convertedPattern;
+            if (patternTextarea) {
+              setStrudelEditorValue('modal-pattern', convertedPattern);
+            }
+          }
+        }
+        
         // Save config with updated bank and pattern
         this.saveElementConfig(elementId, {
           title: currentTitle || bankDisplayName,
@@ -5657,7 +5832,14 @@ class InteractiveSoundApp {
           
           // Get the final pattern from the textarea (convert display to Strudel format)
           const displayPattern = patternTextarea.value.trim();
-          const updatedPattern = drumDisplayToPattern(displayPattern);
+          let updatedPattern = drumDisplayToPattern(displayPattern);
+          if (updatedPattern && containsNoteCall(updatedPattern) && !containsNumericNotePattern(updatedPattern)) {
+            const convertedPattern = soundManager.convertPatternForScale(updatedPattern);
+            if (convertedPattern && convertedPattern !== updatedPattern) {
+              updatedPattern = convertedPattern;
+              setStrudelEditorValue('modal-pattern', convertedPattern);
+            }
+          }
           
           // Small delay to ensure stop completes and old pattern evaluations finish
           setTimeout(async () => {
@@ -5712,12 +5894,20 @@ class InteractiveSoundApp {
         // Otherwise, convert drum display back to Strudel pattern
         let pattern;
         if (displayPattern.includes('.bank(') || displayPattern.includes('.s(') || displayPattern.includes('.synth(') || 
-            displayPattern.includes('note(') || displayPattern.includes('sound(') || displayPattern.includes('s(')) {
+            containsNoteCall(displayPattern) || displayPattern.includes('sound(') || displayPattern.includes('s(')) {
           // Already in Strudel format
           pattern = displayPattern;
         } else {
           // Convert from drum display format
           pattern = drumDisplayToPattern(displayPattern);
+        }
+
+        if (pattern && containsNoteCall(pattern) && !containsNumericNotePattern(pattern)) {
+          const convertedPattern = soundManager.convertPatternForScale(pattern);
+          if (convertedPattern && convertedPattern !== pattern) {
+            pattern = convertedPattern;
+            setStrudelEditorValue('modal-pattern', convertedPattern);
+          }
         }
         const sampleUrl = document.getElementById('modal-sample-url').value.trim();
         const fileInput = document.getElementById('modal-sample-file');
