@@ -3,6 +3,7 @@
  */
 
 import { soundConfig } from './config.js';
+import { Note, Scale } from '@tonaljs/tonal';
 
 // Import Strudel modules statically at top level to avoid duplicate bundling
 // Use dynamic imports but cache them to ensure single instance
@@ -56,6 +57,124 @@ function replaceSynthAliasesInPattern(pattern) {
     const soundRegex = new RegExp(`(sound\\(["'])${escapedLegacy}(["']\\))`, 'gi');
     result = result.replace(soundRegex, (_, prefix, suffix) => `${prefix}${canonicalName}${suffix}`);
   }
+  return result;
+}
+
+const SCALE_NAME_TONAL_MAP = {
+  major: 'major',
+  minor: 'natural minor',
+  harmonicMinor: 'harmonic minor',
+  melodicMinor: 'melodic minor',
+  dorian: 'dorian',
+  phrygian: 'phrygian',
+  lydian: 'lydian',
+  mixolydian: 'mixolydian',
+  locrian: 'locrian',
+  blues: 'blues',
+  pentatonicMajor: 'major pentatonic',
+  pentatonicMinor: 'minor pentatonic'
+};
+
+function normalizeKeyRoot(key) {
+  if (!key || typeof key !== 'string') {
+    return '';
+  }
+  const match = key.trim().match(/^([a-gA-G])([#b]?)/);
+  if (!match) {
+    return key.trim();
+  }
+  return `${match[1].toUpperCase()}${match[2] || ''}`;
+}
+
+function convertNoteSequenceContent(content) {
+  const separatorRegex = /(\s+|[,;:<>()[\]{}|\\/]+|\*+)/g;
+  const segments = content.split(separatorRegex);
+  let converted = false;
+  let baseMidi = null;
+
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    if (!segment || separatorRegex.test(segment)) {
+      separatorRegex.lastIndex = 0;
+      continue;
+    }
+
+    const noteMatch = segment.match(/^([a-gA-G])([#b]?)(-?\d+)?$/);
+    if (!noteMatch) {
+      separatorRegex.lastIndex = 0;
+      continue;
+    }
+
+    const letter = noteMatch[1].toUpperCase();
+    const accidental = noteMatch[2] || '';
+    const explicitOctave = noteMatch[3] ? parseInt(noteMatch[3], 10) : null;
+
+    const testOctaves = [];
+    if (explicitOctave !== null && !Number.isNaN(explicitOctave)) {
+      testOctaves.push(explicitOctave);
+    }
+    if (baseMidi !== null) {
+      testOctaves.push(Math.round(baseMidi / 12) - 1);
+      testOctaves.push(Math.round(baseMidi / 12));
+      testOctaves.push(Math.round(baseMidi / 12) + 1);
+    }
+    testOctaves.push(3, 4, 5);
+
+    let noteInfo = null;
+    for (const octave of testOctaves) {
+      const noteName = `${letter}${accidental}${octave}`;
+      const candidate = Note.get(noteName);
+      if (candidate && Number.isFinite(candidate.midi)) {
+        noteInfo = candidate;
+        break;
+      }
+    }
+
+    if (!noteInfo || !Number.isFinite(noteInfo.midi)) {
+      return null;
+    }
+
+    const midi = Math.round(noteInfo.midi);
+    if (baseMidi === null) {
+      baseMidi = midi;
+    }
+    const semitoneOffset = midi - baseMidi;
+    segments[i] = String(semitoneOffset);
+    converted = true;
+    separatorRegex.lastIndex = 0;
+  }
+
+  return converted ? segments.join('') : null;
+}
+
+function convertNoteCallsToScaleDegrees(pattern) {
+  if (!pattern || typeof pattern !== 'string') {
+    return pattern;
+  }
+
+  const bareNoteCallRegex = /\bnote\s*\(\s*([a-gA-G][^'"()]*?)\s*\)/gi;
+  let result = pattern.replace(bareNoteCallRegex, (match, content) => {
+    const inner = (content || '').trim();
+    if (!inner) {
+      return match;
+    }
+    const convertedContent = convertNoteSequenceContent(inner);
+    if (convertedContent === null) {
+      return match;
+    }
+    return `n("${convertedContent}")`;
+  });
+
+  const noteCallRegex = /\bnote\s*\(\s*(['"])([\s\S]*?)\1\s*\)/gi;
+
+  result = result.replace(noteCallRegex, (match, quote, content) => {
+    const convertedContent = convertNoteSequenceContent(content);
+    if (convertedContent === null) {
+      return match;
+    }
+    return `n(${quote}${convertedContent}${quote})`;
+  });
+
   return result;
 }
 
@@ -311,8 +430,8 @@ class SoundManager {
     this.currentTempo = 120;
     
     // Current key/scale - no default (user must select)
-    this.currentKey = '';
-    this.currentScale = '';
+    this.currentKey = 'C';
+    this.currentScale = 'chromatic';
     
     // Current time signature - no default (user must select)
     this.currentTimeSignature = '';
@@ -337,6 +456,10 @@ class SoundManager {
     this.masterPlaybackStartTime = null;
     this.masterPlaybackSpeed = 1;
     this.masterPlaybackTempo = this.currentTempo;
+
+    // Cache for scale conversion context
+    this._cachedScaleContext = null;
+    this._cachedScaleKey = '';
     
     // Audio export state
     this.mediaRecorder = null;
@@ -1458,8 +1581,9 @@ class SoundManager {
     // Always update the tracked pattern if element is tracked (even if not playing)
     if (this.trackedPatterns.has(elementId)) {
       const trackData = this.trackedPatterns.get(elementId);
-      // Normalize quotes before storing
-      trackData.pattern = newPattern.replace(/[""]/g, '"').replace(/['']/g, "'");
+      const normalizedPattern = newPattern.replace(/[""]/g, '"').replace(/['']/g, "'");
+      trackData.rawPattern = normalizedPattern;
+      trackData.pattern = this.convertPatternForScale(normalizedPattern) || normalizedPattern;
       console.log(`🎚️ Updated tracked pattern for ${elementId} in master: ${newPattern.substring(0, 60)}...`);
       
       // Update the master pattern to reflect the changes
@@ -3471,6 +3595,8 @@ class SoundManager {
   setKey(key) {
     // Store current key (empty string means no key selected)
     this.currentKey = key || '';
+    this._cachedScaleContext = null;
+    this._cachedScaleKey = '';
 
     if (this.currentKey) {
       console.log(`🎹 Key set to ${key}`);
@@ -3478,15 +3604,30 @@ class SoundManager {
       console.log(`🎹 Key cleared (no key selected)`);
     }
     
-    // Key can be used in patterns with note() functions
-    // The key information is stored and can be accessed by pattern composers
-    // Strudel doesn't have a global key setting, so patterns would need to
-    // explicitly use the key (e.g., using .scale() or note transposition)
-    
-    // Update master pattern with new key (even if not actively playing)
+    this.updateAllPatternsWithNewScale();
+  }
+
+  updateAllPatternsWithNewScale() {
     if (this.trackedPatterns.size > 0) {
-      console.log(`🔄 Updating master with new key`);
+      console.log(`🔄 Updating master with new key/scale`);
       this.updateMasterPattern();
+    }
+
+    for (const [elementId, trackData] of this.trackedPatterns.entries()) {
+      if (!trackData || !trackData.rawPattern) continue;
+      const normalizedPattern = trackData.rawPattern;
+      const convertedPattern = this.convertPatternForScale(normalizedPattern);
+      trackData.pattern = convertedPattern || normalizedPattern;
+    }
+
+    for (const [elementId, activeSound] of this.activeSounds.entries()) {
+      if (activeSound.type !== 'strudel') continue;
+      const saved = this.loadElementConfig ? this.loadElementConfig(elementId) : null;
+      const rawPattern = saved?.pattern || activeSound.originalPattern || '';
+      if (!rawPattern) continue;
+      const converted = this.convertPatternForScale(rawPattern);
+      const finalPattern = converted || rawPattern;
+      this.updatePatternInPlace(elementId, finalPattern).catch(() => {});
     }
   }
 
@@ -3494,18 +3635,16 @@ class SoundManager {
    * Set the scale/mode
    */
   setScale(scale) {
-    this.currentScale = (scale || '').trim();
+    this.currentScale = (scale || '').trim() || 'chromatic';
+    this._cachedScaleContext = null;
+    this._cachedScaleKey = '';
 
     if (this.currentScale) {
       console.log(`🎼 Scale set to ${this.currentScale}`);
     } else {
       console.log(`🎼 Scale cleared (no scale selected)`);
     }
-
-    if (this.trackedPatterns.size > 0) {
-      console.log(`🔄 Updating master with new scale`);
-      this.updateMasterPattern();
-    }
+    this.updateAllPatternsWithNewScale();
   }
 
   /**
@@ -3562,6 +3701,17 @@ class SoundManager {
       .replace(/\.0+$/, '')
       .replace(/^-0$/, '0');
     return trimmed;
+  }
+
+  getScaleConversionContext() {
+    return null;
+  }
+
+  convertPatternForScale(pattern) {
+    if (!pattern || typeof pattern !== 'string') {
+      return pattern;
+    }
+    return convertNoteCallsToScaleDegrees(pattern);
   }
 
   applyMasterMixModifiers(pattern) {
@@ -4670,9 +4820,11 @@ class SoundManager {
       
       // Normalize quotes in pattern before storing
       const normalizedPattern = (pattern || '').replace(/[""]/g, '"').replace(/['']/g, "'");
+      const preparedPattern = this.convertPatternForScale(normalizedPattern);
       
       this.trackedPatterns.set(elementId, {
-        pattern: normalizedPattern,
+        rawPattern: normalizedPattern,
+        pattern: preparedPattern,
         gain: gain || 0.8,
         pan: pan || 0,
         muted: false,
@@ -4768,6 +4920,7 @@ class SoundManager {
       const patternComments = []; // Store comments for each pattern
       const patternChannels = [];
       const hasSolo = soloedElements.size > 0;
+      const scaleContext = this.getScaleConversionContext();
       
       let iterationIndex = 0;
       for (const [elementId, trackData] of this.trackedPatterns.entries()) {
@@ -4788,13 +4941,17 @@ class SoundManager {
           continue;
         }
         
-        if (!trackData.pattern || trackData.pattern.trim() === '') {
+        const sourcePattern = trackData.rawPattern || trackData.pattern || '';
+        if (!sourcePattern || sourcePattern.trim() === '') {
           console.log(`  ⏭️ Skipping ${elementId} (empty pattern)`);
           continue;
         }
+
+      const convertedPattern = this.convertPatternForScale(sourcePattern) || sourcePattern;
+      trackData.pattern = convertedPattern;
         
         // Build pattern with gain and pan modifiers
-        let patternCode = trackData.pattern.trim();
+        let patternCode = (convertedPattern || '').trim();
         
         // Normalize quotes: replace fancy quotes with straight quotes
         patternCode = patternCode.replace(/[""]/g, '"').replace(/['']/g, "'");
@@ -4857,7 +5014,7 @@ class SoundManager {
         
         patterns.push(patternCode);
         patternChannels.push(channelNumber);
-        patternComments.push(`// Channel ${channelNumber}`);
+        patternComments.push(`Channel ${channelNumber}`);
         console.log(`  ✅ Added ${elementId}: ${patternCode.substring(0, 60)}...`);
       }
       
@@ -4866,19 +5023,18 @@ class SoundManager {
         console.log(`🔇 No active patterns - master pattern cleared`);
       } else if (patterns.length === 1) {
         // Single pattern - add comment
-        let singlePatternBody = this.applyGlobalSettingsToPattern(patterns[0], false);
-        singlePatternBody = this.applyMasterMixModifiers(singlePatternBody);
         const channelNumber = patternChannels[0] ?? 1;
-        const commentPrefix = `// Channel ${channelNumber}\n`;
-        this.masterPattern = `${commentPrefix}${singlePatternBody}`;
+        let singlePatternBody = patterns[0];
+        singlePatternBody = this.applyGlobalSettingsToPattern(singlePatternBody, false);
+        singlePatternBody = this.applyMasterMixModifiers(singlePatternBody);
+        this.masterPattern = `${singlePatternBody} // Channel ${channelNumber}`;
         console.log(`🎵 Master pattern (single): ${this.masterPattern.substring(0, 100)}...`);
       } else {
         // Multiple patterns - use stack() with comments and formatting
         // Build formatted pattern with comments and blank lines
         const formattedPatterns = patterns.map((pattern, index) => {
           const channelNumber = patternChannels[index] ?? (index + 1);
-          const comment = `// Channel ${channelNumber}`;
-          return `  ${comment}\n  ${pattern}`;
+          return `  ${pattern} // Channel ${channelNumber}`;
         }).join(',\n\n');
         
         let stackPattern = `stack(\n${formattedPatterns}\n)`;
@@ -4900,6 +5056,13 @@ class SoundManager {
           const missing = openCount - closeCount;
           this.masterPattern += ')'.repeat(missing);
           console.log(`  ✅ Added ${missing} closing paren(s). New pattern: ${this.masterPattern.substring(this.masterPattern.length - 50)}`);
+        }
+      }
+      
+      if (this.masterPattern) {
+        const convertedMaster = this.convertPatternForScale(this.masterPattern);
+        if (convertedMaster && convertedMaster !== this.masterPattern) {
+          this.masterPattern = convertedMaster;
         }
       }
       
@@ -5300,7 +5463,7 @@ class SoundManager {
       // For preview, use the same processing as playStrudelPattern to ensure consistency
       // This ensures preview sounds the same as when the element is actually playing
       console.log(`🔍 Preview - Original pattern: ${pattern}`);
-      console.log(`🔍 Preview - Pattern type check: isNotePattern=${this.isNotePattern(pattern)}, contains s(${pattern.includes('s(')}, contains sound(${pattern.includes('sound(')}, contains note(${pattern.includes('note(')})`);
+      console.log(`🔍 Preview - Pattern type check: isNotePattern=${this.isNotePattern(pattern)}, contains s(${pattern.includes('s(')}, contains sound(${pattern.includes('sound(')}, contains note(${/\bnote\s*\(/i.test(pattern)})`);
       
       // Use processPattern to get the same processing as playStrudelPattern
       let processedPattern = await this.processPattern(pattern, elementId, {
@@ -5314,7 +5477,7 @@ class SoundManager {
       }
       
       console.log(`🔍 Preview - After processPattern: ${processedPattern}`);
-      console.log(`🔍 Preview - Processed pattern type check: isNotePattern=${this.isNotePattern(processedPattern)}, contains s(${processedPattern.includes('s(')}, contains sound(${processedPattern.includes('sound(')}, contains note(${processedPattern.includes('note(')})`);
+      console.log(`🔍 Preview - Processed pattern type check: isNotePattern=${this.isNotePattern(processedPattern)}, contains s(${processedPattern.includes('s(')}, contains sound(${processedPattern.includes('sound(')}, contains note(${/\bnote\s*\(/i.test(processedPattern)})`);
       
       // Add .loop() to preview pattern if it doesn't already have it, so it plays continuously
       if (!processedPattern.includes('.loop(') && !processedPattern.includes('.loop()')) {
