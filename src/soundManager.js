@@ -62,7 +62,7 @@ function replaceSynthAliasesInPattern(pattern) {
 
 const SCALE_NAME_TONAL_MAP = {
   major: 'major',
-  minor: 'natural minor',
+  minor: 'minor',
   harmonicMinor: 'harmonic minor',
   melodicMinor: 'melodic minor',
   dorian: 'dorian',
@@ -99,7 +99,9 @@ function convertNoteSequenceContent(content) {
       continue;
     }
 
-    const noteMatch = segment.match(/^([a-gA-G])([#b]?)(-?\d+)?$/);
+    // Match note names with optional time annotations (e.g., "D5@1.0", "C5@0.5")
+    // Pattern: note letter, optional accidental, optional octave, optional time annotation
+    const noteMatch = segment.match(/^([a-gA-G])([#b]?)(-?\d+)?(@[\d.]+)?$/);
     if (!noteMatch) {
       separatorRegex.lastIndex = 0;
       continue;
@@ -108,6 +110,7 @@ function convertNoteSequenceContent(content) {
     const letter = noteMatch[1].toUpperCase();
     const accidental = noteMatch[2] || '';
     const explicitOctave = noteMatch[3] ? parseInt(noteMatch[3], 10) : null;
+    const timeAnnotation = noteMatch[4] || ''; // Preserve time annotation (e.g., "@1.0")
 
     const testOctaves = [];
     if (explicitOctave !== null && !Number.isNaN(explicitOctave)) {
@@ -139,7 +142,8 @@ function convertNoteSequenceContent(content) {
       baseMidi = midi;
     }
     const semitoneOffset = midi - baseMidi;
-    segments[i] = String(semitoneOffset);
+    // Preserve time annotation in the converted output
+    segments[i] = String(semitoneOffset) + timeAnnotation;
     converted = true;
     separatorRegex.lastIndex = 0;
   }
@@ -737,47 +741,6 @@ class SoundManager {
                 }
               }
               
-              // If this is the master slot, route through ALL tracked element gain nodes in parallel
-              if (isMasterSlot && soundManagerInstance.trackedPatterns.size > 0) {
-                if (!soundManagerInstance._masterTapLogged) {
-                  console.log(`🎚️ Master slot detected - routing through ${soundManagerInstance.trackedPatterns.size} element gain chains`);
-                  console.log(`🔍 Master active: ${soundManagerInstance.masterActive}, tracked patterns: ${Array.from(soundManagerInstance.trackedPatterns.keys()).join(', ')}`);
-                  soundManagerInstance._masterTapLogged = true;
-                }
-                
-                // Route audio through each tracked element's gain node (start of the chain)
-                // This ensures gain/pan/analyser are all applied
-                for (const [trackedElementId] of soundManagerInstance.trackedPatterns.entries()) {
-                  // Ensure audio nodes exist for this element
-                  if (!soundManagerInstance.elementGainNodes.has(trackedElementId)) {
-                    console.log(`🔧 Creating audio chain for ${trackedElementId} (needed for master routing)`);
-                    soundManagerInstance.getElementAudioNodes(trackedElementId);
-                  }
-                  
-                  const gainNode = soundManagerInstance.elementGainNodes.get(trackedElementId);
-                  if (gainNode && destination !== gainNode) {
-                    const nodeContext = this.context;
-                    const gainNodeContext = gainNode.context;
-                    
-                    if (nodeContext === gainNodeContext) {
-                      try {
-                        this.__originalConnect.call(this, gainNode, outputIndex, inputIndex);
-                        if (!soundManagerInstance._masterTapSuccess) {
-                          soundManagerInstance._masterTapSuccess = new Set();
-                        }
-                        if (!soundManagerInstance._masterTapSuccess.has(trackedElementId)) {
-                          console.log(`✅ Routed master signal through ${trackedElementId} gain chain (gain=${gainNode.gain.value.toFixed(2)}, pan=${soundManagerInstance.elementPanNodes.get(trackedElementId)?.pan.value.toFixed(2)})`);
-                          soundManagerInstance._masterTapSuccess.add(trackedElementId);
-                        }
-                      } catch (e) {
-                        console.error(`⚠️ Could not route master signal through ${trackedElementId} gain chain:`, e);
-                      }
-                    }
-                  }
-                }
-                // Continue with original connection after routing through all gain chains
-              }
-              
               if (elementId) {
                 const analyser = soundManagerInstance.elementAnalysers.get(elementId);
                 
@@ -1248,9 +1211,9 @@ class SoundManager {
     }
     
     // Check if pattern uses .bank() - extract bank names and verify they're loaded
-    const bankMatches = patternToEval.match(/\.bank\(["']([^"']+)["']\)/g);
-    if (bankMatches) {
-      const bankNames = bankMatches.map(m => m.match(/\.bank\(["']([^"']+)["']\)/)[1]);
+    const processedBankMatches = patternToEval.match(/\.bank\(["']([^"']+)["']\)/g);
+    if (processedBankMatches) {
+      const bankNames = processedBankMatches.map(m => m.match(/\.bank\(["']([^"']+)["']\)/)[1]);
       console.log(`[${elementId}] Pattern uses bank(s):`, bankNames);
       
       // Strudel bank names are case-sensitive - keep them as-is
@@ -1620,9 +1583,9 @@ class SoundManager {
       patternToEval = patternToEval.replace(/\.\.+/g, '.').trim();
       
       // Check if pattern uses .bank() - remove for banks that aren't loaded
-      const bankMatches = patternToEval.match(/\.bank\(["']([^"']+)["']\)/g);
-      if (bankMatches) {
-        const bankNames = bankMatches.map(m => m.match(/\.bank\(["']([^"']+)["']\)/)[1]);
+      const postBankMatches = patternToEval.match(/\.bank\(["']([^"']+)["']\)/g);
+      if (postBankMatches) {
+        const bankNames = postBankMatches.map(m => m.match(/\.bank\(["']([^"']+)["']\)/)[1]);
         for (const bankName of bankNames) {
           if (!this.loadedBanks.has(bankName)) {
             patternToEval = patternToEval.replace(new RegExp(`\\.bank\(["']${bankName}["']\)`, 'g'), '');
@@ -2546,8 +2509,15 @@ class SoundManager {
         // Get the pattern slot for this element
         const patternSlot = this.strudelPatternSlots.get(elementId);
         
-        // Automatically add to tracked patterns for master
-        if (!this.trackedPatterns.has(elementId)) {
+        const isPreviewElement = typeof elementId === 'string' && elementId.toLowerCase().includes('preview');
+        
+        if (isPreviewElement) {
+          if (this.trackedPatterns.has(elementId)) {
+            this.trackedPatterns.delete(elementId);
+            console.log(`🗑️ Removed preview element ${elementId} from master tracking`);
+            this.updateMasterPattern(this.soloedElements, this.mutedElements);
+          }
+        } else if (!this.trackedPatterns.has(elementId)) {
           const gain = this.getElementGain(elementId) || 0.8;
           const pan = this.getElementPan(elementId) || 0;
           // Normalize quotes in pattern before storing
@@ -3714,11 +3684,121 @@ class SoundManager {
     return convertNoteCallsToScaleDegrees(pattern);
   }
 
-  applyMasterMixModifiers(pattern) {
+  applyMasterMixModifiers(pattern, options = {}) {
     if (!pattern || typeof pattern !== 'string' || pattern.trim() === '') {
       return pattern;
     }
 
+    const { wrapStack = false } = options;
+    
+    // First, remove existing master-level modifiers from the pattern to avoid duplicates
+    let cleanedPattern = pattern;
+    
+    if (wrapStack) {
+      // For stack patterns, only remove modifiers that come AFTER the stack closing paren
+      // Per-track modifiers inside the stack should be preserved
+      const stackCloseMatch = cleanedPattern.match(/stack\s*\(/);
+      if (stackCloseMatch) {
+        // Find the closing parenthesis of the stack(...) call
+        let stackStart = stackCloseMatch.index + stackCloseMatch[0].length - 1; // Position of '('
+        let depth = 1;
+        let stackEnd = stackStart + 1;
+        let inString = false;
+        let stringChar = null;
+        
+        while (stackEnd < cleanedPattern.length && depth > 0) {
+          const char = cleanedPattern[stackEnd];
+          
+          // Handle strings
+          if (!inString && (char === '"' || char === "'")) {
+            inString = true;
+            stringChar = char;
+          } else if (inString && char === stringChar && cleanedPattern[stackEnd - 1] !== '\\') {
+            inString = false;
+            stringChar = null;
+          }
+          
+          if (!inString) {
+            if (char === '(') depth++;
+            else if (char === ')') depth--;
+          }
+          
+          if (depth > 0) stackEnd++;
+        }
+        
+        if (depth === 0) {
+          // Found the stack closing paren at stackEnd
+          // Completely drop everything after the closing parenthesis
+          // This ensures no old master modifiers remain
+          cleanedPattern = cleanedPattern.substring(0, stackEnd + 1).trimEnd();
+        }
+      }
+    } else {
+      // For single patterns, remove all modifiers (they're all master-level)
+      cleanedPattern = cleanedPattern.replace(/\.gain\s*\([^)]*\)/g, '');
+      cleanedPattern = cleanedPattern.replace(/\.pan\s*\([^)]*\)/g, '');
+      cleanedPattern = cleanedPattern.replace(/\.cpm\s*\([^)]*\)/g, '');
+      cleanedPattern = cleanedPattern.replace(/\.\.+/g, '.').replace(/\.\s*$/, '').trim();
+    }
+    
+    // Clean up any double dots or trailing dots
+    cleanedPattern = cleanedPattern.replace(/\.\.+/g, '.').replace(/\.\s*$/, '').trim();
+    
+    // Parse existing master-level modifiers to update internal state (for gain/pan)
+    // For stack patterns, only look at modifiers after the stack closing paren
+    let masterLevelPattern = pattern;
+    if (wrapStack) {
+      const stackCloseMatch = pattern.match(/stack\s*\(/);
+      if (stackCloseMatch) {
+        let stackStart = stackCloseMatch.index + stackCloseMatch[0].length - 1;
+        let depth = 1;
+        let stackEnd = stackStart + 1;
+        let inString = false;
+        let stringChar = null;
+        
+        while (stackEnd < pattern.length && depth > 0) {
+          const char = pattern[stackEnd];
+          if (!inString && (char === '"' || char === "'")) {
+            inString = true;
+            stringChar = char;
+          } else if (inString && char === stringChar && pattern[stackEnd - 1] !== '\\') {
+            inString = false;
+            stringChar = null;
+          }
+          if (!inString) {
+            if (char === '(') depth++;
+            else if (char === ')') depth--;
+          }
+          if (depth > 0) stackEnd++;
+        }
+        
+        if (depth === 0) {
+          masterLevelPattern = pattern.substring(stackEnd + 1);
+        }
+      }
+    }
+    
+    // Parse the LAST modifier of each type (in case there are duplicates)
+    const gainMatches = [...masterLevelPattern.matchAll(/\.gain\s*\(\s*([^)]+)\s*\)/g)];
+    if (gainMatches.length > 0) {
+      // Use the last match (most recent)
+      const lastMatch = gainMatches[gainMatches.length - 1];
+      const gainValue = parseFloat(lastMatch[1]);
+      if (Number.isFinite(gainValue)) {
+        this.masterVolume = gainValue;
+      }
+    }
+    
+    const panMatches = [...masterLevelPattern.matchAll(/\.pan\s*\(\s*([^)]+)\s*\)/g)];
+    if (panMatches.length > 0) {
+      // Use the last match (most recent)
+      const lastMatch = panMatches[panMatches.length - 1];
+      const panValue = parseFloat(lastMatch[1]);
+      if (Number.isFinite(panValue)) {
+        this.masterPan = panValue;
+      }
+    }
+    
     const modifiers = [];
     if (Number.isFinite(this.masterVolume) && Math.abs(this.masterVolume - 1) > 1e-6) {
       modifiers.push(`.gain(${this.formatNumberForPattern(this.masterVolume, 4)})`);
@@ -3735,8 +3815,12 @@ class SoundManager {
     }
 
     if (!modifiers.length) {
-      return pattern;
+      return cleanedPattern;
     }
+
+    // Use cleaned pattern as base
+    pattern = cleanedPattern;
+    const remainingModifiers = modifiers;
 
     const commentMatch = pattern.match(/^(\s*\/\/[^\n]*\n)+/);
     let prefix = '';
@@ -3753,7 +3837,121 @@ class SoundManager {
       return pattern;
     }
 
-    const wrappedBody = `(${trimmedBody})${modifiers.join('')}`;
+    if (wrapStack) {
+      // Find the stack closing paren using the same logic as cleaning
+      const stackCloseMatch = trimmedBody.match(/stack\s*\(/);
+      if (stackCloseMatch) {
+        let stackStart = stackCloseMatch.index + stackCloseMatch[0].length - 1;
+        let depth = 1;
+        let stackEnd = stackStart + 1;
+        let inString = false;
+        let stringChar = null;
+        
+        while (stackEnd < trimmedBody.length && depth > 0) {
+          const char = trimmedBody[stackEnd];
+          if (!inString && (char === '"' || char === "'")) {
+            inString = true;
+            stringChar = char;
+          } else if (inString && char === stringChar && trimmedBody[stackEnd - 1] !== '\\') {
+            inString = false;
+            stringChar = null;
+          }
+          if (!inString) {
+            if (char === '(') depth++;
+            else if (char === ')') depth--;
+          }
+          if (depth > 0) stackEnd++;
+        }
+        
+        if (depth === 0) {
+          // Found the stack closing paren - everything after it should have been removed during cleaning
+          const stackPrefix = trimmedBody.slice(0, stackEnd + 1);
+          const stackSuffix = trimmedBody.slice(stackEnd + 1).trim();
+          
+          // Since we drop everything after stack during cleaning, stackSuffix should be empty
+          // But if it's not, aggressively clean it and drop anything modifier-like
+          let cleanedSuffix = stackSuffix;
+          
+          // Remove all modifier patterns, including malformed ones like .(gain(0.7)) or (gain(0.7))
+          // Use a loop to catch all variations
+          let previousLength = cleanedSuffix.length;
+          let iterations = 0;
+          while (iterations < 10) { // Safety limit
+            // Remove standard modifiers: .gain(...)
+            cleanedSuffix = cleanedSuffix.replace(/\.(gain|pan|cpm)\s*\([^)]*\)/g, '');
+            
+            // Remove malformed patterns: .(gain(...)) or (gain(...))
+            cleanedSuffix = cleanedSuffix.replace(/\.\s*\(\s*(gain|pan|cpm)\s*\([^)]*\)\s*\)/g, '');
+            cleanedSuffix = cleanedSuffix.replace(/\s*\(\s*(gain|pan|cpm)\s*\([^)]*\)\s*\)/g, '');
+            
+            // Remove any standalone modifier calls without dot
+            cleanedSuffix = cleanedSuffix.replace(/\s*(gain|pan|cpm)\s*\([^)]*\)/g, '');
+            
+            // Clean up artifacts
+            cleanedSuffix = cleanedSuffix.replace(/\.\.+/g, '.').replace(/\.\s*$/, '').replace(/^\s*\./, '').trim();
+            
+            // If nothing changed, we're done
+            if (cleanedSuffix.length === previousLength) break;
+            previousLength = cleanedSuffix.length;
+            iterations++;
+          }
+          
+          // Final safety: if cleanedSuffix contains ANY modifier-like text, drop it completely
+          if (cleanedSuffix.match(/(gain|pan|cpm)\s*\(/) || cleanedSuffix.match(/[().]/)) {
+            cleanedSuffix = '';
+          }
+          
+          // Always strip everything after the stack closing paren, then add fresh modifiers
+          // This ensures we never have duplicate or malformed modifiers
+          const finalPattern = stackPrefix + (remainingModifiers.length > 0 ? remainingModifiers.join('') : '');
+          
+          return `${prefix}${finalPattern}${trailingWhitespace}`;
+        }
+      }
+      
+      // Fallback: use lastIndexOf if stack detection fails
+      const closingIndex = trimmedBody.lastIndexOf(')');
+      if (closingIndex !== -1) {
+        const stackPrefix = trimmedBody.slice(0, closingIndex + 1);
+        const stackSuffix = trimmedBody.slice(closingIndex + 1).trim();
+        
+        // Aggressively clean suffix using the same loop-based approach
+        let cleanedSuffix = stackSuffix;
+        let previousLength = cleanedSuffix.length;
+        let iterations = 0;
+        while (iterations < 10) {
+          cleanedSuffix = cleanedSuffix.replace(/\.(gain|pan|cpm)\s*\([^)]*\)/g, '');
+          cleanedSuffix = cleanedSuffix.replace(/\.\s*\(\s*(gain|pan|cpm)\s*\([^)]*\)\s*\)/g, '');
+          cleanedSuffix = cleanedSuffix.replace(/\s*\(\s*(gain|pan|cpm)\s*\([^)]*\)\s*\)/g, '');
+          cleanedSuffix = cleanedSuffix.replace(/\s*(gain|pan|cpm)\s*\([^)]*\)/g, '');
+          cleanedSuffix = cleanedSuffix.replace(/\.\.+/g, '.').replace(/\.\s*$/, '').replace(/^\s*\./, '').trim();
+          
+          if (cleanedSuffix.length === previousLength) break;
+          previousLength = cleanedSuffix.length;
+          iterations++;
+        }
+        
+        // Final safety check
+        if (cleanedSuffix.match(/(gain|pan|cpm)\s*\(/) || cleanedSuffix.match(/[().]/)) {
+          cleanedSuffix = '';
+        }
+        
+        // Always strip everything after the stack closing paren, then add fresh modifiers
+        const finalPattern = stackPrefix + (remainingModifiers.length > 0 ? remainingModifiers.join('') : '');
+        
+        return `${prefix}${finalPattern}${trailingWhitespace}`;
+      }
+    }
+
+    const isAlreadyWrapped = trimmedBody.startsWith('(') && trimmedBody.endsWith(')');
+    const wrappedBody = remainingModifiers.length > 0
+      ? (
+        isAlreadyWrapped
+          ? `${trimmedBody}${remainingModifiers.join('')}`
+          : `(${trimmedBody})${remainingModifiers.join('')}`
+      )
+      : trimmedBody;
+
     return `${prefix}${wrappedBody}${trailingWhitespace}`;
   }
 
@@ -3805,19 +4003,29 @@ class SoundManager {
 
       if (hasKey) {
         const scaleName = selectedScale || defaultScaleFromKey || 'major';
-        appliedScaleName = scaleName;
+        // Map dropdown value to Tonal.js scale name
+        const tonalScaleName = SCALE_NAME_TONAL_MAP[scaleName] || scaleName;
+        appliedScaleName = tonalScaleName;
         const root = rootNote || this.currentKey.trim().toLowerCase();
-        scaleIdentifier = root ? `${root}:${scaleName}` : scaleName;
+        scaleIdentifier = root ? `${root}:${tonalScaleName}` : tonalScaleName;
       } else if (selectedScale) {
-        appliedScaleName = selectedScale;
-        scaleIdentifier = selectedScale;
+        // Map dropdown value to Tonal.js scale name
+        const tonalScaleName = SCALE_NAME_TONAL_MAP[selectedScale] || selectedScale;
+        appliedScaleName = tonalScaleName;
+        scaleIdentifier = tonalScaleName;
       }
 
-      if (scaleIdentifier) {
-        if (needsWrapping) {
-          modifiedPattern = `${modifiedPattern}.scale('${scaleIdentifier}')`;
+      if (scaleIdentifier && !/\.\s*scale\s*\(/.test(modifiedPattern)) {
+        const scaleModifier = `.scale('${scaleIdentifier}')`;
+        const sampleIndex = modifiedPattern.search(/\.(s|sound)\s*\(/);
+        if (sampleIndex !== -1) {
+          const before = modifiedPattern.slice(0, sampleIndex);
+          const after = modifiedPattern.slice(sampleIndex);
+          modifiedPattern = `${before}${scaleModifier}${after}`;
+        } else if (needsWrapping) {
+          modifiedPattern = `${modifiedPattern}${scaleModifier}`;
         } else {
-          modifiedPattern = `(${modifiedPattern}).scale('${scaleIdentifier}')`;
+          modifiedPattern = `(${modifiedPattern})${scaleModifier}`;
           needsWrapping = true;
         }
         console.log(`  🎼 Applied scale: ${scaleIdentifier}`);
@@ -4615,12 +4823,11 @@ class SoundManager {
       'EmuSP1200', 'CasioRZ1'
     ];
     
-    // Built-in synth waveforms (used with .s() modifier)
-    const builtInSynthWaveforms = [
+    const builtInSampleBanks = [
+      'piano', 'superpiano', 'jazz', 'supersaw', 'folkharp',
       'casio', 'insect', 'wind', 'wood', 'metal', 'east', 'crow', 'space', 'numbers',
-      'piano', 'supersaw', 'gtr', 'folkharp',
       'sawtooth', 'sine', 'square', 'triangle', 'saw', 'saw2', 'saw3', 'saw4', 'saw8',
-      'superpiano', 'jazz'
+      'gtr'
     ];
     
     // Check if this is a local custom drum bank
@@ -4648,18 +4855,46 @@ class SoundManager {
     // Check if this is a built-in drum bank (from dirt-samples)
     // Bank names are case-sensitive in Strudel (e.g., "RolandTR808", not "tr808")
     if (builtInDrumBanks.includes(bankName)) {
-      console.log(`✅ Built-in drum bank "${bankName}" - available via default dirt-samples`);
-      // Mark as loaded - these are part of the default dirt-samples
-      this.loadedBanks.add(bankName);
-      return true;
+      console.log(`📦 Ensuring built-in drum bank "${bankName}" samples are loaded...`);
+      try {
+        const preloadSlot = 'd15';
+        const preloadPattern = `${preloadSlot} = s("bd sd hh cp oh cr rd ht mt lt sh cb tb pe").bank("${bankName}")`;
+        await window.strudel.evaluate(preloadPattern);
+        
+        if (window.strudel.scheduler && typeof window.strudel.scheduler.tick === 'function') {
+          for (let i = 0; i < 4; i++) {
+            window.strudel.scheduler.tick();
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        
+        await window.strudel.evaluate(`${preloadSlot} = silence`);
+        this.loadedBanks.add(bankName);
+        console.log(`✅ Built-in drum bank "${bankName}" ready`);
+        return true;
+      } catch (error) {
+        console.warn(`⚠️ Could not preload built-in bank "${bankName}":`, error);
+        this.loadedBanks.add(bankName);
+        return true;
+      }
     }
     
-    // Check if this is a built-in synth waveform
-    if (builtInSynthWaveforms.includes(bankName.toLowerCase())) {
-      console.log(`✅ Built-in synth waveform "${bankName}" is available (embedded in Strudel, no download required)`);
-      // Mark as loaded - these are built-in and work directly
-      this.loadedBanks.add(bankName.toLowerCase());
-      return true;
+    if (builtInSampleBanks.includes(bankName.toLowerCase())) {
+      const samplesFunc = window.strudel?.samples || globalThis.samples;
+      if (samplesFunc && typeof samplesFunc === 'function') {
+        try {
+          console.log(`📦 Loading sample bank "${bankName}" via samples()`);
+          await samplesFunc(bankName.toLowerCase());
+          this.loadedBanks.add(bankName.toLowerCase());
+          console.log(`✅ Sample bank "${bankName}" loaded`);
+          return true;
+        } catch (error) {
+          console.warn(`⚠️ Failed to load sample bank "${bankName}":`, error);
+          return false;
+        }
+      }
     }
     
     
@@ -4783,6 +5018,57 @@ class SoundManager {
       
       // Return true if we attempted to load, false if no paths worked
       return loaded;
+    }
+  }
+
+  /**
+   * Ensure that any banks or built-in synth waveforms referenced in a pattern
+   * are loaded before evaluation (handles master stack playback)
+   */
+  async ensurePatternResourcesLoaded(pattern) {
+    if (!pattern || typeof pattern !== 'string' || typeof this.loadBank !== 'function') {
+      return;
+    }
+
+    const bankNames = new Set();
+
+    const bankRegex = /\.bank\(["']([^"']+)["']\)/g;
+    let match;
+    while ((match = bankRegex.exec(pattern)) !== null) {
+      if (match[1]) {
+        bankNames.add(match[1]);
+      }
+    }
+
+    const sampleRegex = /\.s\(["']([^"']+)["']\)/g;
+    while ((match = sampleRegex.exec(pattern)) !== null) {
+      const sampleName = match[1];
+      if (!sampleName) continue;
+      if (/\s|~|\[|\]|,/.test(sampleName)) continue;
+      bankNames.add(sampleName);
+    }
+
+    const soundRegex = /\.sound\(["']([^"']+)["']\)/g;
+    while ((match = soundRegex.exec(pattern)) !== null) {
+      if (match[1]) {
+        bankNames.add(match[1]);
+      }
+    }
+
+    for (const name of bankNames) {
+      if (this.loadedBanks.has(name) || !name) continue;
+      try {
+        console.log(`🎚️ ensurePatternResourcesLoaded: loading "${name}" for playback`);
+        const result = await this.loadBank(name);
+        if (result) {
+          this.loadedBanks.add(name);
+          console.log(`✅ Resource "${name}" loaded`);
+        } else {
+          console.warn(`⚠️ Could not load resource "${name}" (continuing anyway)`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Error loading resource "${name}":`, error);
+      }
     }
   }
 
@@ -4980,8 +5266,6 @@ class SoundManager {
           }
         }
         
-        let needsWrapping = false;
-
         // Normalize synth aliases to ensure consistency across master pattern
         patternCode = replaceSynthAliasesInPattern(patternCode);
         
@@ -4991,83 +5275,139 @@ class SoundManager {
         
         // Add gain modifier if not default
         if (trackData.gain !== 1) {
-          if (needsWrapping) {
-            patternCode = `${patternCode}.gain(${trackData.gain.toFixed(2)})`;
-          } else {
-            patternCode = `(${patternCode}).gain(${trackData.gain.toFixed(2)})`;
-            needsWrapping = true;
-          }
+          // Always wrap the pattern before adding .gain() for consistent chaining
+          const basePattern = patternCode.trim();
+          patternCode = `(${basePattern}).gain(${trackData.gain.toFixed(2)})`;
         }
         
         // Add pan modifier if not centered
         if (trackData.pan !== 0) {
-          if (needsWrapping) {
-            patternCode = `${patternCode}.pan(${trackData.pan.toFixed(2)})`;
-          } else {
-            patternCode = `(${patternCode}).pan(${trackData.pan.toFixed(2)})`;
-            needsWrapping = true;
-          }
+          const basePattern = patternCode.trim();
+          patternCode = `(${basePattern}).pan(${trackData.pan.toFixed(2)})`;
         }
         
-        // Note: Global settings (tempo, key, etc.) will be applied to the entire stack at the end
-        // Not to individual patterns
+        // Apply global settings (scale) per pattern instead of entire stack
+        const isWrapped = patternCode.trim().startsWith('(');
+        patternCode = this.applyGlobalSettingsToPattern(patternCode, isWrapped);
         
         patterns.push(patternCode);
         patternChannels.push(channelNumber);
         patternComments.push(`Channel ${channelNumber}`);
-        console.log(`  ✅ Added ${elementId}: ${patternCode.substring(0, 60)}...`);
+        console.log(`  ✅ Added ${elementId}: ${patternCode.substring(0, 100)}...`);
       }
       
     if (patterns.length === 0) {
         this.masterPattern = '';
         console.log(`🔇 No active patterns - master pattern cleared`);
       } else if (patterns.length === 1) {
-        // Single pattern - add comment
         const channelNumber = patternChannels[0] ?? 1;
-        let singlePatternBody = patterns[0];
-        singlePatternBody = this.applyGlobalSettingsToPattern(singlePatternBody, false);
-        singlePatternBody = this.applyMasterMixModifiers(singlePatternBody);
-        this.masterPattern = `${singlePatternBody} // Channel ${channelNumber}`;
-        console.log(`🎵 Master pattern (single): ${this.masterPattern.substring(0, 100)}...`);
+        const singlePatternBody = patterns[0];
+        this.masterPattern = `/* Channel ${channelNumber} */\n${singlePatternBody}`;
+        console.log(`🎵 Master pattern (single): ${this.masterPattern.substring(0, 120)}...`);
       } else {
-        // Multiple patterns - use stack() with comments and formatting
-        // Build formatted pattern with comments and blank lines
         const formattedPatterns = patterns.map((pattern, index) => {
           const channelNumber = patternChannels[index] ?? (index + 1);
-          return `  ${pattern} // Channel ${channelNumber}`;
+          return `  /* Channel ${channelNumber} */\n  ${pattern}`;
         }).join(',\n\n');
-        
+
         let stackPattern = `stack(\n${formattedPatterns}\n)`;
-        
-        // Apply global settings to the entire stack
-        stackPattern = this.applyGlobalSettingsToPattern(stackPattern, false);
-        stackPattern = this.applyMasterMixModifiers(stackPattern);
+
+        stackPattern = this.applyMasterMixModifiers(stackPattern, { wrapStack: true });
         this.masterPattern = stackPattern;
-        
-        // Debug: verify parentheses balance
+
+        let depth = 0;
+        let inString = false;
+        let stringChar = null;
+        let inComment = false;
+
+        for (let i = 0; i < this.masterPattern.length; i++) {
+          const char = this.masterPattern[i];
+          const nextChar = this.masterPattern[i + 1];
+
+          if (!inString && char === '/' && nextChar === '/') {
+            inComment = true;
+            i++;
+            continue;
+          }
+          if (inComment && char === '\n') {
+            inComment = false;
+            continue;
+          }
+          if (inComment) continue;
+
+          if (!inComment && (char === '"' || char === "'")) {
+            if (!inString) {
+              inString = true;
+              stringChar = char;
+            } else if (char === stringChar && this.masterPattern[i - 1] !== '\\') {
+              inString = false;
+              stringChar = null;
+            }
+            continue;
+          }
+
+          if (!inString && !inComment) {
+            if (char === '(') {
+              depth++;
+            } else if (char === ')') {
+              depth--;
+              if (depth < 0) {
+                console.error(`  ⚠️ UNBALANCED PARENTHESES! Extra closing paren at position ${i}`);
+                break;
+              }
+            }
+          }
+        }
+
         const openCount = (this.masterPattern.match(/\(/g) || []).length;
         const closeCount = (this.masterPattern.match(/\)/g) || []).length;
         console.log(`🎵 Master pattern (stack): ${this.masterPattern.substring(0, 150)}...`);
-        console.log(`  📊 Parentheses: ${openCount} open, ${closeCount} close, balanced: ${openCount === closeCount}`);
+        console.log(`  📊 Parentheses: ${openCount} open, ${closeCount} close, depth=${depth}, balanced: ${depth === 0}`);
+
+        if (depth !== 0) {
+          console.error(`  ⚠️ UNBALANCED PARENTHESES! Depth=${depth}, fixing...`);
+          console.log('  🧾 Master pattern before fix:\n', this.masterPattern);
+          if (depth > 0) {
+            this.masterPattern += ')'.repeat(depth);
+            console.log(`  ✅ Added ${depth} closing paren(s)`);
+          } else {
+            const extra = Math.abs(depth);
+            let removed = 0;
+            for (let i = this.masterPattern.length - 1; i >= 0 && removed < extra; i--) {
+              if (this.masterPattern[i] === ')') {
+                this.masterPattern = this.masterPattern.substring(0, i) + this.masterPattern.substring(i + 1);
+                removed++;
+              }
+            }
+            console.log(`  ✅ Removed ${removed} extra closing paren(s)`);
+          }
+        }
+      }
+      
+      const currentMaster = this.masterPattern;
+      if (currentMaster && currentMaster.trim() !== '') {
+        let modifiedMaster = this.convertPatternForScale(currentMaster) || currentMaster;
         
-        if (openCount !== closeCount) {
-          console.error(`  ⚠️ UNBALANCED PARENTHESES! Fixing...`);
-          // Add missing closing parens
-          const missing = openCount - closeCount;
-          this.masterPattern += ')'.repeat(missing);
-          console.log(`  ✅ Added ${missing} closing paren(s). New pattern: ${this.masterPattern.substring(this.masterPattern.length - 50)}`);
+        const isStackPattern = /\bstack\s*\(/.test(modifiedMaster);
+        const channelCount = patterns.length;
+        
+        if (channelCount === 1 && isStackPattern) {
+          const innerMatch = modifiedMaster.match(/\bstack\s*\(\s*([\s\S]*?)\s*\)\s*$/);
+          if (innerMatch) {
+            const innerContent = innerMatch[1].trim();
+            const channelCommentMatch = innerContent.match(/\/\*\s*Channel\s*\d+\s*\*\/\s*([\s\S]*)/);
+            const channelPattern = channelCommentMatch ? channelCommentMatch[1].trim() : innerContent;
+            modifiedMaster = channelCommentMatch ? channelCommentMatch[0] : channelPattern;
+            modifiedMaster = modifiedMaster.replace(/\.gain\(\s*([^)]+)\s*\)\s*\)$/g, (match, gainValue) => {
+              return `).gain(${gainValue})`;
+            });
+          }
         }
-      }
-      
-      if (this.masterPattern) {
-        const convertedMaster = this.convertPatternForScale(this.masterPattern);
-        if (convertedMaster && convertedMaster !== this.masterPattern) {
-          this.masterPattern = convertedMaster;
-        }
-      }
-      
-      if (this.masterPattern && this.masterPattern.trim() !== '') {
-        this.masterPattern = this.formatMasterPatternWithTempoComment(this.masterPattern);
+        
+        // Note: Master mix modifiers (gain, pan, cpm) are already applied by applyMasterMixModifiers
+        // No need to add them again here
+        
+        this.masterPattern = this.formatMasterPatternWithTempoComment(modifiedMaster);
       }
 
       // Global settings now applied to the entire stack (or single pattern)
@@ -5104,7 +5444,7 @@ class SoundManager {
   applyVisualizerTargetsToPattern(pattern) {
     if (!pattern || typeof pattern !== 'string') return pattern;
     const canvasId = 'master-punchcard-canvas';
-    const analyserId = 'master-visualizer';
+    const analyserId = canvasId;
     const ctxExpression = "window.__strudelVisualizerCtx || (document.getElementById('master-punchcard-canvas') && document.getElementById('master-punchcard-canvas').getContext && document.getElementById('master-punchcard-canvas').getContext('2d'))";
     const canonicalPrefixes = ['spectrum', 'scope', 'tscope', 'fscope', 'visual', 'spiral'];
     let result = pattern;
@@ -5193,6 +5533,41 @@ class SoundManager {
         
         patternToEval = replaceSynthAliasesInPattern(patternToEval);
         patternToEval = this.applyVisualizerTargetsToPattern(patternToEval);
+
+        // Ensure any referenced banks are loaded before evaluating
+        const bankMatchesForMaster = patternToEval.match(/\.bank\(["']([^"']+)["']\)/g);
+        if (bankMatchesForMaster && typeof this.loadBank === 'function') {
+          const bankNames = [...new Set(bankMatchesForMaster.map(match => {
+            const resultMatch = match.match(/\.bank\(["']([^"']+)["']\)/);
+            return resultMatch ? resultMatch[1] : null;
+          }).filter(Boolean))];
+
+          for (const bankName of bankNames) {
+            if (!this.loadedBanks.has(bankName)) {
+              try {
+                console.log(`🎚️ Master: ensuring bank "${bankName}" is loaded before playback`);
+                const loadResult = await this.loadBank(bankName);
+                if (loadResult) {
+                  this.loadedBanks.add(bankName);
+                  console.log(`✅ Master: bank "${bankName}" loaded`);
+                } else {
+                  console.warn(`⚠️ Master: bank "${bankName}" could not be loaded (continuing anyway)`);
+                }
+              } catch (bankError) {
+                console.warn(`⚠️ Master: error loading bank "${bankName}":`, bankError);
+              }
+            }
+          }
+        }
+        
+        await this.ensurePatternResourcesLoaded(patternToEval);
+
+        // Remove JavaScript style comments to avoid breaking evaluation
+        patternToEval = patternToEval
+          .replace(/\/\/.*$/gm, '')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/\n\s*\n/g, '\n')
+          .trim();
         
         // Normalize quotes as a final safety measure before evaluation
         const beforeNormalization = patternToEval;
@@ -5202,6 +5577,113 @@ class SoundManager {
           console.log(`🔧 Normalized quotes in master pattern`);
           console.log(`  Before: ${beforeNormalization.substring(0, 100)}...`);
           console.log(`  After:  ${patternToEval.substring(0, 100)}...`);
+        }
+        
+        // Final safety check: fix any unwrapped method chains before .gain() or .pan()
+        // This catches cases where patterns like s("bd").bank("AkaiLinn").gain(0.80) need wrapping
+        // We'll find all occurrences of .gain( or .pan( and check if the preceding expression needs wrapping
+        const fixUnwrappedGainPan = (pattern) => {
+          let result = pattern;
+          const gainPanRegex = /\.(gain|pan)\s*\(/g;
+          const fixes = [];
+          let match;
+          
+          // Find all .gain( and .pan( occurrences
+          while ((match = gainPanRegex.exec(result)) !== null) {
+            const modifierPos = match.index;
+            const modifier = match[1];
+            
+            // Work backwards to find where the expression starts
+            let startPos = modifierPos - 1;
+            let depth = 0;
+            let inString = false;
+            let stringChar = null;
+            let foundStart = false;
+            
+            // Skip whitespace and the dot
+            while (startPos >= 0 && (result[startPos] === ' ' || result[startPos] === '\n' || result[startPos] === '\t' || result[startPos] === '.')) {
+              startPos--;
+            }
+            
+            // Work backwards to find the start of the expression
+            while (startPos >= 0 && !foundStart) {
+              const char = result[startPos];
+              
+              // Handle strings
+              if ((char === '"' || char === "'") && (startPos === 0 || result[startPos - 1] !== '\\')) {
+                if (!inString) {
+                  inString = true;
+                  stringChar = char;
+                } else if (char === stringChar) {
+                  inString = false;
+                  stringChar = null;
+                }
+                startPos--;
+                continue;
+              }
+              
+              if (!inString) {
+                if (char === ')') {
+                  depth++;
+                } else if (char === '(') {
+                  depth--;
+                  if (depth < 0) {
+                    // Found the start of a function call
+                    foundStart = true;
+                    startPos++;
+                    break;
+                  }
+                } else if (depth === 0 && char === '.' && startPos < modifierPos - 1) {
+                  // Found a method call boundary
+                  foundStart = true;
+                  startPos++;
+                  break;
+                } else if (depth === 0 && /[a-zA-Z_$0-9]/.test(char)) {
+                  // Continue looking
+                } else if (depth === 0 && !/[a-zA-Z_$0-9\s\.]/.test(char)) {
+                  // Found a boundary
+                  foundStart = true;
+                  startPos++;
+                  break;
+                }
+              }
+              
+              startPos--;
+            }
+            
+            if (startPos < 0) startPos = 0;
+            
+            const expression = result.substring(startPos, modifierPos).trim();
+            
+            // Check if expression is already wrapped
+            if (expression && !expression.startsWith('(') && expression.includes('.')) {
+              // This looks like an unwrapped method chain
+              fixes.push({
+                start: startPos,
+                end: modifierPos,
+                expression: expression,
+                modifier: modifier
+              });
+            }
+          }
+          
+          // Apply fixes in reverse order to maintain positions
+          fixes.reverse().forEach(fix => {
+            const before = result.substring(0, fix.start);
+            const after = result.substring(fix.end + fix.modifier.length + 1);
+            result = before + `(${fix.expression}).${fix.modifier}(` + after;
+            console.log(`🔧 Final fix: Wrapped pattern before .${fix.modifier}(): ${fix.expression.substring(0, 60)}...`);
+          });
+          
+          return result;
+        };
+        
+        patternToEval = fixUnwrappedGainPan(patternToEval);
+        
+        // Add .loop() to master pattern if it doesn't already have it, so it plays continuously
+        if (!patternToEval.includes('.loop(') && !patternToEval.includes('.loop()')) {
+          patternToEval = `${patternToEval}.loop()`;
+          console.log(`🔄 Added .loop() to master pattern for continuous playback`);
         }
         
         const code = `${this.masterSlot} = ${patternToEval}`;
@@ -5415,10 +5897,9 @@ class SoundManager {
       // Set current evaluating slot for audio routing (preview uses d16)
       this.currentEvaluatingSlot = previewSlot;
       
-      // Map preview slot to elementId for routing
-      if (!this.patternSlotToElementId.has(previewSlot)) {
-        this.patternSlotToElementId.set(previewSlot, elementId);
-      }
+      // Map preview slot to elementId for routing - always update to ensure correct routing
+      this.patternSlotToElementId.set(previewSlot, elementId);
+      console.log(`🎵 Preview: Mapped slot ${previewSlot} to elementId ${elementId} for audio routing`);
 
       if (window.strudel && window.strudel.evaluate) {
         try {
@@ -5460,6 +5941,8 @@ class SoundManager {
         await this.initStrudel();
       }
       
+      await this.ensurePatternResourcesLoaded(pattern);
+
       // For preview, use the same processing as playStrudelPattern to ensure consistency
       // This ensures preview sounds the same as when the element is actually playing
       console.log(`🔍 Preview - Original pattern: ${pattern}`);

@@ -92,57 +92,30 @@ class UIController {
 
     // Key select
     const keySelect = document.getElementById('key-select');
-    const keyValue = document.getElementById('key-value');
-    
-    if (keySelect && keyValue) {
+    if (keySelect) {
       keySelect.addEventListener('change', (e) => {
         const key = e.target.value;
-        // Don't notify if placeholder is selected
         if (key === '') {
-          keyValue.textContent = 'Select Key';
           return;
         }
-        const selectedOption = e.target.options[e.target.selectedIndex];
-        keyValue.textContent = selectedOption.text;
         this.notify('key', key);
       });
     }
 
     // Scale select
     const scaleSelect = document.getElementById('scale-select');
-    const scaleValue = document.getElementById('scale-value');
-
-    if (scaleSelect && scaleValue) {
+    if (scaleSelect) {
       scaleSelect.addEventListener('change', (e) => {
         const scale = e.target.value;
         if (scale === '') {
-          scaleValue.textContent = 'Select Scale';
-          this.notify('scale', '');
+          this.notify('scale', 'chromatic');
           return;
         }
-        const selectedOption = e.target.options[e.target.selectedIndex];
-        scaleValue.textContent = selectedOption.text;
         this.notify('scale', scale);
       });
     }
-
-    // Time signature select
-    const timeSignatureSelect = document.getElementById('time-signature-select');
-    const timeSignatureValue = document.getElementById('time-signature-value');
-    
-    if (timeSignatureSelect && timeSignatureValue) {
-      timeSignatureSelect.addEventListener('change', (e) => {
-        const timeSignature = e.target.value;
-        // Don't notify if placeholder is selected
-        if (timeSignature === '') {
-          timeSignatureValue.textContent = 'Select Time Signature';
-          return;
-        }
-        const selectedOption = e.target.options[e.target.selectedIndex];
-        timeSignatureValue.textContent = timeSignature;
-        this.notify('timeSignature', timeSignature);
-      });
-    }
+ 
+    // Time signature select is now in the modal, handled in main.js
   }
 
   markTempoSliderActive(tempoSlider, tempoValue) {
