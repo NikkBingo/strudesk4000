@@ -83,6 +83,103 @@ const getDrumBankDisplayName = (bank) => {
     .trim();
 };
 
+// Define instruments available in each drum bank
+const DRUM_BANK_INSTRUMENTS = {
+  'RolandTR808': [
+    { key: 'bd', label: 'BD', sample: 'bd' },
+    { key: 'sd', label: 'SD', sample: 'sd' },
+    { key: 'cp', label: 'CP', sample: 'cp' },
+    { key: 'hh', label: 'HH', sample: 'hh' },
+    { key: 'oh', label: 'OH', sample: 'oh' },
+    { key: 'cr', label: 'CR', sample: 'cr' },
+    { key: 'rd', label: 'RD', sample: 'rd' },
+    { key: 'lt', label: 'LT', sample: 'lt' },
+    { key: 'mt', label: 'MT', sample: 'mt' },
+    { key: 'ht', label: 'HT', sample: 'ht' },
+    { key: 'cb', label: 'CB', sample: 'cb' },
+    { key: 'sh', label: 'SH', sample: 'sh' }
+  ],
+  'RolandTR909': [
+    { key: 'bd', label: 'BD', sample: 'bd' },
+    { key: 'sd', label: 'SD', sample: 'sd' },
+    { key: 'cp', label: 'CP', sample: 'cp' },
+    { key: 'hh', label: 'HH', sample: 'hh' },
+    { key: 'oh', label: 'OH', sample: 'oh' },
+    { key: 'cr', label: 'CR', sample: 'cr' },
+    { key: 'rd', label: 'RD', sample: 'rd' },
+    { key: 'lt', label: 'LT', sample: 'lt' },
+    { key: 'mt', label: 'MT', sample: 'mt' },
+    { key: 'ht', label: 'HT', sample: 'ht' }
+  ],
+  'RolandTR707': [
+    { key: 'bd', label: 'BD', sample: 'bd' },
+    { key: 'sd', label: 'SD', sample: 'sd' },
+    { key: 'hh', label: 'HH', sample: 'hh' },
+    { key: 'oh', label: 'OH', sample: 'oh' },
+    { key: 'cr', label: 'CR', sample: 'cr' },
+    { key: 'rd', label: 'RD', sample: 'rd' },
+    { key: 'lt', label: 'LT', sample: 'lt' },
+    { key: 'mt', label: 'MT', sample: 'mt' },
+    { key: 'ht', label: 'HT', sample: 'ht' }
+  ],
+  'RhythmAce': [
+    { key: 'bd', label: 'BD', sample: 'bd' },
+    { key: 'sd', label: 'SD', sample: 'sd' },
+    { key: 'hh', label: 'HH', sample: 'hh' },
+    { key: 'oh', label: 'OH', sample: 'oh' },
+    { key: 'cr', label: 'CR', sample: 'cr' },
+    { key: 'rd', label: 'RD', sample: 'rd' },
+    { key: 'lt', label: 'LT', sample: 'lt' },
+    { key: 'mt', label: 'MT', sample: 'mt' },
+    { key: 'ht', label: 'HT', sample: 'ht' }
+  ],
+  'AkaiLinn': [
+    { key: 'bd', label: 'BD', sample: 'bd' },
+    { key: 'sd', label: 'SD', sample: 'sd' },
+    { key: 'hh', label: 'HH', sample: 'hh' },
+    { key: 'oh', label: 'OH', sample: 'oh' },
+    { key: 'cr', label: 'CR', sample: 'cr' },
+    { key: 'rd', label: 'RD', sample: 'rd' },
+    { key: 'lt', label: 'LT', sample: 'lt' },
+    { key: 'mt', label: 'MT', sample: 'mt' },
+    { key: 'ht', label: 'HT', sample: 'ht' }
+  ],
+  'ViscoSpaceDrum': [
+    { key: 'bd', label: 'BD', sample: 'bd' },
+    { key: 'sd', label: 'SD', sample: 'sd' },
+    { key: 'hh', label: 'HH', sample: 'hh' },
+    { key: 'oh', label: 'OH', sample: 'oh' },
+    { key: 'cr', label: 'CR', sample: 'cr' },
+    { key: 'rd', label: 'RD', sample: 'rd' },
+    { key: 'lt', label: 'LT', sample: 'lt' },
+    { key: 'mt', label: 'MT', sample: 'mt' },
+    { key: 'ht', label: 'HT', sample: 'ht' }
+  ],
+  'EmuSP1200': [
+    { key: 'bd', label: 'BD', sample: 'bd' },
+    { key: 'sd', label: 'SD', sample: 'sd' },
+    { key: 'hh', label: 'HH', sample: 'hh' },
+    { key: 'oh', label: 'OH', sample: 'oh' },
+    { key: 'cr', label: 'CR', sample: 'cr' },
+    { key: 'rd', label: 'RD', sample: 'rd' },
+    { key: 'lt', label: 'LT', sample: 'lt' },
+    { key: 'mt', label: 'MT', sample: 'mt' },
+    { key: 'ht', label: 'HT', sample: 'ht' }
+  ],
+  'CasioRZ1': [
+    { key: 'bd', label: 'BD', sample: 'bd' },
+    { key: 'sd', label: 'SD', sample: 'sd' },
+    { key: 'hh', label: 'HH', sample: 'hh' },
+    { key: 'oh', label: 'OH', sample: 'oh' },
+    { key: 'cr', label: 'CR', sample: 'cr' },
+    { key: 'rd', label: 'RD', sample: 'rd' },
+    { key: 'lt', label: 'LT', sample: 'lt' },
+    { key: 'mt', label: 'MT', sample: 'mt' },
+    { key: 'ht', label: 'HT', sample: 'ht' }
+  ]
+};
+
+// Default drum grid rows (fallback)
 const DRUM_GRID_ROWS = [
   { key: 'bd', label: 'BD', sample: 'bd' },
   { key: 'sn', label: 'SN', sample: 'sd' },
@@ -97,8 +194,24 @@ const DRUM_SAMPLE_TO_ROW = new Map([
   ['snare', 'sn'],
   ['hh', 'hh'],
   ['ch', 'hh'],
-  ['oh', 'hh'],
-  ['hihat', 'hh']
+  ['oh', 'oh'],
+  ['hihat', 'hh'],
+  ['cp', 'cp'],
+  ['clap', 'cp'],
+  ['cr', 'cr'],
+  ['crash', 'cr'],
+  ['rd', 'rd'],
+  ['ride', 'rd'],
+  ['lt', 'lt'],
+  ['lowtom', 'lt'],
+  ['mt', 'mt'],
+  ['midtom', 'mt'],
+  ['ht', 'ht'],
+  ['hightom', 'ht'],
+  ['cb', 'cb'],
+  ['cowbell', 'cb'],
+  ['sh', 'sh'],
+  ['shaker', 'sh']
 ]);
 
 const SYNTH_BANK_ALIASES = {
@@ -2043,7 +2156,10 @@ class InteractiveSoundApp {
         }
         
         try {
-          await navigator.clipboard.writeText(code);
+          const headerComment = '// Created with Strudesk 4000 by eKommissar';
+          const copyText = code.startsWith(headerComment) ? code : `${headerComment}\n\n${code}`;
+          
+          await navigator.clipboard.writeText(copyText);
           // Temporarily change button text to show success
           const originalText = copyCodeBtn.textContent;
           copyCodeBtn.textContent = '✓ Copied!';
@@ -2322,6 +2438,11 @@ class InteractiveSoundApp {
     }
     
     if (ctx) {
+      try {
+        window.__strudelVisualizerCtx = ctx;
+      } catch (error) {
+        console.warn('⚠️ Unable to cache visualizer context on window:', error);
+      }
       const containerRect = this.masterPunchcardContainer.getBoundingClientRect();
       const displayWidth = Math.max(containerRect.width || this.masterPunchcardContainer.offsetWidth || 320, 240);
       const displayHeight = Math.max(containerRect.height || this.masterPunchcardContainer.offsetHeight || 200, 220);
@@ -2659,7 +2780,38 @@ class InteractiveSoundApp {
     // Clean up extra whitespace and newlines
     patternForEval = patternForEval.replace(/\n\s*\n/g, '\n').trim();
     
-    console.log('🔍 PUNCHCARD EVALUATION - After removing comments:');
+    // Fix patterns with modifiers that need wrapping before .gain() or .pan()
+    // Pattern like s("bd").bank("RolandTR808").gain(0.80) needs to be
+    // (s("bd").bank("RolandTR808")).gain(0.80)
+    // Simple approach: find method chains ending with .gain( or .pan( and wrap them
+    // Match: identifier or function call, followed by method calls, then .gain( or .pan(
+    // This regex matches patterns like: s("bd").bank("RolandTR808").gain(0.80)
+    patternForEval = patternForEval.replace(
+      /([a-zA-Z_$][a-zA-Z0-9_$]*\s*\([^()]*\)(?:\s*\.\s*[a-zA-Z_$][a-zA-Z0-9_$]*\s*\([^()]*\))*)\s*\.\s*(gain|pan)\s*\(/g,
+      (match, patternPart, modifier) => {
+        const trimmed = patternPart.trim();
+        // Check if already wrapped in parentheses
+        if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
+          // Verify it's properly balanced (simple check)
+          let depth = 0;
+          for (let i = 0; i < trimmed.length; i++) {
+            if (trimmed[i] === '(') depth++;
+            else if (trimmed[i] === ')') depth--;
+            if (depth === 0 && i < trimmed.length - 1) {
+              // Not fully wrapped, need to wrap
+              return `(${patternPart}).${modifier}(`;
+            }
+          }
+          if (depth === 0) {
+            return match; // Already properly wrapped
+          }
+        }
+        // Wrap in parentheses
+        return `(${patternPart}).${modifier}(`;
+      }
+    );
+    
+    console.log('🔍 PUNCHCARD EVALUATION - After removing comments and fixing modifiers:');
     console.log('   Pattern:', patternForEval);
     console.log('───────────────────────────────────────────────────────────');
     
@@ -2743,6 +2895,13 @@ class InteractiveSoundApp {
     
     console.log('📝 Final pattern to evaluate:', patternForEval);
     
+    try {
+      // Ensure any banks or sample-based instruments referenced by the pattern are loaded
+      await soundManager.ensurePatternResourcesLoaded(patternForEval);
+    } catch (resourceError) {
+      console.warn('⚠️ Unable to preload resources for punchcard evaluation:', resourceError);
+    }
+    
     const toNumber = (value) => {
       if (value == null) return 0;
       if (typeof value === 'number') return value;
@@ -2788,6 +2947,17 @@ class InteractiveSoundApp {
       return { error: error?.message || 'Pattern evaluation failed.' };
     }
     
+    if (!patternObject && window.strudel && typeof window.strudel.evaluate === 'function') {
+      console.log('🔁 strudelCoreEvaluate returned no pattern - attempting fallback via window.strudel.evaluate');
+      try {
+        await window.strudel.evaluate(`globalThis.__punchcard_pattern = ${patternForEval}`);
+        patternObject = globalThis.__punchcard_pattern;
+        console.log('🔍 Fallback pattern object:', patternObject);
+      } catch (fallbackError) {
+        console.warn('⚠️ Fallback evaluation failed:', fallbackError);
+      }
+    }
+    
     if (!patternObject || typeof patternObject.queryArc !== 'function') {
       console.warn('⚠️ Pattern did not return a valid Strudel pattern object');
       return { error: 'Pattern expression did not return a Strudel pattern.' };
@@ -2799,6 +2969,12 @@ class InteractiveSoundApp {
     } catch (error) {
       console.error('❌ Failed to query pattern arc for punchcard:', error);
       return { error: error?.message || 'Pattern queryArc failed.' };
+    }
+    
+    try {
+      delete globalThis.__punchcard_pattern;
+    } catch (_) {
+      globalThis.__punchcard_pattern = undefined;
     }
     
     const parsed = {
@@ -4704,29 +4880,21 @@ class InteractiveSoundApp {
     
     const drumGridSection = document.getElementById('modal-drum-grid-section');
     const drumGridTimesigLabel = document.getElementById('modal-drum-grid-timesig');
-    const drumGridStepsContainers = {
-      bd: document.getElementById('drum-grid-steps-bd'),
-      sn: document.getElementById('drum-grid-steps-sn'),
-      hh: document.getElementById('drum-grid-steps-hh')
-    };
     
     const drumGridState = {
       active: false,
       totalSteps: 0,
       built: false,
-      patternEditorEnabled: true,
+      patternEditorEnabled: false, // Step editor is default
       updatingFromPattern: false,
       updatingFromGrid: false,
-      checkboxes: {
-        bd: [],
-        sn: [],
-        hh: []
-      }
+      currentBankRows: null,
+      checkboxes: {},
+      numBars: 1, // Number of bars in the grid
+      currentBar: 1 // Currently displayed bar (1-indexed)
     };
 
-    const patternEditorToggleWrapper = document.getElementById('modal-pattern-editor-toggle-wrapper');
-    const patternEditorToggle = document.getElementById('modal-pattern-editor-toggle');
-    const patternEditorToggleText = document.getElementById('modal-pattern-editor-toggle-text');
+    const patternEditorSelect = document.getElementById('modal-pattern-editor-select');
     const patternLabelRow = modal.querySelector('.pattern-label-row');
     let patternSnippetContainer = modal.querySelector('.pattern-snippet-container');
     let patternSnippetListEl = patternSnippetContainer ? patternSnippetContainer.querySelector('.pattern-snippet-list') : null;
@@ -5001,21 +5169,100 @@ class InteractiveSoundApp {
 
     if (previewButton && !previewButton.dataset.listenerAttached) {
       previewButton.addEventListener('click', async () => {
-        const patternValue = getStrudelEditorValue('modal-pattern');
+        const previewElementId = 'modal-preview';
+        const isPreviewPlaying = soundManager.isPlaying(previewElementId);
+        
+        // Toggle: if playing, stop it
+        if (isPreviewPlaying) {
+          soundManager.stopSound(previewElementId);
+          previewButton.textContent = '▶ Preview Pattern';
+          previewButton.classList.remove('active');
+          uiController.updateStatus('⏹ Preview stopped');
+          return;
+        }
+        
+        // If drum grid is active, update pattern from grid first
+        if (drumGridState.active) {
+          updatePatternFromGrid();
+        }
+        
+        let patternValue = getStrudelEditorValue('modal-pattern');
         if (!patternValue || !patternValue.trim()) {
           uiController.updateStatus('⚠️ No pattern to preview');
           return;
         }
 
-        const elementId = this.currentEditingElementId || 'modal-preview';
+        // Ensure pattern includes bank if one is selected
+        const bankValue = bankSelect ? bankSelect.value : '';
+        console.log('🎵 Preview: Original pattern:', patternValue);
+        console.log('🎵 Preview: Bank value:', bankValue);
+        
+        if (bankValue && bankValue !== '') {
+          // Check if pattern already has a .bank() modifier
+          if (!patternValue.includes('.bank(')) {
+            // Add .bank() modifier if not present - ensure it's added before any other modifiers
+            // If pattern has modifiers like .gain(), add bank before them
+            if (patternValue.includes('.gain(') || patternValue.includes('.pan(') || patternValue.includes('.fast(') || patternValue.includes('.slow(')) {
+              // Insert .bank() before other modifiers
+              const modifierMatch = patternValue.match(/(\.(gain|pan|fast|slow)\([^)]*\))/);
+              if (modifierMatch) {
+                const insertPos = modifierMatch.index;
+                patternValue = patternValue.slice(0, insertPos) + `.bank("${bankValue}")` + patternValue.slice(insertPos);
+              } else {
+                patternValue = `${patternValue}.bank("${bankValue}")`;
+              }
+            } else {
+              patternValue = `${patternValue}.bank("${bankValue}")`;
+            }
+          } else {
+            // Replace existing .bank() modifier with current selection
+            patternValue = patternValue.replace(/\.bank\(["'][^"']*["']\)/g, `.bank("${bankValue}")`);
+          }
+        } else {
+          // Remove .bank() modifier if no bank is selected
+          patternValue = patternValue.replace(/\.bank\(["'][^"']*["']\)/g, '');
+          patternValue = patternValue.replace(/\.+$/, '').trim();
+        }
+        
+        console.log('🎵 Preview: Final pattern before preview:', patternValue);
+        
+        // Get the actual element's gain/pan values to apply to preview
+        const actualElementId = this.currentEditingElementId;
+        if (actualElementId) {
+          // Copy gain/pan values from the actual element to preview element
+          const actualGain = soundManager.elementGainValues.get(actualElementId) || 0.8;
+          const actualPan = soundManager.elementPanValues.get(actualElementId) || 0;
+          soundManager.elementGainValues.set(previewElementId, actualGain);
+          soundManager.elementPanValues.set(previewElementId, actualPan);
+          console.log(`🎵 Preview: Using gain=${actualGain}, pan=${actualPan} from element ${actualElementId}`);
+        }
+        
+        // Ensure bank is loaded before previewing if one is selected
+        if (bankValue && bankValue !== '') {
+          console.log(`🎵 Preview: Ensuring bank "${bankValue}" is loaded...`);
+          try {
+            await soundManager.loadBank(bankValue);
+            console.log(`✅ Preview: Bank "${bankValue}" loaded successfully`);
+          } catch (loadError) {
+            console.warn(`⚠️ Preview: Could not load bank "${bankValue}":`, loadError);
+            // Continue anyway - processPattern will attempt to load it
+          }
+        }
+        
         uiController.updateStatus('▶ Previewing pattern…');
+        previewButton.textContent = '⏹ Stop Preview';
+        previewButton.classList.add('active');
 
         try {
-          await soundManager.previewPattern(patternValue, elementId);
-          uiController.updateStatus('✅ Preview playing (preview slot d16)');
+          // Use playStrudelPattern instead of previewPattern to match how elements play when clicked
+          // This ensures the preview uses the exact same processing and routing as actual elements
+          await soundManager.playStrudelPattern(previewElementId, patternValue);
+          uiController.updateStatus('✅ Preview playing');
         } catch (error) {
           console.error('Preview failed:', error);
           uiController.updateStatus('⚠️ Preview failed – check console for details');
+          previewButton.textContent = '▶ Preview Pattern';
+          previewButton.classList.remove('active');
         }
       });
       previewButton.dataset.listenerAttached = 'true';
@@ -5038,13 +5285,25 @@ class InteractiveSoundApp {
     };
 
     const applyPatternEditorState = () => {
-      if (patternEditorToggle) {
-        patternEditorToggle.checked = drumGridState.patternEditorEnabled;
-      }
-      if (patternEditorToggleText) {
-        patternEditorToggleText.textContent = drumGridState.patternEditorEnabled ? 'Enable' : 'Disable';
+      if (patternEditorSelect) {
+        patternEditorSelect.value = drumGridState.patternEditorEnabled ? 'code' : 'step';
       }
       updatePatternFieldEditable(drumGridState.patternEditorEnabled);
+      
+      // Show/hide code editor and tags based on editor state
+      const patternEditorWrapper = document.getElementById('modal-pattern-editor-wrapper');
+      if (patternEditorWrapper) {
+        patternEditorWrapper.style.display = drumGridState.patternEditorEnabled ? 'block' : 'none';
+      }
+      
+      // Hide snippet container when showing drum grid
+      if (patternSnippetContainer) {
+        patternSnippetContainer.style.display = drumGridState.patternEditorEnabled ? 'block' : 'none';
+      }
+      
+      // Show/hide drum grid based on editor state
+      // Note: Don't show/hide here - let refreshDrumGridForCurrentState handle it
+      // This prevents conflicts when the modal is not yet open
     };
 
     const modalPatternTextareaForPreview = document.getElementById('modal-pattern');
@@ -5062,7 +5321,6 @@ class InteractiveSoundApp {
       drumGridState.patternEditorEnabled = !!enabled;
       applyPatternEditorState();
     };
-    applyPatternEditorState();
     
     const isDrumBankValue = (value) => value && DRUM_BANK_VALUES.has(value);
     
@@ -5071,8 +5329,54 @@ class InteractiveSoundApp {
       drumGridTimesigLabel.textContent = `${metrics.signature} · ${metrics.totalSteps} steps`;
     };
     
+    const updateBarSelector = () => {
+      const barCountEl = document.getElementById('modal-drum-grid-bar-count');
+      const leftArrow = document.getElementById('modal-drum-grid-bar-arrow-left');
+      const rightArrow = document.getElementById('modal-drum-grid-bar-arrow-right');
+      
+      if (barCountEl) {
+        if (drumGridState.numBars === 1) {
+          barCountEl.textContent = '1 bar';
+        } else {
+          barCountEl.textContent = `Bar ${drumGridState.currentBar} of ${drumGridState.numBars}`;
+        }
+      }
+      
+      // Show/hide arrows based on current bar position and number of bars
+      if (leftArrow) {
+        leftArrow.style.display = (drumGridState.numBars > 1 && drumGridState.currentBar > 1) ? 'flex' : 'none';
+      }
+      if (rightArrow) {
+        rightArrow.style.display = (drumGridState.numBars > 1 && drumGridState.currentBar < drumGridState.numBars) ? 'flex' : 'none';
+      }
+    };
+    
+    const switchToBar = (barNumber) => {
+      if (barNumber < 1 || barNumber > drumGridState.numBars) return;
+      drumGridState.currentBar = barNumber;
+      updateBarSelector();
+      // Force rebuild to show the selected bar
+      const bankValue = bankSelect ? bankSelect.value : '';
+      const modalTimeSigSelect = document.getElementById('modal-time-signature-select');
+      const timeSig = modalTimeSigSelect?.value || this.currentTimeSignature || '4/4';
+      const metrics = getTimeSignatureMetrics(timeSig);
+      drumGridState.built = false; // Force rebuild
+      ensureDrumGridBuilt(metrics, bankValue);
+      // Update pattern from current bar
+      const currentPattern = getStrudelEditorValue('modal-pattern');
+      populateDrumGridFromPattern(currentPattern, metrics);
+    };
+    
+    const addBar = () => {
+      drumGridState.numBars++;
+      updateBarSelector();
+      // Switch to the new bar
+      switchToBar(drumGridState.numBars);
+    };
+    
     const resetDrumGridSelection = () => {
-      DRUM_GRID_ROWS.forEach(({ key }) => {
+      const currentBankRows = drumGridState.currentBankRows || DRUM_GRID_ROWS;
+      currentBankRows.forEach(({ key }) => {
         const checkboxes = drumGridState.checkboxes[key];
         if (checkboxes && checkboxes.length) {
           checkboxes.forEach(cb => { if (cb) cb.checked = false; });
@@ -5087,33 +5391,85 @@ class InteractiveSoundApp {
       updatePatternFromGrid();
     };
     
-    const ensureDrumGridBuilt = (metrics) => {
+    const ensureDrumGridBuilt = (metrics, bankValue) => {
       if (!drumGridSection) return;
-      if (drumGridState.built && drumGridState.totalSteps === metrics.totalSteps) {
+      
+      // Get instruments for the selected bank, or use default
+      const currentBankRows = bankValue && DRUM_BANK_INSTRUMENTS[bankValue] 
+        ? DRUM_BANK_INSTRUMENTS[bankValue] 
+        : DRUM_GRID_ROWS;
+      
+      // Check if we need to rebuild (different bank, different step count, or bar changed)
+      const needsRebuild = !drumGridState.built || 
+                           drumGridState.totalSteps !== metrics.totalSteps ||
+                           JSON.stringify(drumGridState.currentBankRows) !== JSON.stringify(currentBankRows);
+      
+      if (!needsRebuild) {
         return;
       }
       
-      DRUM_GRID_ROWS.forEach(({ key }) => {
-        const container = drumGridStepsContainers[key];
-        if (!container) return;
-        container.innerHTML = '';
-        container.style.gridTemplateColumns = `repeat(${metrics.totalSteps}, minmax(18px, 1fr))`;
+      // Clear existing grid
+      const gridContainer = document.getElementById('modal-drum-grid-container');
+      if (!gridContainer) {
+        console.error('❌ ensureDrumGridBuilt: Drum grid container not found!');
+        console.error('   Looking for: modal-drum-grid-container');
+        console.error('   Modal exists:', !!drumGridSection);
+        if (drumGridSection) {
+          console.error('   Drum grid section children:', Array.from(drumGridSection.children).map(c => c.id || c.className));
+        }
+        return;
+      }
+      console.log('🔨 Building drum grid with', currentBankRows.length, 'rows,', metrics.totalSteps, 'steps');
+      console.log('   Grid container found:', gridContainer, 'current children:', gridContainer.children.length);
+      gridContainer.innerHTML = '';
+      
+      // Reset checkboxes
+      drumGridState.checkboxes = {};
+      drumGridState.currentBankRows = currentBankRows;
+      
+      // Build rows dynamically based on bank
+      currentBankRows.forEach(({ key, label, sample }) => {
+        const row = document.createElement('div');
+        row.className = 'drum-grid-row';
+        row.setAttribute('data-row', key);
+        
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'drum-grid-row-label';
+        labelSpan.textContent = label;
+        row.appendChild(labelSpan);
+        
+        const stepsContainer = document.createElement('div');
+        stepsContainer.className = 'drum-grid-steps';
+        stepsContainer.id = `drum-grid-steps-${key}`;
+        stepsContainer.style.gridTemplateColumns = `repeat(${metrics.totalSteps}, minmax(18px, 1fr))`;
+        
         drumGridState.checkboxes[key] = [];
-        for (let step = 0; step < metrics.totalSteps; step += 1) {
+        // Calculate total steps for all bars
+        const totalStepsForAllBars = metrics.totalSteps * drumGridState.numBars;
+        // Only show steps for the current bar
+        const startStep = (drumGridState.currentBar - 1) * metrics.totalSteps;
+        const endStep = startStep + metrics.totalSteps;
+        
+        for (let step = startStep; step < endStep; step += 1) {
           const stepWrapper = document.createElement('div');
           stepWrapper.className = 'drum-grid-step';
-          if (step > 0 && step % 4 === 0) {
+          const stepInBar = step - startStep;
+          if (stepInBar > 0 && stepInBar % 4 === 0) {
             stepWrapper.classList.add('quarter-boundary');
           }
           const checkbox = document.createElement('input');
           checkbox.type = 'checkbox';
           checkbox.dataset.row = key;
           checkbox.dataset.step = String(step);
+          checkbox.dataset.bar = String(drumGridState.currentBar);
           checkbox.addEventListener('change', handleDrumGridStepChange);
           stepWrapper.appendChild(checkbox);
-          container.appendChild(stepWrapper);
+          stepsContainer.appendChild(stepWrapper);
           drumGridState.checkboxes[key].push(checkbox);
         }
+        
+        row.appendChild(stepsContainer);
+        gridContainer.appendChild(row);
       });
       
       drumGridState.totalSteps = metrics.totalSteps;
@@ -5149,24 +5505,31 @@ class InteractiveSoundApp {
         return;
       }
       
+      const totalStepsForAllBars = metrics.totalSteps * drumGridState.numBars;
       let workingTokens = tokens.slice();
-      if (workingTokens.length !== metrics.totalSteps) {
+      if (workingTokens.length !== totalStepsForAllBars) {
         const adjustedTokens = [];
-        for (let step = 0; step < metrics.totalSteps; step += 1) {
+        for (let step = 0; step < totalStepsForAllBars; step += 1) {
           adjustedTokens.push(workingTokens[step % workingTokens.length]);
         }
         workingTokens = adjustedTokens;
       }
       
       drumGridState.updatingFromPattern = true;
-      for (let step = 0; step < metrics.totalSteps; step += 1) {
+      // Only populate the current bar's checkboxes
+      const startStep = (drumGridState.currentBar - 1) * metrics.totalSteps;
+      const endStep = startStep + metrics.totalSteps;
+      
+      for (let step = startStep; step < endStep; step += 1) {
         const samples = parseTokenToSamples(workingTokens[step]);
         samples.forEach(sample => {
           const rowKey = DRUM_SAMPLE_TO_ROW.get(sample.toLowerCase());
           if (!rowKey) return;
           const checkboxes = drumGridState.checkboxes[rowKey];
-          if (checkboxes && checkboxes[step]) {
-            checkboxes[step].checked = true;
+          // Find checkbox for this step
+          const checkbox = checkboxes ? checkboxes.find(cb => cb && parseInt(cb.dataset.step) === step) : null;
+          if (checkbox) {
+            checkbox.checked = true;
           }
         });
       }
@@ -5175,11 +5538,16 @@ class InteractiveSoundApp {
     
     const generateTokensFromGrid = (metrics) => {
       const tokens = [];
-      for (let step = 0; step < metrics.totalSteps; step += 1) {
+      const currentBankRows = drumGridState.currentBankRows || DRUM_GRID_ROWS;
+      const totalStepsForAllBars = metrics.totalSteps * drumGridState.numBars;
+      
+      // Generate tokens for all bars
+      for (let step = 0; step < totalStepsForAllBars; step += 1) {
         const activeSamples = [];
-        DRUM_GRID_ROWS.forEach(({ key, sample }) => {
+        currentBankRows.forEach(({ key, sample }) => {
           const checkboxes = drumGridState.checkboxes[key];
-          const checkbox = checkboxes ? checkboxes[step] : null;
+          // Find checkbox for this step (may be in a different bar)
+          const checkbox = checkboxes ? checkboxes.find(cb => cb && parseInt(cb.dataset.step) === step) : null;
           if (checkbox && checkbox.checked) {
             activeSamples.push(sample);
           }
@@ -5197,12 +5565,15 @@ class InteractiveSoundApp {
     
     const updatePatternFromGrid = () => {
       if (!drumGridSection || !drumGridState.active || !bankSelect) return;
-      const metrics = getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
+      const modalTimeSigSelect = document.getElementById('modal-time-signature-select');
+      const timeSig = modalTimeSigSelect?.value || this.currentTimeSignature || '4/4';
+      const metrics = getTimeSignatureMetrics(timeSig);
       const tokens = generateTokensFromGrid(metrics);
       const sequence = tokens.join(' ');
       // Note: .fast() modifier removed - patterns are clean without tempo modifiers
       const bankValue = bankSelect.value;
       const bankSuffix = bankValue && bankValue !== '' ? `.bank("${bankValue}")` : '';
+      // Use s() for drum patterns with banks (Strudel standard)
       const pattern = `s("${sequence}")${bankSuffix}`;
       drumGridState.updatingFromGrid = true;
       setStrudelEditorValue('modal-pattern', pattern);
@@ -5210,53 +5581,100 @@ class InteractiveSoundApp {
     };
     
     const showDrumGrid = (metrics, pattern) => {
-      if (!drumGridSection) return;
-      ensureDrumGridBuilt(metrics);
+      if (!drumGridSection) {
+        console.warn('⚠️ Drum grid section not found');
+        return;
+      }
+      const bankValue = bankSelect ? bankSelect.value : '';
+      console.log('🎹 Showing drum grid for bank:', bankValue, 'metrics:', metrics);
+      
+      // Check if grid container exists
+      const gridContainer = document.getElementById('modal-drum-grid-container');
+      if (!gridContainer) {
+        console.error('❌ Drum grid container not found!');
+        return;
+      }
+      console.log('✅ Grid container found:', gridContainer);
+      
+      ensureDrumGridBuilt(metrics, bankValue);
       setDrumGridSubtitle(metrics);
       drumGridSection.style.display = 'block';
       drumGridState.active = true;
       populateDrumGridFromPattern(pattern, metrics);
+      // Update bar selector after grid is shown to ensure correct arrow visibility
+      updateBarSelector();
+      
+      // Verify grid was built
+      const rows = gridContainer.querySelectorAll('.drum-grid-row');
+      console.log('✅ Drum grid shown, active:', drumGridState.active, 'rows:', rows.length);
     };
     
     const hideDrumGrid = () => {
       if (!drumGridSection) return;
       drumGridSection.style.display = 'none';
       drumGridState.active = false;
+      drumGridState.built = false; // Force rebuild when shown again
+      // Reset to 1 bar when hiding
+      drumGridState.numBars = 1;
+      drumGridState.currentBar = 1;
+      // Hide arrows when grid is hidden
+      updateBarSelector();
     };
     
+    // Initialize pattern editor state now that all functions are defined
+    applyPatternEditorState();
+    
     const refreshDrumGridForCurrentState = () => {
-      if (!bankSelect) return;
+      if (!bankSelect) {
+        console.log('⚠️ refreshDrumGridForCurrentState: bankSelect not found');
+        return;
+      }
       const bankValue = bankSelect.value;
       const isDrum = isDrumBankValue(bankValue);
+      console.log('🔄 refreshDrumGridForCurrentState: bankValue=', bankValue, 'isDrum=', isDrum, 'patternEditorEnabled=', drumGridState.patternEditorEnabled);
 
-      if (patternEditorToggleWrapper) {
-        patternEditorToggleWrapper.style.display = isDrum ? 'inline-flex' : 'none';
+      if (patternEditorSelect) {
+        patternEditorSelect.style.display = isDrum ? 'block' : 'none';
       }
-
-      applyPatternEditorState();
 
       if (!isDrum) {
+        console.log('📝 Not a drum bank, enabling pattern editor');
         setPatternEditorEnabled(true);
         hideDrumGrid();
+        applyPatternEditorState();
         return;
       }
 
-      if (drumGridState.patternEditorEnabled) {
-        hideDrumGrid();
-        return;
-      }
-
+      // For drum banks, show the drum grid by default
+      // Only hide it if the user explicitly enables the pattern editor
       const patternValue = getStrudelEditorValue('modal-pattern');
       const trimmedPattern = patternValue ? patternValue.trim() : '';
       const tokens = tokenizePattern(patternValue);
 
-      if (trimmedPattern && (!tokens || tokens.length === 0)) {
-        setPatternEditorEnabled(true);
+      // If pattern editor is enabled, hide drum grid
+      if (drumGridState.patternEditorEnabled) {
+        console.log('📝 Pattern editor enabled, hiding drum grid');
         hideDrumGrid();
+        applyPatternEditorState();
         return;
       }
 
-      const metrics = getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
+      // If there's a pattern but it can't be tokenized (not a drum pattern), enable pattern editor
+      if (trimmedPattern && (!tokens || tokens.length === 0)) {
+        console.log('📝 Pattern cannot be tokenized, enabling pattern editor');
+        setPatternEditorEnabled(true);
+        hideDrumGrid();
+        applyPatternEditorState();
+        return;
+      }
+
+      // Show drum grid for drum banks
+      console.log('🎹 Showing drum grid for drum bank');
+      // Use time signature from modal select if available, otherwise fall back to currentTimeSignature
+      const modalTimeSigSelect = document.getElementById('modal-time-signature-select');
+      const timeSig = modalTimeSigSelect?.value || this.currentTimeSignature || '4/4';
+      const metrics = getTimeSignatureMetrics(timeSig);
+      console.log('🎹 Calling showDrumGrid with metrics:', metrics, 'pattern:', patternValue);
       showDrumGrid(metrics, patternValue);
     };
 
@@ -5269,7 +5687,10 @@ class InteractiveSoundApp {
         if (!bankSelect || !isDrumBankValue(bankSelect.value)) {
           return;
         }
-        const metrics = getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
+        // Use time signature from modal select if available, otherwise fall back to currentTimeSignature
+        const modalTimeSigSelect = document.getElementById('modal-time-signature-select');
+        const timeSig = modalTimeSigSelect?.value || this.currentTimeSignature || '4/4';
+        const metrics = getTimeSignatureMetrics(timeSig);
         const trimmedValue = modalPatternTextarea.value ? modalPatternTextarea.value.trim() : '';
         const tokens = tokenizePattern(modalPatternTextarea.value);
         if (trimmedValue && (!tokens || tokens.length === 0)) {
@@ -5281,25 +5702,98 @@ class InteractiveSoundApp {
       });
     }
 
-    if (patternEditorToggle) {
-      patternEditorToggle.addEventListener('change', (event) => {
-        setPatternEditorEnabled(event.target.checked);
+    if (patternEditorSelect) {
+      patternEditorSelect.addEventListener('change', (event) => {
+        const isCodeEditor = event.target.value === 'code';
+        setPatternEditorEnabled(isCodeEditor);
         refreshDrumGridForCurrentState();
       });
-      bankSelect.dataset.listenerAttached = 'true';
+    }
+    
+    // Time signature select in modal
+    const modalTimeSignatureSelect = document.getElementById('modal-time-signature-select');
+    if (modalTimeSignatureSelect) {
+      modalTimeSignatureSelect.addEventListener('change', (e) => {
+        const timeSignature = e.target.value;
+        if (timeSignature) {
+          this.currentTimeSignature = timeSignature;
+          // Update drum grid if it's active
+          if (drumGridState.active) {
+            const metrics = getTimeSignatureMetrics(timeSignature);
+            const currentPattern = getStrudelEditorValue('modal-pattern');
+            const bankValue = bankSelect ? bankSelect.value : '';
+            ensureDrumGridBuilt(metrics, bankValue);
+            setDrumGridSubtitle(metrics);
+            showDrumGrid(metrics, currentPattern);
+          }
+        }
+      });
+    }
+    
+    // Bar selector and add bar button
+    const barCountEl = document.getElementById('modal-drum-grid-bar-count');
+    const addBarBtn = document.getElementById('modal-drum-grid-add-bar');
+    const leftArrow = document.getElementById('modal-drum-grid-bar-arrow-left');
+    const rightArrow = document.getElementById('modal-drum-grid-bar-arrow-right');
+    
+    if (barCountEl) {
+      barCountEl.addEventListener('click', () => {
+        // Cycle through bars
+        const nextBar = drumGridState.currentBar < drumGridState.numBars 
+          ? drumGridState.currentBar + 1 
+          : 1;
+        switchToBar(nextBar);
+      });
+      barCountEl.style.cursor = 'pointer';
+      barCountEl.title = 'Click to switch between bars';
+    }
+    
+    if (leftArrow) {
+      leftArrow.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (drumGridState.currentBar > 1) {
+          switchToBar(drumGridState.currentBar - 1);
+        }
+      });
+    }
+    
+    if (rightArrow) {
+      rightArrow.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (drumGridState.currentBar < drumGridState.numBars) {
+          switchToBar(drumGridState.currentBar + 1);
+        }
+      });
+    }
+    
+    if (addBarBtn) {
+      addBarBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        addBar();
+      });
     }
     
     this.applyTimeSignatureToDrumGrid = (timeSignature) => {
       if (!drumGridSection || !drumGridState.active) return;
       const metrics = getTimeSignatureMetrics(timeSignature || '4/4');
       const currentPattern = getStrudelEditorValue('modal-pattern');
-      ensureDrumGridBuilt(metrics);
+      const bankValue = bankSelect ? bankSelect.value : '';
+      ensureDrumGridBuilt(metrics, bankValue);
       setDrumGridSubtitle(metrics);
       showDrumGrid(metrics, currentPattern);
     };
     
     const closeModal = () => {
-      // Preview removed - no longer needed
+      // Stop preview when closing modal
+      const previewElementId = 'modal-preview';
+      soundManager.stopSound(previewElementId);
+      
+      // Reset preview button state
+      if (previewButton) {
+        previewButton.textContent = '▶ Preview Pattern';
+        previewButton.classList.remove('active');
+      }
+      
       modal.style.display = 'none';
       this.currentEditingElementId = null;
       setPatternEditorEnabled(true);
@@ -5313,12 +5807,13 @@ class InteractiveSoundApp {
       // Populate modal with current values
       // Extract channel number from elementId (e.g., "element-1" -> "1")
       const channelNumber = elementId.replace('element-', '');
-      document.getElementById('modal-element-id').textContent = `(${channelNumber})`;
-      // Don't use "No sound assigned" as a title - it's just a placeholder
+      // Get saved title or use channel number as fallback
       const savedTitle = savedConfig?.title || '';
       const fallbackTitle = (elementConfig?.description && elementConfig.description !== 'No sound assigned') 
         ? elementConfig.description 
         : '';
+      const initialTitle = savedTitle || fallbackTitle || `Channel ${channelNumber}`;
+      document.getElementById('modal-element-id').textContent = initialTitle;
       document.getElementById('modal-title').value = savedTitle || fallbackTitle;
       const rawPattern = savedConfig?.pattern || elementConfig?.pattern || '';
       
@@ -5336,9 +5831,13 @@ class InteractiveSoundApp {
       // Only set value if there's a user-added pattern (not auto-generated default), otherwise leave empty to show placeholder
       const patternField = document.getElementById('modal-pattern');
       const savedBankValue = savedConfig?.bank || '';
+      console.log('📦 openModal: savedBankValue=', savedBankValue);
       ensurePatternBankOptions(savedBankValue);
       if (bankSelect) {
         bankSelect.value = savedBankValue;
+        console.log('📦 openModal: Set bankSelect.value to', savedBankValue, 'actual value:', bankSelect.value);
+      } else {
+        console.warn('⚠️ openModal: bankSelect not found');
       }
       
       // Check if pattern is just an auto-generated default (not user-edited)
@@ -5364,13 +5863,79 @@ class InteractiveSoundApp {
         }
       }
 
-      setPatternEditorEnabled(true);
+      // Initialize time signature select in modal
+      const modalTimeSignatureSelect = document.getElementById('modal-time-signature-select');
+      if (modalTimeSignatureSelect) {
+        const currentTimeSig = this.currentTimeSignature || '4/4';
+        modalTimeSignatureSelect.value = currentTimeSig;
+      }
+      
+      // If a drum bank is selected, disable pattern editor to show drum grid
+      const isDrum = savedBankValue && DRUM_BANK_VALUES.has(savedBankValue);
+      console.log('📦 openModal: Checking if drum bank, savedBankValue=', savedBankValue, 'isDrum=', isDrum);
+      if (isDrum) {
+        console.log('📦 openModal: Drum bank detected, disabling pattern editor');
+        setPatternEditorEnabled(false);
+      } else {
+        console.log('📦 openModal: Not a drum bank or no bank, enabling pattern editor');
+        setPatternEditorEnabled(true);
+      }
       
       document.getElementById('modal-sample-url').value = savedConfig?.sampleUrl || '';
-      document.getElementById('modal-sample-file').value = '';
+      const fileInputEl = document.getElementById('modal-sample-file');
+      if (fileInputEl) {
+        fileInputEl.value = '';
+      }
+      
+      // Show/hide sample URL and file input based on bank selection
+      const sampleUrlGroup = document.getElementById('modal-sample-url')?.closest('.form-group');
+      const sampleFileGroup = document.getElementById('modal-sample-file')?.closest('.form-group');
+      const patternBankGroup = document.getElementById('modal-pattern-bank')?.closest('.form-group');
+      const timeSignatureGroup = document.getElementById('modal-time-signature-select')?.closest('.form-group');
+      const hasBankSelected = savedBankValue && savedBankValue !== '';
+      const hasFileSelected = savedConfig?.fileName || (savedConfig?.sampleUrl && savedConfig.sampleUrl.startsWith('data:'));
+      
+      if (sampleUrlGroup) {
+        sampleUrlGroup.style.display = hasBankSelected ? 'none' : 'block';
+      }
+      if (sampleFileGroup) {
+        sampleFileGroup.style.display = hasBankSelected ? 'none' : 'block';
+      }
+      
+      // Hide Pattern Bank and Time Signature if file was previously selected
+      if (hasFileSelected) {
+        if (patternBankGroup) {
+          patternBankGroup.style.display = 'none';
+        }
+        if (timeSignatureGroup) {
+          timeSignatureGroup.style.display = 'none';
+        }
+        // Set title to filename if available
+        if (savedConfig?.fileName) {
+          const titleInput = document.getElementById('modal-title');
+          if (titleInput) {
+            const nameWithoutExt = savedConfig.fileName.replace(/\.[^/.]+$/, '');
+            titleInput.value = nameWithoutExt;
+          }
+        }
+      } else {
+        // Show Pattern Bank and Time Signature if no file was selected
+        if (patternBankGroup) {
+          patternBankGroup.style.display = 'block';
+        }
+        if (timeSignatureGroup) {
+          timeSignatureGroup.style.display = 'block';
+        }
+      }
       
       this.currentEditingElementId = elementId;
-      refreshDrumGridForCurrentState();
+      
+      // Small delay to ensure DOM is ready before refreshing drum grid
+      setTimeout(() => {
+        console.log('📦 openModal: Calling refreshDrumGridForCurrentState, bankSelect.value=', bankSelect ? bankSelect.value : 'bankSelect not found');
+        refreshDrumGridForCurrentState();
+      }, 0);
+      
       modal.style.display = 'flex';
     };
 
@@ -5380,14 +5945,69 @@ class InteractiveSoundApp {
       closeBtn.addEventListener('click', closeModal);
     }
 
+    // File input - handle file selection
+    const fileInput = document.getElementById('modal-sample-file');
+    if (fileInput) {
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files.length > 0 ? e.target.files[0] : null;
+        const patternBankGroup = document.getElementById('modal-pattern-bank')?.closest('.form-group');
+        const timeSignatureGroup = document.getElementById('modal-time-signature-select')?.closest('.form-group');
+        const titleInput = document.getElementById('modal-title');
+        
+        if (file) {
+          // Hide Pattern Bank and Time Signature when file is selected
+          if (patternBankGroup) {
+            patternBankGroup.style.display = 'none';
+          }
+          if (timeSignatureGroup) {
+            timeSignatureGroup.style.display = 'none';
+          }
+          
+          // Set title to filename (without extension)
+          if (titleInput) {
+            const fileName = file.name;
+            const nameWithoutExt = fileName.replace(/\.[^/.]+$/, '');
+            titleInput.value = nameWithoutExt;
+          }
+        } else {
+          // Show Pattern Bank and Time Signature when file is cleared
+          if (patternBankGroup) {
+            patternBankGroup.style.display = 'block';
+          }
+          if (timeSignatureGroup) {
+            timeSignatureGroup.style.display = 'block';
+          }
+        }
+      });
+    }
+    
     // Bank dropdown - load bank when changed
     if (bankSelect && !bankSelect.dataset.listenerAttached) {
       bankSelect.addEventListener('change', async (e) => {
         const bankValue = e.target.value;
+        console.log('📦 Bank select changed to:', bankValue);
         ensurePatternBankOptions(bankValue);
         const elementId = this.currentEditingElementId;
         
-        if (!elementId) return;
+        // If bank is selected, clear file input and show Pattern Bank/Time Signature
+        if (bankValue && bankValue !== '') {
+          if (fileInput) {
+            fileInput.value = '';
+          }
+          const patternBankGroup = document.getElementById('modal-pattern-bank')?.closest('.form-group');
+          const timeSignatureGroup = document.getElementById('modal-time-signature-select')?.closest('.form-group');
+          if (patternBankGroup) {
+            patternBankGroup.style.display = 'block';
+          }
+          if (timeSignatureGroup) {
+            timeSignatureGroup.style.display = 'block';
+          }
+        }
+        
+        if (!elementId) {
+          console.warn('⚠️ No elementId when bank changed');
+          return;
+        }
         
         const statusText = document.getElementById('status-text');
         const patternTextarea = document.getElementById('modal-pattern');
@@ -5396,6 +6016,17 @@ class InteractiveSoundApp {
         const currentValue = getStrudelEditorValue('modal-pattern');
         if (bankValue && bankValue !== '' && (!currentValue || currentValue.trim() === '')) {
           if (patternTextarea) patternTextarea.placeholder = 'Drums and Percussion: s("bd sd rim cp hh oh cr rd ht mt lt sh cb tb perc misc fx"), Synths: note("c3 d3 [e3 f3]")';
+        }
+        
+        // Show/hide sample URL and file input based on bank selection
+        const sampleUrlGroup = document.getElementById('modal-sample-url')?.closest('.form-group');
+        const sampleFileGroup = document.getElementById('modal-sample-file')?.closest('.form-group');
+        const hasBankSelected = bankValue && bankValue !== '';
+        if (sampleUrlGroup) {
+          sampleUrlGroup.style.display = hasBankSelected ? 'none' : 'block';
+        }
+        if (sampleFileGroup) {
+          sampleFileGroup.style.display = hasBankSelected ? 'none' : 'block';
         }
         
         // Handle "Default" (empty value) - no bank, no .bank() modifier
@@ -5411,15 +6042,34 @@ class InteractiveSoundApp {
           const titleInput = document.getElementById('modal-title');
           titleInput.value = 'Default';
           
-          // Update title in DOM immediately
+          // Update modal header title
+          const modalElementId = document.getElementById('modal-element-id');
+          if (modalElementId) {
+            modalElementId.textContent = 'Default';
+          }
+          
+          // Update title in DOM immediately and save it
           const element = document.querySelector(`[data-sound-id="${elementId}"]`);
           if (element) {
             const titleEl = element.querySelector('.element-title');
             if (titleEl) {
               titleEl.textContent = 'Default';
+              console.log(`📝 Updated element title in DOM to: Default`);
+            } else {
+              console.warn(`⚠️ Element title not found for ${elementId}`);
             }
+          } else {
+            console.warn(`⚠️ Element not found: ${elementId}`);
           }
-          console.log(`📝 Updated title to: Default`);
+          
+          // Save title immediately when Default is selected
+          const currentConfig = this.loadElementConfig(elementId) || {};
+          this.saveElementConfig(elementId, {
+            ...currentConfig,
+            title: 'Default',
+            bank: undefined
+          });
+          console.log(`📝 Saved title "Default" for ${elementId}`);
           
           // Remove any existing .bank() modifier and create pattern without .bank()
           let currentPattern = getStrudelEditorValue('modal-pattern').trim();
@@ -5471,15 +6121,34 @@ class InteractiveSoundApp {
             }
             titleInput.value = displayName;
             
-            // Update title in DOM immediately
+            // Update modal header title
+            const modalElementId = document.getElementById('modal-element-id');
+            if (modalElementId) {
+              modalElementId.textContent = displayName;
+            }
+            
+            // Update title in DOM immediately and save it
             const element = document.querySelector(`[data-sound-id="${elementId}"]`);
             if (element) {
               const titleEl = element.querySelector('.element-title');
               if (titleEl) {
                 titleEl.textContent = displayName;
+                console.log(`📝 Updated element title in DOM to: ${displayName}`);
+              } else {
+                console.warn(`⚠️ Element title not found for ${elementId}`);
               }
+            } else {
+              console.warn(`⚠️ Element not found: ${elementId}`);
             }
-            console.log(`📝 Updated title to: ${displayName}`);
+            
+            // Save title immediately when synth is selected
+            const currentConfig = this.loadElementConfig(elementId) || {};
+            this.saveElementConfig(elementId, {
+              ...currentConfig,
+              title: displayName,
+              bank: bankValue
+            });
+            console.log(`📝 Saved title "${displayName}" for ${elementId}`);
             
             // Update pattern to use synth waveform
             let currentPattern = getStrudelEditorValue('modal-pattern').trim();
@@ -5581,22 +6250,47 @@ class InteractiveSoundApp {
             try {
               // Always update title and pattern regardless of load success
               const titleInput = document.getElementById('modal-title');
-              const bankDisplayName = bankValue.startsWith('github:') 
-                ? bankValue.replace('github:tidalcycles/', '') 
-                : bankValue;
+              let bankDisplayName;
+              if (bankValue.startsWith('github:')) {
+                bankDisplayName = bankValue.replace('github:tidalcycles/', '');
+              } else if (DRUM_BANK_VALUES.has(bankValue)) {
+                // Use proper display name for drum banks
+                bankDisplayName = getDrumBankDisplayName(bankValue);
+              } else {
+                bankDisplayName = bankValue;
+              }
               
               // Always update title when bank is selected
               titleInput.value = bankDisplayName;
               
-              // Update title in DOM immediately
+              // Update modal header title
+              const modalElementId = document.getElementById('modal-element-id');
+              if (modalElementId) {
+                modalElementId.textContent = bankDisplayName;
+              }
+              
+              // Update title in DOM immediately and save it
               const element = document.querySelector(`[data-sound-id="${elementId}"]`);
               if (element) {
                 const titleEl = element.querySelector('.element-title');
                 if (titleEl) {
                   titleEl.textContent = bankDisplayName;
+                  console.log(`📝 Updated element title in DOM to: ${bankDisplayName}`);
+                } else {
+                  console.warn(`⚠️ Element title not found for ${elementId}`);
                 }
+              } else {
+                console.warn(`⚠️ Element not found: ${elementId}`);
               }
-              console.log(`📝 Updated title to: ${bankDisplayName}`);
+              
+              // Save title immediately when bank is selected
+              const currentConfig = this.loadElementConfig(elementId) || {};
+              this.saveElementConfig(elementId, {
+                ...currentConfig,
+                title: bankDisplayName,
+                bank: bankValue
+              });
+              console.log(`📝 Saved title "${bankDisplayName}" for ${elementId}`);
               
               // Always update pattern to use the new bank or synth
               let currentPattern = getStrudelEditorValue('modal-pattern').trim();
@@ -5859,7 +6553,23 @@ class InteractiveSoundApp {
           }, 300); // Increased delay to ensure old pattern stops completely
         }
 
-        refreshDrumGridForCurrentState();
+        // When switching to a drum bank, disable pattern editor to show drum grid
+        const isDrum = bankValue && DRUM_BANK_VALUES.has(bankValue);
+        console.log('📦 Bank change: isDrum=', isDrum, 'bankValue=', bankValue);
+        if (isDrum) {
+          console.log('📦 Switching to drum bank, using step editor');
+          setPatternEditorEnabled(false);
+          // Force rebuild of drum grid with new bank instruments
+          drumGridState.built = false;
+          // Show drum grid immediately - no save required
+          setTimeout(() => {
+            refreshDrumGridForCurrentState();
+          }, 0);
+        } else {
+          console.log('📦 Not a drum bank, using code editor');
+          setPatternEditorEnabled(true);
+          refreshDrumGridForCurrentState();
+        }
       });
     }
 
