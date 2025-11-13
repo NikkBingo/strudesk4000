@@ -885,6 +885,9 @@ header h1 {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .copy-code-button:hover {
@@ -970,14 +973,20 @@ header h1 {
 .play-master-button,
 .stop-master-button,
 .update-master-button,
-.reset-master-button {
-  padding: 10px 20px;
-  font-size: 14px;
+.reset-master-button,
+.clear-all-button {
+  width: 48px;
+  height: 48px;
+  padding: 8px 40px;
+  font-size: 1.4rem;
   font-weight: 600;
   border: none;
-  border-radius: 6px;
+  border-radius: 50%;
   cursor: pointer;
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .play-master-button {
@@ -1023,6 +1032,30 @@ header h1 {
 .reset-master-button:hover {
   background: #d97706;
   transform: translateY(-2px);
+}
+
+.clear-all-button {
+  padding: 8px 40px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 10px;
+  white-space: nowrap;
+  height: auto;
+  min-height: auto;
+}
+
+.clear-all-button:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
 }
 
 .export-audio-button,

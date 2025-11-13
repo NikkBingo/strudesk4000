@@ -216,11 +216,11 @@ const DRUM_SAMPLE_TO_ROW = new Map([
 
 const SYNTH_BANK_ALIASES = {
   superpiano: 'piano',
-  jazz: 'wood'
+  wood: 'jazz'  // Wood is now called Jazz
 };
 
 const OSCILLATOR_SYNTHS = ['sine', 'square', 'triangle', 'sawtooth', 'supersaw', 'pulse'];
-const SAMPLE_SYNTHS = ['piano', 'supersaw', 'gtr', 'casio', 'wood', 'metal', 'folkharp'];
+const SAMPLE_SYNTHS = ['piano', 'supersaw', 'gtr', 'casio', 'jazz', 'metal', 'folkharp']; // 'wood' aliased to 'jazz'
 const LEGACY_SAMPLE_SYNTHS = Object.keys(SYNTH_BANK_ALIASES);
 const SYNTH_NAME_MATCHERS = new Set([
   ...OSCILLATOR_SYNTHS,
@@ -484,7 +484,7 @@ const SYNTH_VARIANT_SNIPPETS = [
   'sound("brown")'
 ];
 
-const CORE_STYLE_KEYWORDS = ['beat', 'chord', 'note', 'sound', 'stack', 'vowel'];
+const CORE_STYLE_KEYWORDS = ['beat', 'chord', 'note', 'sound', 'stack'];
 const SOUND_COLOR_CLASS_MAP = new Map([
   ['sound("brown")', 'pattern-snippet-tag-sound-brown'],
   ['sound("pink")', 'pattern-snippet-tag-sound-pink'],
@@ -492,7 +492,80 @@ const SOUND_COLOR_CLASS_MAP = new Map([
 ]);
 
 const DEFAULT_OPEN_SNIPPET_GROUP_IDS = new Set(['core']);
+const FILTER_GROUP_IDS = new Set(['filters-lp', 'filters-hp', 'filters-bp']);
+// Open filter groups by default when showing only filters
+const DEFAULT_OPEN_FILTER_GROUP_IDS = new Set(['filters-lp', 'filters-hp', 'filters-bp']);
 const snippetGroupOpenState = new Map();
+
+// Mapping of tags with numeric parameters to their min/max/default values
+const NUMERIC_TAG_PARAMS = {
+  // Filters
+  'lpf': { min: 20, max: 20000, step: 10, default: 20000, unit: 'Hz' },
+  'hpf': { min: 20, max: 20000, step: 10, default: 20, unit: 'Hz' },
+  'bpf': { min: 20, max: 20000, step: 10, default: 1000, unit: 'Hz' },
+  'lpq': { min: 0, max: 20, step: 0.1, default: 0, unit: '' },
+  'hpq': { min: 0, max: 20, step: 0.1, default: 0, unit: '' },
+  'bpq': { min: 0, max: 20, step: 0.1, default: 0, unit: '' },
+  'bpg': { min: 0, max: 20, step: 0.1, default: 0, unit: '' },
+  // Envelope
+  'attack': { min: 0, max: 2, step: 0.01, default: 0.01, unit: 's' },
+  'decay': { min: 0, max: 2, step: 0.01, default: 0.1, unit: 's' },
+  'sustain': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'release': { min: 0, max: 5, step: 0.01, default: 0.1, unit: 's' },
+  'lpattack': { min: 0, max: 2, step: 0.01, default: 0.01, unit: 's' },
+  'lpdecay': { min: 0, max: 2, step: 0.01, default: 0.1, unit: 's' },
+  'lpsustain': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'lprelease': { min: 0, max: 5, step: 0.01, default: 0.1, unit: 's' },
+  'hpattack': { min: 0, max: 2, step: 0.01, default: 0.01, unit: 's' },
+  'hpdecay': { min: 0, max: 2, step: 0.01, default: 0.1, unit: 's' },
+  'hpsustain': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'hprelease': { min: 0, max: 5, step: 0.01, default: 0.1, unit: 's' },
+  'bpattack': { min: 0, max: 2, step: 0.01, default: 0.01, unit: 's' },
+  'bpdecay': { min: 0, max: 2, step: 0.01, default: 0.1, unit: 's' },
+  'bpsustain': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'bprelease': { min: 0, max: 5, step: 0.01, default: 0.1, unit: 's' },
+  'bpenv': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'hpenv': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'pattack': { min: 0, max: 2, step: 0.01, default: 0.01, unit: 's' },
+  'pdecay': { min: 0, max: 2, step: 0.01, default: 0.1, unit: 's' },
+  'prelease': { min: 0, max: 5, step: 0.01, default: 0.1, unit: 's' },
+  // Dynamics
+  'gain': { min: 0, max: 2, step: 0.01, default: 0.8, unit: '' },
+  'postgain': { min: 0, max: 2, step: 0.01, default: 1, unit: '' },
+  'velocity': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  // Panning
+  'pan': { min: -1, max: 1, step: 0.01, default: 0, unit: '' },
+  // Time
+  'slow': { min: 0.1, max: 10, step: 0.1, default: 2, unit: 'x' },
+  'fast': { min: 0.1, max: 10, step: 0.1, default: 2, unit: 'x' },
+  'early': { min: 0, max: 1, step: 0.01, default: 0.25, unit: '' },
+  'late': { min: 0, max: 1, step: 0.01, default: 0.25, unit: '' },
+  // Effects
+  'delay': { min: 0, max: 1, step: 0.01, default: 0, unit: '' },
+  'delaytime': { min: 0, max: 1, step: 0.01, default: 0.25, unit: 's' },
+  'delayfeedback': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'room': { min: 0, max: 1, step: 0.01, default: 0, unit: '' },
+  'roomsize': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'roomfade': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'roomlp': { min: 20, max: 20000, step: 10, default: 20000, unit: 'Hz' },
+  'phaser': { min: 0, max: 1, step: 0.01, default: 0, unit: '' },
+  'phaserdepth': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'phasercenter': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'phasersweep': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'duckattack': { min: 0, max: 2, step: 0.01, default: 0.01, unit: 's' },
+  'duckdepth': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  // Modulation
+  'tremolo': { min: 0, max: 1, step: 0.01, default: 0, unit: '' },
+  'tremolodepth': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'tremoloskew': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'tremolophase': { min: 0, max: 1, step: 0.01, default: 0, unit: '' },
+  'resonance': { min: 0, max: 20, step: 0.1, default: 0, unit: '' },
+  'cutoff': { min: 20, max: 20000, step: 10, default: 20000, unit: 'Hz' },
+  // Other
+  'speed': { min: 0.1, max: 10, step: 0.1, default: 1, unit: 'x' },
+  'legato': { min: 0, max: 1, step: 0.01, default: 0, unit: '' },
+  'cpm': { min: 60, max: 300, step: 1, default: 120, unit: 'BPM' }
+};
 
 const PATTERN_SNIPPET_GROUPS = [
   {
@@ -500,7 +573,7 @@ const PATTERN_SNIPPET_GROUPS = [
     order: 0,
     label: 'Core',
     heading: 'Core',
-    matcher: (key) => ['stack', 'vowel', 'beat', 'bank', 'sound', 'chord', 'note'].includes(key),
+    matcher: (key) => ['stack', 'beat', 'bank', 'sound', 'chord', 'note'].includes(key),
     className: 'snippet-group-core'
   },
   {
@@ -620,7 +693,7 @@ const PATTERN_SNIPPET_GROUPS = [
     order: 7,
     label: 'Filters · Low-pass',
     heading: 'Filters · Low-pass',
-    matcher: (key) => key.startsWith('lp') || key === 'ftype',
+    matcher: (key) => key.startsWith('lp') || key === 'ftype' || key === 'vowel' || key === 'applygraduallowpass',
     className: 'snippet-group-filters-lp'
   },
   {
@@ -704,6 +777,10 @@ const PATTERN_SNIPPET_GROUPS = [
       if (key === 'color' || key === 'markcss') {
         return true;
       }
+      // Direct key matches for visual feedback tags
+      if (['fscope', 'generategraph', 'pianoroll', 'pitchwheel', 'scope', 'spiral', 'wordfall'].includes(key)) {
+        return true;
+      }
       if (!snippet || typeof snippet !== 'string') {
         return false;
       }
@@ -741,6 +818,7 @@ const PATTERN_SNIPPET_GROUPS = [
         'fmdecay',
         'fmsustain',
         'fmenv',
+        'fmwave',
         'zrand',
         'curve',
         'slide',
@@ -751,7 +829,17 @@ const PATTERN_SNIPPET_GROUPS = [
         'pitchjump',
         'pitchjumptime',
         'lfo',
-        'tremolo'
+        'tremolo',
+        'octave',
+        'pw',
+        'pwrate',
+        'pwsweep',
+        'spread',
+        'unison',
+        'isaw',
+        'isaw2',
+        'itri',
+        'itri2'
       ].includes(key);
     },
     className: 'snippet-group-synths'
@@ -761,7 +849,7 @@ const PATTERN_SNIPPET_GROUPS = [
     order: 13,
     label: 'Tonal Functions',
     heading: 'Tonal Functions',
-    matcher: (key) => ['voicing', 'scale', 'transpose', 'scaletranspose', 'rootnotes'].includes(key),
+    matcher: (key) => ['voicing', 'voicings', 'addvoicings', 'scale', 'transpose', 'scaletranspose', 'rootnotes'].includes(key),
     className: 'snippet-group-tonal'
   },
   {
@@ -880,7 +968,7 @@ const PATTERN_SNIPPET_GROUPS = [
     order: 19,
     label: 'Device Motion',
     heading: 'Device Motion',
-    matcher: (key) => ['orientation', 'acceleration', 'accelerate', 'accelerationx', 'accelerationy', 'accelerationz', 'rotationx', 'rotationy', 'rotationz'].some((token) => key.includes(token)),
+    matcher: (key) => ['orientation', 'acceleration', 'accelerate', 'accelerationx', 'accelerationy', 'accelerationz', 'rotationx', 'rotationy', 'rotationz', 'gravityx', 'gravityy', 'gravityz'].some((token) => key.includes(token)),
     className: 'snippet-group-device'
   },
   {
@@ -1261,6 +1349,10 @@ function filterSnippetsForPattern(snippets, pattern) {
 
   return snippets.filter((snippet) => {
     const key = getSnippetKey(snippet);
+    // Keep numeric tags visible even if they're already in the pattern (so sliders remain available)
+    if (NUMERIC_TAG_PARAMS[key]) {
+      return true; // Always show numeric tags
+    }
     return !existingMethods.has(key);
   });
 }
@@ -1992,7 +2084,6 @@ class InteractiveSoundApp {
   setupMasterPatternControls() {
     this.masterPatternField = document.getElementById('master-pattern');
     const playMasterBtn = document.getElementById('play-master-btn');
-    const stopMasterBtn = document.getElementById('stop-master-btn');
     const updateMasterBtn = document.getElementById('update-master-btn');
     const masterActiveDot = document.querySelector('.master-active-dot');
 
@@ -2001,7 +2092,7 @@ class InteractiveSoundApp {
       return;
     }
 
-    // Play/Pause Master button
+    // Play/Pause Master button (toggles between play and pause)
     if (playMasterBtn) {
       playMasterBtn.addEventListener('click', async () => {
         if (this.masterActive) {
@@ -2012,7 +2103,8 @@ class InteractiveSoundApp {
           
           if (result.success) {
             this.masterActive = false;
-            playMasterBtn.textContent = '▶ Play Master';
+            playMasterBtn.textContent = '▶';
+            playMasterBtn.title = 'Play Master';
             playMasterBtn.classList.remove('active');
             if (masterActiveDot) masterActiveDot.classList.remove('active');
             console.log('✅ Master playback paused');
@@ -2042,7 +2134,8 @@ class InteractiveSoundApp {
           
           if (result.success) {
             this.masterActive = true;
-            playMasterBtn.textContent = '⏸️ Pause';
+            playMasterBtn.textContent = '⏸';
+            playMasterBtn.title = 'Pause Master';
             playMasterBtn.classList.add('active');
             if (masterActiveDot) masterActiveDot.classList.add('active');
             console.log('✅ Master playback started');
@@ -2050,27 +2143,6 @@ class InteractiveSoundApp {
             console.error('❌ Failed to play master:', result.error);
             alert(`Failed to play master: ${result.error}`);
           }
-        }
-      });
-    }
-
-    // Stop Master button
-    if (stopMasterBtn) {
-      stopMasterBtn.addEventListener('click', async () => {
-        console.log('⏹️ Stop Master button clicked');
-        
-        const result = await soundManager.stopMasterPattern();
-        
-        if (result.success) {
-          this.masterActive = false;
-          if (playMasterBtn) {
-            playMasterBtn.textContent = '▶ Play Master';
-            playMasterBtn.classList.remove('active');
-          }
-          if (masterActiveDot) masterActiveDot.classList.remove('active');
-          console.log('✅ Master playback stopped');
-        } else {
-          console.error('❌ Failed to stop master:', result.error);
         }
       });
     }
@@ -2163,8 +2235,10 @@ class InteractiveSoundApp {
           // Temporarily change button text to show success
           const originalText = copyCodeBtn.textContent;
           copyCodeBtn.textContent = '✓ Copied!';
+          copyCodeBtn.title = 'Copied!';
           setTimeout(() => {
             copyCodeBtn.textContent = originalText;
+            copyCodeBtn.title = 'Copy Code';
           }, 2000);
           console.log('✅ Master pattern code copied to clipboard');
         } catch (err) {
@@ -2174,12 +2248,13 @@ class InteractiveSoundApp {
       });
     }
 
-    // Reset All button
-    const resetMasterBtn = document.getElementById('reset-master-btn');
-    if (resetMasterBtn) {
-      resetMasterBtn.addEventListener('click', () => {
-        if (confirm('Are you sure you want to reset all? This will clear the master pattern and all element configurations.')) {
-          console.log('🔄 Reset All button clicked');
+
+    // Clear All button (trash can)
+    const clearAllBtn = document.getElementById('clear-all-btn');
+    if (clearAllBtn) {
+      clearAllBtn.addEventListener('click', () => {
+        if (confirm('Are you sure you want to clear all? This will clear the master pattern and all element configurations.')) {
+          console.log('🗑️ Clear All button clicked');
           this.resetAll();
         }
       });
@@ -2256,6 +2331,26 @@ class InteractiveSoundApp {
   async applyVisualizerToMaster() {
     console.log(`🎨 Applying visualizer "${this.selectedVisualizer}" to master pattern`);
     
+    // Clean up any existing pianoroll observer
+    if (this.pianorollObserver) {
+      this.pianorollObserver.disconnect();
+      this.pianorollObserver = null;
+      console.log('🧹 Cleaned up previous pianoroll observer');
+    }
+    
+    // Clean up any existing pianoroll canvases from previous sessions
+    if (this.selectedVisualizer !== 'pianoroll') {
+      const existingPianorollCanvases = document.querySelectorAll('canvas[data-processed="true"]');
+      existingPianorollCanvases.forEach(canvas => {
+        if (canvas.id !== 'master-punchcard-canvas') {
+          canvas.remove();
+        }
+      });
+    }
+    
+    // Prepare canvas for visualizers (ensure context is ready)
+    this.prepareCanvasForExternalVisualizer();
+    
     // Get the current master pattern without any visualizers
     let basePattern = soundManager.getMasterPatternCode();
     if (!basePattern || basePattern.trim() === '') {
@@ -2281,7 +2376,7 @@ class InteractiveSoundApp {
       return -1;
     };
     
-    const visualizerMethods = ['scope', 'tscope', 'fscope', 'spectrum', 'visual', 'spiral'];
+    const visualizerMethods = ['scope', 'tscope', 'fscope', 'spectrum', 'visual', 'spiral', 'pianoroll', 'barchart'];
     visualizerMethods.forEach(method => {
       const searchPattern = new RegExp(`\\.\\s*_?${method}\\s*\\(`, 'gi');
       let match;
@@ -2306,12 +2401,218 @@ class InteractiveSoundApp {
     let patternWithVisualizer = basePattern;
     const canvasId = 'master-punchcard-canvas';
     
+    // For pianoroll, ensure canvas is registered with getDrawContext first
+    if (this.selectedVisualizer === 'pianoroll') {
+      try {
+        // Register canvas with Strudel's draw system
+        const ctx = getDrawContext(canvasId, { contextType: '2d' });
+        window.__strudelVisualizerCtx = ctx;
+        console.log(`✅ Registered canvas "${canvasId}" with getDrawContext for pianoroll`);
+      } catch (error) {
+        console.warn('⚠️ Failed to register canvas with getDrawContext:', error);
+      }
+    }
+    
+    // Prepare ctx expression for visualizers that need it
+    const ctxExpression = "window.__strudelVisualizerCtx || (document.getElementById('master-punchcard-canvas') && document.getElementById('master-punchcard-canvas').getContext && document.getElementById('master-punchcard-canvas').getContext('2d'))";
+    
     if (this.selectedVisualizer === 'scope') {
-      patternWithVisualizer = `${basePattern}.scope({ id: '${canvasId}' })`;
+      patternWithVisualizer = `${basePattern}.scope({ id: '${canvasId}', ctx: ${ctxExpression} })`;
     } else if (this.selectedVisualizer === 'spectrum') {
-      patternWithVisualizer = `${basePattern}.spectrum({ id: '${canvasId}' })`;
+      patternWithVisualizer = `${basePattern}.spectrum({ id: '${canvasId}', ctx: ${ctxExpression} })`;
     } else if (this.selectedVisualizer === 'spiral') {
-      patternWithVisualizer = `${basePattern}.spiral({ id: '${canvasId}' })`;
+      patternWithVisualizer = `${basePattern}.spiral({ id: '${canvasId}', ctx: ${ctxExpression} })`;
+    } else if (this.selectedVisualizer === 'pianoroll') {
+      // Pianoroll API: https://strudel.cc/learn/visualizers/#pianoroll
+      // Pianoroll creates its own canvas element, so we need to intercept it
+      // Set up a MutationObserver to catch pianoroll's canvas and move it to our container
+      const canvasElement = document.getElementById(canvasId);
+      const containerElement = document.getElementById('master-punchcard');
+      
+      if (canvasElement && containerElement) {
+        // Clear any existing pianoroll canvases from the page
+        const existingPianorollCanvases = document.querySelectorAll('canvas[data-pianoroll], canvas[data-processed="true"], .pianoroll-canvas');
+        existingPianorollCanvases.forEach(canvas => {
+          if (canvas.id !== canvasId && canvas !== canvasElement) {
+            canvas.remove();
+          }
+        });
+        
+        // Reset our canvas element
+        canvasElement.removeAttribute('data-processed');
+        canvasElement.style.display = 'block';
+        canvasElement.style.visibility = 'visible';
+        canvasElement.style.opacity = '1';
+        canvasElement.style.pointerEvents = 'auto';
+        
+        // Set up observer to catch pianoroll's canvas creation
+        // Pianoroll creates a canvas that covers the entire page, so we need to catch it
+        let intercepted = false; // Flag to prevent multiple interceptions
+        const observer = new MutationObserver((mutations) => {
+          if (intercepted) return; // Already intercepted, skip
+          
+          mutations.forEach((mutation) => {
+            mutation.addedNodes.forEach((node) => {
+              if (node.nodeType === 1) { // Element node
+                // Check all canvases in the document, not just newly added ones
+                const allCanvases = document.querySelectorAll('canvas');
+                allCanvases.forEach(canvas => {
+                  if (intercepted) return;
+                  
+                  // Skip our own canvas
+                  if (canvas.id === canvasId || canvas === canvasElement) {
+                    return;
+                  }
+                  
+                  // Check if this is likely a pianoroll canvas
+                  const style = window.getComputedStyle(canvas);
+                  const rect = canvas.getBoundingClientRect();
+                  const isFullPage = (rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.8) ||
+                                    (style.position === 'absolute' || style.position === 'fixed') ||
+                                    canvas.style.position === 'absolute' ||
+                                    canvas.style.position === 'fixed';
+                  
+                  // Also check if it's a new canvas (recently added)
+                  const isRecent = !canvas.hasAttribute('data-processed');
+                  
+                  if ((isFullPage || isRecent) && !intercepted) {
+                    console.log('🎹 Intercepted pianoroll canvas:', {
+                      id: canvas.id,
+                      width: rect.width,
+                      height: rect.height,
+                      position: style.position,
+                      isFullPage
+                    });
+                    
+                    intercepted = true; // Mark as intercepted
+                    // Mark as processed
+                    canvas.setAttribute('data-processed', 'true');
+                    
+                    // Clone the canvas content to our canvas
+                    try {
+                      const targetCtx = canvasElement.getContext('2d');
+                      const sourceCtx = canvas.getContext('2d');
+                      
+                      if (targetCtx && sourceCtx) {
+                        // Get source canvas dimensions
+                        const sourceWidth = canvas.width;
+                        const sourceHeight = canvas.height;
+                        const pixelRatio = window.devicePixelRatio || 1;
+                        
+                        // Get container dimensions
+                        const containerRect = containerElement.getBoundingClientRect();
+                        const displayWidth = Math.max(containerRect.width || containerElement.offsetWidth || 320, 240);
+                        const displayHeight = Math.max(containerRect.height || containerElement.offsetHeight || 200, 220);
+                        
+                        // Match width exactly, scale height proportionally
+                        // This ensures pianoroll width matches visualizer canvas width
+                        const scale = displayWidth / sourceWidth; // Use width-based scale
+                        const scaledWidth = displayWidth; // Match canvas width exactly
+                        const scaledHeight = sourceHeight * scale; // Scale height proportionally
+                        
+                        // Set our canvas to container size with pixel ratio
+                        canvasElement.width = displayWidth * pixelRatio;
+                        canvasElement.height = displayHeight * pixelRatio;
+                        canvasElement.style.width = `${displayWidth}px`;
+                        canvasElement.style.height = `${displayHeight}px`;
+                        
+                        // Set up transform to scale down the notes
+                        targetCtx.setTransform(1, 0, 0, 1, 0, 0);
+                        targetCtx.scale(pixelRatio, pixelRatio);
+                        
+                        // Center vertically if scaled height is less than container height
+                        const offsetX = 0; // No horizontal offset, width matches exactly
+                        const offsetY = scaledHeight <= displayHeight ? (displayHeight - scaledHeight) / 2 : 0;
+                        
+                        // Set up animation loop to copy with scaling
+                        // This scales down the notes so all 11 fit in the visible area
+                        const copyLoop = () => {
+                          if (this.selectedVisualizer === 'pianoroll' && canvas.parentNode) {
+                            // Clear the canvas
+                            targetCtx.clearRect(0, 0, displayWidth, displayHeight);
+                            
+                            // Draw the source canvas scaled down to fit all notes
+                            // This ensures all 11 notes are visible by scaling down their height
+                            targetCtx.drawImage(
+                              canvas,
+                              0, 0, sourceWidth, sourceHeight,  // Source: full canvas
+                              offsetX, offsetY, scaledWidth, scaledHeight  // Destination: scaled to fit
+                            );
+                            
+                            requestAnimationFrame(copyLoop);
+                          }
+                        };
+                        copyLoop();
+                        
+                        // Hide the original canvas
+                        canvas.style.display = 'none';
+                        canvas.style.visibility = 'hidden';
+                        canvas.style.opacity = '0';
+                        canvas.style.pointerEvents = 'none';
+                        
+                        console.log('✅ Pianoroll canvas intercepted and copied to our canvas');
+                        
+                        // Disconnect observer after intercepting
+                        observer.disconnect();
+                        intercepted = true;
+                      }
+                    } catch (error) {
+                      console.warn('⚠️ Error copying pianoroll canvas:', error);
+                      // Fallback: try to move the canvas
+                      try {
+                        canvas.id = canvasId;
+                        canvas.style.position = 'relative';
+                        canvas.style.width = '100%';
+                        canvas.style.height = '100%';
+                        canvas.style.left = '0';
+                        canvas.style.top = '0';
+                        containerElement.replaceChild(canvas, canvasElement);
+                        this.masterPunchcardCanvas = canvas;
+                        console.log('✅ Pianoroll canvas moved to container');
+                        observer.disconnect();
+                        intercepted = true;
+                      } catch (moveError) {
+                        console.warn('⚠️ Error moving pianoroll canvas:', moveError);
+                      }
+                    }
+                  }
+                });
+              }
+            });
+          });
+        });
+        
+        // Start observing the document body for new canvas elements
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true
+        });
+        
+        // Store observer so we can disconnect it later
+        this.pianorollObserver = observer;
+        
+        // Ensure our canvas is visible
+        canvasElement.style.display = 'block';
+        
+        // Create pianoroll pattern - it will create its own canvas
+        patternWithVisualizer = `${basePattern}.pianoroll({ 
+          cycles: 4,
+          playhead: 0.5,
+          fill: true,
+          fillActive: true,
+          stroke: true,
+          strokeActive: true,
+          autorange: true,
+          colorizeInactive: true,
+          background: 'transparent'
+        })`;
+      } else {
+        patternWithVisualizer = `${basePattern}.pianoroll()`;
+      }
+    } else if (this.selectedVisualizer === 'barchart') {
+      // barchart doesn't exist in Strudel - use spectrum as alternative (shows frequency bars)
+      console.warn('⚠️ barchart visualizer not available in Strudel, using spectrum instead');
+      patternWithVisualizer = `${basePattern}.spectrum({ id: '${canvasId}' })`;
     }
     // For 'punchcard', we don't add any visualizer method - it's just the default rendering
     
@@ -2356,8 +2657,10 @@ class InteractiveSoundApp {
     const useSpiral = this.shouldUseSpiralVisualizer(patternCode);
     const useScope = !useSpiral && this.shouldUseScopeVisualizer(patternCode);
     const useSpectrum = !useSpiral && !useScope && this.shouldUseSpectrumVisualizer(patternCode);
+    const usePianoroll = !useSpiral && !useScope && !useSpectrum && this.shouldUsePianorollVisualizer(patternCode);
+    const useBarchart = !useSpiral && !useScope && !useSpectrum && !usePianoroll && this.shouldUseBarchartVisualizer(patternCode);
     
-    if (useScope || useSpectrum || useSpiral) {
+    if (useScope || useSpectrum || useSpiral || usePianoroll || useBarchart) {
       // External visualizers (scope, spectrum, spiral) rely on Strudel rendering directly
       this.prepareCanvasForExternalVisualizer();
       this.hideMasterPunchcardPlaceholder();
@@ -2501,6 +2804,17 @@ class InteractiveSoundApp {
   shouldUseSpectrumVisualizer(patternCode) {
     if (!patternCode) return false;
     return /\.\s*_?spectrum\s*\(/i.test(patternCode);
+  }
+
+  shouldUsePianorollVisualizer(patternCode) {
+    if (!patternCode) return false;
+    // pianoroll can be used with or without underscore prefix
+    return /\.\s*_?pianoroll\s*\(/i.test(patternCode);
+  }
+
+  shouldUseBarchartVisualizer(patternCode) {
+    if (!patternCode) return false;
+    return /\.\s*_?barchart\s*\(/i.test(patternCode);
   }
 
   extractSpiralOptions(patternCode) {
@@ -2950,22 +3264,95 @@ class InteractiveSoundApp {
     if (!patternObject && window.strudel && typeof window.strudel.evaluate === 'function') {
       console.log('🔁 strudelCoreEvaluate returned no pattern - attempting fallback via window.strudel.evaluate');
       try {
-        await window.strudel.evaluate(`globalThis.__punchcard_pattern = ${patternForEval}`);
-        patternObject = globalThis.__punchcard_pattern;
-        console.log('🔍 Fallback pattern object:', patternObject);
+        // Try evaluating the pattern directly and storing the result
+        const evalCode = `globalThis.__punchcard_pattern = ${patternForEval}`;
+        console.log('🔍 Fallback evaluation code:', evalCode.substring(0, 200));
+        const evalResult = await window.strudel.evaluate(evalCode);
+        
+        // Check multiple ways the pattern might be stored
+        if (globalThis.__punchcard_pattern) {
+          patternObject = globalThis.__punchcard_pattern;
+          console.log('🔍 Fallback pattern object from globalThis:', patternObject);
+        } else if (evalResult && typeof evalResult.queryArc === 'function') {
+          patternObject = evalResult;
+          console.log('🔍 Fallback pattern object from eval result:', patternObject);
+        } else if (evalResult && evalResult._Pattern) {
+          patternObject = evalResult;
+          console.log('🔍 Fallback pattern object (has _Pattern):', patternObject);
+        } else {
+          // Try evaluating without assignment to see what we get
+          const directEval = await window.strudel.evaluate(patternForEval);
+          if (directEval && (typeof directEval.queryArc === 'function' || directEval._Pattern)) {
+            patternObject = directEval;
+            console.log('🔍 Fallback pattern object from direct eval:', patternObject);
+          }
+        }
       } catch (fallbackError) {
         console.warn('⚠️ Fallback evaluation failed:', fallbackError);
+        console.warn('⚠️ Pattern that failed:', patternForEval.substring(0, 200));
       }
     }
     
-    if (!patternObject || typeof patternObject.queryArc !== 'function') {
+    // Check if patternObject is valid - it should have queryArc or query method, or _Pattern property
+    const isValidPattern = patternObject && (
+      typeof patternObject.queryArc === 'function' ||
+      typeof patternObject.query === 'function' ||
+      patternObject._Pattern === true
+    );
+    
+    if (!isValidPattern) {
       console.warn('⚠️ Pattern did not return a valid Strudel pattern object');
-      return { error: 'Pattern expression did not return a Strudel pattern.' };
+      console.warn('⚠️ Pattern object type:', typeof patternObject);
+      console.warn('⚠️ Pattern object:', patternObject);
+      console.warn('⚠️ Pattern that failed:', patternForEval.substring(0, 300));
+      
+      // Try one more time with a simpler approach - wrap in parentheses
+      if (window.strudel && typeof window.strudel.evaluate === 'function') {
+        try {
+          const wrappedPattern = `(${patternForEval})`;
+          const lastAttempt = await window.strudel.evaluate(wrappedPattern);
+          if (lastAttempt && (
+            typeof lastAttempt.queryArc === 'function' ||
+            typeof lastAttempt.query === 'function' ||
+            lastAttempt._Pattern === true
+          )) {
+            patternObject = lastAttempt;
+            console.log('✅ Last attempt succeeded with wrapped pattern');
+          }
+        } catch (lastError) {
+          console.warn('⚠️ Last attempt also failed:', lastError);
+        }
+      }
+      
+      // Final check
+      const finalCheck = patternObject && (
+        typeof patternObject.queryArc === 'function' ||
+        typeof patternObject.query === 'function' ||
+        patternObject._Pattern === true
+      );
+      
+      if (!finalCheck) {
+        return { error: 'Pattern expression did not return a Strudel pattern.' };
+      }
     }
     
     let haps;
     try {
-      haps = patternObject.queryArc(0, 1) || [];
+      // Try queryArc first, then fall back to query if available
+      if (typeof patternObject.queryArc === 'function') {
+        haps = patternObject.queryArc(0, 1) || [];
+      } else if (typeof patternObject.query === 'function') {
+        haps = patternObject.query(0, 1) || [];
+      } else {
+        // If neither method exists but _Pattern is true, try to get haps from __steps
+        if (patternObject.__steps && typeof patternObject.__steps === 'object') {
+          // Try to extract haps from the pattern structure
+          haps = [];
+          console.warn('⚠️ Pattern has _Pattern but no queryArc/query - attempting to extract haps from __steps');
+        } else {
+          throw new Error('Pattern object does not have queryArc, query, or __steps');
+        }
+      }
     } catch (error) {
       console.error('❌ Failed to query pattern arc for punchcard:', error);
       return { error: error?.message || 'Pattern queryArc failed.' };
@@ -4826,16 +5213,49 @@ class InteractiveSoundApp {
       const previousValue = bankSelect.value;
       const targetValue = selectedValue != null ? selectedValue : previousValue;
 
+      // Find or create all optgroups, preserving their order
       let drumsGroup = Array.from(bankSelect.children).find(
         (child) => child.tagName === 'OPTGROUP' && child.label && child.label.toLowerCase() === 'drums'
       );
+      
+      let waveformsGroup = Array.from(bankSelect.children).find(
+        (child) => child.tagName === 'OPTGROUP' && child.label && child.label.toLowerCase().includes('waveform')
+      );
+      
+      let synthsGroup = Array.from(bankSelect.children).find(
+        (child) => child.tagName === 'OPTGROUP' && child.label && child.label.toLowerCase().includes('synth')
+      );
 
+      // Create groups if they don't exist, in the correct order
       if (!drumsGroup) {
         drumsGroup = document.createElement('optgroup');
         drumsGroup.label = 'Drums';
         bankSelect.insertBefore(drumsGroup, bankSelect.firstChild);
       }
+      
+      if (!waveformsGroup) {
+        waveformsGroup = document.createElement('optgroup');
+        waveformsGroup.label = 'Basic Waveforms';
+        // Insert after drums group
+        if (drumsGroup.nextSibling) {
+          bankSelect.insertBefore(waveformsGroup, drumsGroup.nextSibling);
+        } else {
+          bankSelect.appendChild(waveformsGroup);
+        }
+      }
+      
+      if (!synthsGroup) {
+        synthsGroup = document.createElement('optgroup');
+        synthsGroup.label = 'Sample-based Synths';
+        // Insert after waveforms group
+        if (waveformsGroup.nextSibling) {
+          bankSelect.insertBefore(synthsGroup, waveformsGroup.nextSibling);
+        } else {
+          bankSelect.appendChild(synthsGroup);
+        }
+      }
 
+      // Only rebuild the Drums group, preserve other groups
       drumsGroup.innerHTML = '';
 
       const defaultOption = document.createElement('option');
@@ -4854,24 +5274,15 @@ class InteractiveSoundApp {
         drumsGroup.appendChild(option);
       });
 
-      if (targetValue && targetValue !== '' && !DRUM_BANK_VALUES.has(targetValue)) {
-        const option = document.createElement('option');
-        option.value = targetValue;
-        option.textContent = getDrumBankDisplayName(targetValue);
-        drumsGroup.appendChild(option);
-      }
+      // Don't add non-drum banks to drums group - they belong in their own groups
+      // The other groups are preserved from the HTML, so options stay in place
 
-      const availableValues = new Set(
-        Array.from(drumsGroup.children)
-          .filter((child) => child.tagName === 'OPTION')
-          .map((option) => option.value)
-      );
-
-      if (availableValues.has(targetValue)) {
+      // Set the selected value without moving it
+      if (targetValue && bankSelect.querySelector(`option[value="${targetValue}"]`)) {
         bankSelect.value = targetValue;
-      } else if (availableValues.has(previousValue)) {
+      } else if (previousValue && bankSelect.querySelector(`option[value="${previousValue}"]`)) {
         bankSelect.value = previousValue;
-    } else {
+      } else {
         bankSelect.value = '';
       }
     };
@@ -5008,6 +5419,7 @@ class InteractiveSoundApp {
 
         let renderedAny = false;
 
+        // Show all groups (not just filters)
         groupOrder.forEach((group) => {
           if (!Array.isArray(group.items) || !group.items.length) {
             return;
@@ -5026,9 +5438,13 @@ class InteractiveSoundApp {
           groupWrapper.className = 'pattern-snippet-group';
           groupWrapper.dataset.groupId = group.id;
 
+          // For filter groups, use DEFAULT_OPEN_FILTER_GROUP_IDS, otherwise use DEFAULT_OPEN_SNIPPET_GROUP_IDS
+          const defaultOpenSet = FILTER_GROUP_IDS.has(group.id) 
+            ? DEFAULT_OPEN_FILTER_GROUP_IDS 
+            : DEFAULT_OPEN_SNIPPET_GROUP_IDS;
           const storedState = snippetGroupOpenState.has(group.id)
             ? snippetGroupOpenState.get(group.id)
-            : DEFAULT_OPEN_SNIPPET_GROUP_IDS.has(group.id);
+            : defaultOpenSet.has(group.id);
           const shouldOpen = hasSearch ? true : storedState;
           if (!snippetGroupOpenState.has(group.id)) {
             snippetGroupOpenState.set(group.id, storedState);
@@ -5056,45 +5472,300 @@ class InteractiveSoundApp {
           });
 
           group.items.forEach((item) => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            const customClass = getCustomSnippetClass(item.snippet);
-            const applyCoreStyle = !customClass && item.groupId !== 'core' && shouldUseCoreStyle(item.snippet);
-            const extraClassNames = [
-              item.className || '',
-              customClass,
-              applyCoreStyle ? 'pattern-snippet-tag-core' : ''
-            ]
-              .filter(Boolean)
-              .join(' ');
-            button.className = `pattern-snippet-tag ${extraClassNames}`.trim();
-            button.dataset.snippet = item.snippet;
-            button.dataset.insertion = item.insertionSnippet;
-            button.textContent = item.displayLabel;
-            button.setAttribute('aria-label', item.displayLabel);
-
-            const tooltipTitle = item.referenceEntry?.name || item.displayLabel.replace(/^[.]+/, '').trim();
-            const tooltipDescription = getReferenceDescriptionText(item.referenceEntry);
-            const tooltipParams = Array.isArray(item.referenceEntry?.params)
-              ? item.referenceEntry.params.map(buildParamDescription).filter(Boolean).join('\n')
-              : '';
-
-            button.dataset.tooltipTitle = tooltipTitle || item.displayLabel;
-            button.dataset.tooltipDescription = tooltipDescription || '';
-            button.dataset.tooltipParams = tooltipParams || '';
-
-            const handleShowTooltip = () => showSnippetTooltip(button);
-            const handleHideTooltip = () => hideSnippetTooltip(button);
-
-            button.addEventListener('mouseenter', handleShowTooltip);
-            button.addEventListener('mouseleave', handleHideTooltip);
-            button.addEventListener('focus', handleShowTooltip);
-            button.addEventListener('blur', handleHideTooltip);
-            button.addEventListener('click', handleHideTooltip);
-
             const itemWrapper = document.createElement('div');
             itemWrapper.className = 'pattern-snippet-item';
-            itemWrapper.appendChild(button);
+            itemWrapper.dataset.snippetKey = getSnippetKey(item.snippet);
+            
+            // Check if this tag has numeric parameters
+            const tagKey = getSnippetKey(item.snippet);
+            let numericParams = NUMERIC_TAG_PARAMS[tagKey];
+            
+            // Also check if tag has numeric parameter in parentheses
+            // Formats: gain(0.8), lpf(2000), bpattack(attack:number), etc.
+            if (!numericParams && item.snippet) {
+              // Check for format like bpattack(attack:number) or bpattack(0.5)
+              const paramNameMatch = item.snippet.match(/\(([a-zA-Z_]+):number\)/);
+              const numericMatch = item.snippet.match(/\(([0-9.]+)\)/);
+              
+              if (paramNameMatch || numericMatch) {
+                let value = numericMatch ? parseFloat(numericMatch[1]) : null;
+                
+                // If it's a parameter name format (attack:number), use default from NUMERIC_TAG_PARAMS if available
+                if (paramNameMatch && !value) {
+                  const paramName = paramNameMatch[1];
+                  // Check if we have defaults for this tag with this parameter
+                  if (NUMERIC_TAG_PARAMS[tagKey]) {
+                    numericParams = NUMERIC_TAG_PARAMS[tagKey];
+                  } else {
+                    // Use generic defaults based on parameter name
+                    if (paramName.includes('attack') || paramName.includes('decay') || paramName.includes('release')) {
+                      numericParams = { min: 0, max: 2, step: 0.01, default: 0.01, unit: 's' };
+                    } else if (paramName.includes('sustain') || paramName.includes('modulation') || paramName.includes('env')) {
+                      numericParams = { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' };
+                    } else {
+                      numericParams = { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' };
+                    }
+                  }
+                } else if (numericMatch && value !== null) {
+                  // Create default params for tags with numeric values
+                  // Use reasonable defaults based on the value
+                  let min = Math.max(0, value * 0.1);
+                  let max = value * 10;
+                  let step = value < 1 ? 0.01 : (value < 10 ? 0.1 : 1);
+                  
+                  // Special handling for common ranges
+                  if (value >= 20 && value <= 20000) {
+                    // Likely a frequency (Hz)
+                    min = 20;
+                    max = 20000;
+                    step = 10;
+                  } else if (value >= 0 && value <= 1) {
+                    // Likely a normalized value (0-1)
+                    min = 0;
+                    max = 1;
+                    step = 0.01;
+                  } else if (value >= -1 && value <= 1) {
+                    // Likely pan or similar (-1 to 1)
+                    min = -1;
+                    max = 1;
+                    step = 0.01;
+                  }
+                  
+                  numericParams = {
+                    min: min,
+                    max: max,
+                    step: step,
+                    default: value,
+                    unit: ''
+                  };
+                }
+              }
+            }
+            
+            const hasNumericParams = !!numericParams;
+            
+            if (hasNumericParams) {
+              // Create button and slider for tags with numeric parameters
+              const button = document.createElement('button');
+              button.type = 'button';
+              const customClass = getCustomSnippetClass(item.snippet);
+              const applyCoreStyle = !customClass && item.groupId !== 'core' && shouldUseCoreStyle(item.snippet);
+              const extraClassNames = [
+                item.className || '',
+                customClass,
+                applyCoreStyle ? 'pattern-snippet-tag-core' : ''
+              ]
+                .filter(Boolean)
+                .join(' ');
+              button.className = `pattern-snippet-tag ${extraClassNames}`.trim();
+              button.dataset.snippet = item.snippet;
+              button.dataset.insertion = item.insertionSnippet;
+              // Format display text: 
+              // - For (paramName:number) format: extract paramName -> "paramName()"
+              // - For (number) format: keep function name -> "functionName()"
+              let displayText = item.displayLabel;
+              const paramNameMatch = displayText.match(/\(([a-zA-Z_]+):number\)/);
+              if (paramNameMatch) {
+                // Extract parameter name and use it as the display text
+                const paramName = paramNameMatch[1];
+                displayText = `${paramName}()`;
+              } else {
+                // Remove content inside parentheses but keep function name
+                displayText = displayText.replace(/\([^)]*\)/g, '()');
+              }
+              button.textContent = displayText;
+              button.setAttribute('aria-label', item.displayLabel);
+              
+              // Create slider row (initially hidden, displayed inline below button)
+              const sliderRow = document.createElement('div');
+              sliderRow.className = 'slider-row snippet-slider-row';
+              sliderRow.style.display = 'none'; // Hidden by default
+              sliderRow.style.width = '100%';
+              sliderRow.style.marginTop = '8px';
+              sliderRow.style.padding = '8px';
+              sliderRow.style.backgroundColor = 'rgba(102, 126, 234, 0.05)';
+              sliderRow.style.border = '1px solid rgba(102, 126, 234, 0.2)';
+              sliderRow.style.borderRadius = '4px';
+              
+              const label = document.createElement('label');
+              label.textContent = item.displayLabel.replace(/\(\)$/, '');
+              label.style.fontSize = '0.75rem';
+              label.style.fontWeight = '600';
+              label.style.color = '#4c51bf';
+              label.style.marginBottom = '4px';
+              
+              const sliderContainer = document.createElement('div');
+              sliderContainer.style.display = 'flex';
+              sliderContainer.style.alignItems = 'center';
+              sliderContainer.style.gap = '8px';
+              sliderContainer.style.width = '100%';
+              
+              const slider = document.createElement('input');
+              slider.type = 'range';
+              slider.className = 'snippet-slider';
+              slider.dataset.snippet = item.snippet;
+              slider.dataset.tagKey = tagKey;
+              slider.style.flex = '1';
+              
+              // Get function name (e.g., 'lpf', 'hpf', 'gain')
+              const functionName = tagKey;
+              
+              // Set slider properties from NUMERIC_TAG_PARAMS
+              slider.min = String(numericParams.min);
+              slider.max = String(numericParams.max);
+              slider.step = String(numericParams.step);
+              
+              // Try to get existing value from pattern, otherwise use default
+              const getCurrentPatternValue = () => {
+                const currentPattern = getStrudelEditorValue('modal-pattern') || '';
+                const functionRegex = new RegExp(`\\.${functionName}\\(([^)]+)\\)`, 'g');
+                const match = functionRegex.exec(currentPattern);
+                return match ? match[1] : null;
+              };
+              
+              const existingValue = getCurrentPatternValue();
+              slider.value = existingValue ? String(existingValue) : String(numericParams.default);
+              
+              const valueSpan = document.createElement('span');
+              valueSpan.className = 'slider-value';
+              valueSpan.style.minWidth = '60px';
+              valueSpan.style.textAlign = 'right';
+              valueSpan.style.fontSize = '0.75rem';
+              valueSpan.style.fontWeight = '600';
+              valueSpan.textContent = slider.value + (numericParams.unit ? ' ' + numericParams.unit : '');
+              
+              // Update value display on input (for visual feedback)
+              slider.addEventListener('input', (e) => {
+                const value = e.target.value;
+                valueSpan.textContent = value + (numericParams.unit ? ' ' + numericParams.unit : '');
+              });
+              
+              // Replace or insert function when slider is released
+              slider.addEventListener('change', (e) => {
+                const value = e.target.value;
+                valueSpan.textContent = value + (numericParams.unit ? ' ' + numericParams.unit : '');
+                
+                // Get current pattern
+                const currentPattern = getStrudelEditorValue('modal-pattern') || '';
+                
+                // Create the function call with value
+                const functionCall = `.${functionName}(${value})`;
+                
+                // Check if pattern already has this function type
+                const functionRegex = new RegExp(`\\.${functionName}\\([^)]*\\)`, 'g');
+                const hasExistingFunction = functionRegex.test(currentPattern);
+                
+                if (hasExistingFunction) {
+                  // Replace existing function call(s) with new one
+                  const updatedPattern = currentPattern.replace(functionRegex, functionCall);
+                  setStrudelEditorValue('modal-pattern', updatedPattern);
+                } else {
+                  // Append to the end of the pattern
+                  const newPattern = currentPattern.trim() + functionCall;
+                  setStrudelEditorValue('modal-pattern', newPattern);
+                }
+              });
+              
+              // Show slider when button is clicked (slider opens on first click and stays open)
+              button.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent tag insertion
+                e.preventDefault(); // Prevent any default behavior
+                
+                // Always show slider when button is clicked (open on first click)
+                const isHidden = sliderRow.style.display === 'none' || sliderRow.style.display === '';
+                if (isHidden) {
+                  sliderRow.style.display = 'flex';
+                  sliderRow.style.flexDirection = 'column';
+                  sliderRow.style.gap = '4px';
+                  
+                  // Update slider value from pattern if it exists
+                  const currentPattern = getStrudelEditorValue('modal-pattern') || '';
+                  const functionRegex = new RegExp(`\\.${functionName}\\(([^)]+)\\)`, 'g');
+                  const match = functionRegex.exec(currentPattern);
+                  
+                  if (match) {
+                    // Pattern already has this function - update slider to match
+                    const existingValue = match[1];
+                    slider.value = existingValue;
+                    valueSpan.textContent = existingValue + (numericParams.unit ? ' ' + numericParams.unit : '');
+                  } else {
+                    // Insert tag with default value if not already in pattern
+                    const functionCall = `.${functionName}(${slider.value})`;
+                    const newPattern = currentPattern.trim() + functionCall;
+                    setStrudelEditorValue('modal-pattern', newPattern);
+                  }
+                }
+                // Keep slider open - don't hide it when clicking again (as requested)
+              });
+              
+              // Tooltip handling for button
+              const tooltipTitle = item.referenceEntry?.name || item.displayLabel.replace(/^[.]+/, '').trim();
+              const tooltipDescription = getReferenceDescriptionText(item.referenceEntry);
+              const tooltipParams = Array.isArray(item.referenceEntry?.params)
+                ? item.referenceEntry.params.map(buildParamDescription).filter(Boolean).join('\n')
+                : '';
+              
+              button.dataset.tooltipTitle = tooltipTitle || item.displayLabel;
+              button.dataset.tooltipDescription = tooltipDescription || '';
+              button.dataset.tooltipParams = tooltipParams || '';
+              
+              const handleShowTooltip = () => showSnippetTooltip(button);
+              const handleHideTooltip = () => hideSnippetTooltip(button);
+              
+              button.addEventListener('mouseenter', handleShowTooltip);
+              button.addEventListener('mouseleave', handleHideTooltip);
+              button.addEventListener('focus', handleShowTooltip);
+              button.addEventListener('blur', handleHideTooltip);
+              
+              sliderContainer.appendChild(slider);
+              sliderContainer.appendChild(valueSpan);
+              
+              sliderRow.appendChild(label);
+              sliderRow.appendChild(sliderContainer);
+              
+              itemWrapper.appendChild(button);
+              itemWrapper.appendChild(sliderRow);
+            } else {
+              // Create button for non-filter items
+              const button = document.createElement('button');
+              button.type = 'button';
+              const customClass = getCustomSnippetClass(item.snippet);
+              const applyCoreStyle = !customClass && item.groupId !== 'core' && shouldUseCoreStyle(item.snippet);
+              const extraClassNames = [
+                item.className || '',
+                customClass,
+                applyCoreStyle ? 'pattern-snippet-tag-core' : ''
+              ]
+                .filter(Boolean)
+                .join(' ');
+              button.className = `pattern-snippet-tag ${extraClassNames}`.trim();
+              button.dataset.snippet = item.snippet;
+              button.dataset.insertion = item.insertionSnippet;
+              button.textContent = item.displayLabel;
+              button.setAttribute('aria-label', item.displayLabel);
+
+              const tooltipTitle = item.referenceEntry?.name || item.displayLabel.replace(/^[.]+/, '').trim();
+              const tooltipDescription = getReferenceDescriptionText(item.referenceEntry);
+              const tooltipParams = Array.isArray(item.referenceEntry?.params)
+                ? item.referenceEntry.params.map(buildParamDescription).filter(Boolean).join('\n')
+                : '';
+
+              button.dataset.tooltipTitle = tooltipTitle || item.displayLabel;
+              button.dataset.tooltipDescription = tooltipDescription || '';
+              button.dataset.tooltipParams = tooltipParams || '';
+
+              const handleShowTooltip = () => showSnippetTooltip(button);
+              const handleHideTooltip = () => hideSnippetTooltip(button);
+
+              button.addEventListener('mouseenter', handleShowTooltip);
+              button.addEventListener('mouseleave', handleHideTooltip);
+              button.addEventListener('focus', handleShowTooltip);
+              button.addEventListener('blur', handleHideTooltip);
+              button.addEventListener('click', handleHideTooltip);
+
+              itemWrapper.appendChild(button);
+            }
+            
             itemsContainer.appendChild(itemWrapper);
           });
 
@@ -5132,6 +5803,17 @@ class InteractiveSoundApp {
           if (!drumGridState.patternEditorEnabled) {
             return;
           }
+          
+          // Check if this is a numeric tag - if so, don't insert here (handled by button click)
+          const itemWrapper = button.closest('.pattern-snippet-item');
+          if (itemWrapper && itemWrapper.dataset.snippetKey) {
+            const tagKey = itemWrapper.dataset.snippetKey;
+            if (NUMERIC_TAG_PARAMS[tagKey]) {
+              // Numeric tags are handled by their own click handler
+              return;
+            }
+          }
+          
           const snippet = button.dataset.insertion || button.dataset.snippet;
           if (!snippet) {
             return;
@@ -5197,26 +5879,38 @@ class InteractiveSoundApp {
         console.log('🎵 Preview: Original pattern:', patternValue);
         console.log('🎵 Preview: Bank value:', bankValue);
         
+        // Check if this is a synth sound (not a drum bank)
+        const synthSounds = [...OSCILLATOR_SYNTHS, ...SAMPLE_SYNTHS];
+        const isSynthSound = bankValue && synthSounds.includes(bankValue.toLowerCase());
+        const isDrumBank = bankValue && DRUM_BANK_VALUES.has(bankValue);
+        
         if (bankValue && bankValue !== '') {
-          // Check if pattern already has a .bank() modifier
-          if (!patternValue.includes('.bank(')) {
-            // Add .bank() modifier if not present - ensure it's added before any other modifiers
-            // If pattern has modifiers like .gain(), add bank before them
-            if (patternValue.includes('.gain(') || patternValue.includes('.pan(') || patternValue.includes('.fast(') || patternValue.includes('.slow(')) {
-              // Insert .bank() before other modifiers
-              const modifierMatch = patternValue.match(/(\.(gain|pan|fast|slow)\([^)]*\))/);
-              if (modifierMatch) {
-                const insertPos = modifierMatch.index;
-                patternValue = patternValue.slice(0, insertPos) + `.bank("${bankValue}")` + patternValue.slice(insertPos);
+          // Only add .bank() for drum banks, NOT for synth sounds (synth sounds use .s() only)
+          if (isDrumBank && !isSynthSound) {
+            // Check if pattern already has a .bank() modifier
+            if (!patternValue.includes('.bank(')) {
+              // Add .bank() modifier if not present - ensure it's added before any other modifiers
+              // If pattern has modifiers like .gain(), add bank before them
+              if (patternValue.includes('.gain(') || patternValue.includes('.pan(') || patternValue.includes('.fast(') || patternValue.includes('.slow(')) {
+                // Insert .bank() before other modifiers
+                const modifierMatch = patternValue.match(/(\.(gain|pan|fast|slow)\([^)]*\))/);
+                if (modifierMatch) {
+                  const insertPos = modifierMatch.index;
+                  patternValue = patternValue.slice(0, insertPos) + `.bank("${bankValue}")` + patternValue.slice(insertPos);
+                } else {
+                  patternValue = `${patternValue}.bank("${bankValue}")`;
+                }
               } else {
                 patternValue = `${patternValue}.bank("${bankValue}")`;
               }
             } else {
-              patternValue = `${patternValue}.bank("${bankValue}")`;
+              // Replace existing .bank() modifier with current selection
+              patternValue = patternValue.replace(/\.bank\(["'][^"']*["']\)/g, `.bank("${bankValue}")`);
             }
-          } else {
-            // Replace existing .bank() modifier with current selection
-            patternValue = patternValue.replace(/\.bank\(["'][^"']*["']\)/g, `.bank("${bankValue}")`);
+          } else if (isSynthSound) {
+            // For synth sounds, remove any .bank() modifier (they should only use .s())
+            patternValue = patternValue.replace(/\.bank\(["'][^"']*["']\)/g, '');
+            patternValue = patternValue.replace(/\.+$/, '').trim();
           }
         } else {
           // Remove .bank() modifier if no bank is selected
@@ -5294,6 +5988,8 @@ class InteractiveSoundApp {
       const patternEditorWrapper = document.getElementById('modal-pattern-editor-wrapper');
       if (patternEditorWrapper) {
         patternEditorWrapper.style.display = drumGridState.patternEditorEnabled ? 'block' : 'none';
+        // Show/hide note conversion checkbox based on whether pattern uses note()
+        updateNoteConversionCheckboxVisibility();
       }
       
       // Hide snippet container when showing drum grid
@@ -5301,15 +5997,57 @@ class InteractiveSoundApp {
         patternSnippetContainer.style.display = drumGridState.patternEditorEnabled ? 'block' : 'none';
       }
       
+      // Show/hide Time Signature selector based on editor state
+      // Visible when step editor (drum grid) is active, hidden when code editor is active
+      const timeSignatureGroup = document.getElementById('modal-time-signature-select')?.closest('.form-group');
+      if (timeSignatureGroup) {
+        // patternEditorEnabled = false means step editor (drum grid) is active
+        // patternEditorEnabled = true means code editor is active
+        timeSignatureGroup.style.display = drumGridState.patternEditorEnabled ? 'none' : 'block';
+      }
+      
       // Show/hide drum grid based on editor state
       // Note: Don't show/hide here - let refreshDrumGridForCurrentState handle it
       // This prevents conflicts when the modal is not yet open
+    };
+
+    // Function to show/hide note conversion checkbox based on pattern content
+    const updateNoteConversionCheckboxVisibility = () => {
+      const checkboxControl = document.getElementById('modal-note-conversion-control');
+      if (!checkboxControl) return;
+      
+      const patternValue = getStrudelEditorValue('modal-pattern');
+      const hasNoteCall = patternValue && containsNoteCall(patternValue);
+      const isNumericPattern = hasNoteCall && containsNumericNotePattern(patternValue);
+      
+      // Show checkbox only if pattern uses note() but is NOT already numeric (semitone) format
+      if (hasNoteCall && !isNumericPattern) {
+        checkboxControl.style.display = 'block';
+      } else {
+        checkboxControl.style.display = 'none';
+      }
     };
 
     const modalPatternTextareaForPreview = document.getElementById('modal-pattern');
     if (modalPatternTextareaForPreview && !modalPatternTextareaForPreview.dataset.previewListenerAttached) {
       modalPatternTextareaForPreview.addEventListener('input', () => {
         updatePreviewButtonState();
+        updateNoteConversionCheckboxVisibility();
+        
+        // Show/hide Key/Scale controls based on pattern type or selected bank
+        const keyScaleGroup = document.getElementById('modal-key-scale-group');
+        const patternValue = getStrudelEditorValue('modal-pattern');
+        const hasNotePattern = patternValue && containsNoteCall(patternValue);
+        
+        // Check if a sample-based synth bank is selected
+        // bankSelect is already defined at the top of setupModal() as modal-pattern-bank
+        const selectedBank = bankSelect ? bankSelect.value : '';
+        const isSampleSynth = selectedBank && SAMPLE_SYNTHS.includes(selectedBank.toLowerCase());
+        
+        if (keyScaleGroup) {
+          keyScaleGroup.style.display = (hasNotePattern || isSampleSynth) ? 'block' : 'none';
+        }
+        
         if (typeof refreshSnippetButtons === 'function') {
           refreshSnippetButtons().catch(err => console.warn('⚠️ Unable to refresh snippet tags:', err));
         }
@@ -5862,6 +6600,41 @@ class InteractiveSoundApp {
           patternField.placeholder = '';
         }
       }
+      
+      // Show/hide Key/Scale controls based on pattern type or selected bank
+      const keyScaleGroup = document.getElementById('modal-key-scale-group');
+      const modalKeySelect = document.getElementById('modal-key-select');
+      const modalScaleSelect = document.getElementById('modal-scale-select');
+      
+      // Check if pattern uses note() function (for synths, not drums)
+      const patternValue = rawPattern || '';
+      const hasNotePattern = containsNoteCall(patternValue);
+      
+      // Check if a sample-based synth bank is selected
+      // bankSelect is already defined at the top of setupModal() as modal-pattern-bank
+      const selectedBank = bankSelect ? bankSelect.value : '';
+      const isSampleSynth = selectedBank && SAMPLE_SYNTHS.includes(selectedBank.toLowerCase());
+      
+      if (keyScaleGroup && modalKeySelect && modalScaleSelect) {
+        if (hasNotePattern || isSampleSynth) {
+          keyScaleGroup.style.display = 'block';
+          // Load saved key/scale or use defaults
+          modalKeySelect.value = savedConfig?.key || '';
+          modalScaleSelect.value = savedConfig?.scale || '';
+        } else {
+          keyScaleGroup.style.display = 'none';
+        }
+      }
+      
+      // Update checkbox visibility and state after pattern is set
+      setTimeout(() => {
+        updateNoteConversionCheckboxVisibility();
+        // Load saved checkbox state if available
+        const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+        if (keepNotesCheckbox && savedConfig?.keepNotesAsWritten !== undefined) {
+          keepNotesCheckbox.checked = savedConfig.keepNotesAsWritten;
+        }
+      }, 100);
 
       // Initialize time signature select in modal
       const modalTimeSignatureSelect = document.getElementById('modal-time-signature-select');
@@ -5880,6 +6653,10 @@ class InteractiveSoundApp {
         console.log('📦 openModal: Not a drum bank or no bank, enabling pattern editor');
         setPatternEditorEnabled(true);
       }
+      
+      // Ensure Time Signature visibility is set correctly based on editor state
+      // applyPatternEditorState() is called by setPatternEditorEnabled(), which handles visibility
+      // But we ensure it's set correctly here as well
       
       document.getElementById('modal-sample-url').value = savedConfig?.sampleUrl || '';
       const fileInputEl = document.getElementById('modal-sample-file');
@@ -5919,13 +6696,12 @@ class InteractiveSoundApp {
           }
         }
       } else {
-        // Show Pattern Bank and Time Signature if no file was selected
+        // Show Pattern Bank if no file was selected
+        // Time Signature visibility is controlled by editor state (step vs code editor)
         if (patternBankGroup) {
           patternBankGroup.style.display = 'block';
         }
-        if (timeSignatureGroup) {
-          timeSignatureGroup.style.display = 'block';
-        }
+        // Time Signature visibility is handled by applyPatternEditorState()
       }
       
       this.currentEditingElementId = elementId;
@@ -5955,10 +6731,12 @@ class InteractiveSoundApp {
         const titleInput = document.getElementById('modal-title');
         
         if (file) {
-          // Hide Pattern Bank and Time Signature when file is selected
+          // Hide Pattern Bank when file is selected
+          // Time Signature visibility is controlled by editor state (step vs code editor)
           if (patternBankGroup) {
             patternBankGroup.style.display = 'none';
           }
+          // Hide Time Signature when file is selected (regardless of editor state)
           if (timeSignatureGroup) {
             timeSignatureGroup.style.display = 'none';
           }
@@ -5970,15 +6748,74 @@ class InteractiveSoundApp {
             titleInput.value = nameWithoutExt;
           }
         } else {
-          // Show Pattern Bank and Time Signature when file is cleared
+          // Show Pattern Bank when file is cleared
+          // Time Signature visibility is controlled by editor state (step vs code editor)
           if (patternBankGroup) {
             patternBankGroup.style.display = 'block';
           }
-          if (timeSignatureGroup) {
-            timeSignatureGroup.style.display = 'block';
-          }
+          // Time Signature visibility is handled by applyPatternEditorState()
         }
       });
+    }
+    
+    // Key/Scale dropdowns - apply to pattern when changed
+    const modalKeySelect = document.getElementById('modal-key-select');
+    const modalScaleSelect = document.getElementById('modal-scale-select');
+    
+    const applyKeyScaleToPattern = () => {
+      const patternValue = getStrudelEditorValue('modal-pattern');
+      if (!patternValue || !containsNoteCall(patternValue)) {
+        return;
+      }
+      
+      const keyValue = modalKeySelect ? modalKeySelect.value : '';
+      const scaleValue = modalScaleSelect ? modalScaleSelect.value : '';
+      
+      console.log(`🎼 applyKeyScaleToPattern called: keyValue="${keyValue}", scaleValue="${scaleValue}"`);
+      
+      if (!keyValue && !scaleValue) {
+        console.log(`⚠️ No key/scale selected, skipping`);
+        return; // No key/scale selected
+      }
+      
+      // Use the same detection logic as applyGlobalSettingsToPattern
+      const hasNoteFunction = /\b(note|n)\s*\(/.test(patternValue);
+      const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-g][#b]?/.test(patternValue);
+      const hasChordNames = /\b(note|n)\s*\(\s*["'][a-g][#b]?[a-z0-9]*\s*[a-z]/.test(patternValue) ||
+                           /\b(note|n)\s*\(\s*["'][^"']*\b(maj|min|m|dim|aug|sus|add|7|9|11|13)\b/i.test(patternValue);
+      const hasChordModifier = /\.\s*chord\s*\(/i.test(patternValue);
+      const hasLetterNotes = /\b(note|n)\s*\(\s*["'][^"']*[a-g][#b]?\s/.test(patternValue);
+      const hasExplicitNotes = hasNoteNames || hasChordNames || hasLetterNotes || hasChordModifier;
+      const isNumericPattern = hasNoteFunction && !hasExplicitNotes && !hasChordModifier;
+      
+      if (!hasChordModifier && isNumericPattern) {
+        // Apply key/scale to pattern
+        console.log(`🎼 applyKeyScaleToPattern: keyValue="${keyValue}", scaleValue="${scaleValue}", pattern="${patternValue.substring(0, 50)}..."`);
+        const patternWithScale = soundManager.applyGlobalSettingsToPattern(patternValue, false, false, keyValue || null, scaleValue || null);
+        console.log(`🎼 applyKeyScaleToPattern: result="${patternWithScale ? patternWithScale.substring(0, 80) : 'null'}..."`);
+        if (patternWithScale && patternWithScale !== patternValue) {
+          setStrudelEditorValue('modal-pattern', patternWithScale);
+          console.log(`✅ Applied key/scale to pattern: ${patternWithScale.substring(0, 80)}...`);
+        } else {
+          console.log(`⚠️ Pattern unchanged - patternWithScale: ${!!patternWithScale}, same: ${patternWithScale === patternValue}`);
+        }
+      } else {
+        console.log(`⚠️ Cannot apply scale - hasChordModifier: ${hasChordModifier}, isNumericPattern: ${isNumericPattern}`);
+      }
+    };
+    
+    if (modalKeySelect && !modalKeySelect.dataset.listenerAttached) {
+      modalKeySelect.addEventListener('change', () => {
+        applyKeyScaleToPattern();
+      });
+      modalKeySelect.dataset.listenerAttached = 'true';
+    }
+    
+    if (modalScaleSelect && !modalScaleSelect.dataset.listenerAttached) {
+      modalScaleSelect.addEventListener('change', () => {
+        applyKeyScaleToPattern();
+      });
+      modalScaleSelect.dataset.listenerAttached = 'true';
     }
     
     // Bank dropdown - load bank when changed
@@ -5989,18 +6826,33 @@ class InteractiveSoundApp {
         ensurePatternBankOptions(bankValue);
         const elementId = this.currentEditingElementId;
         
-        // If bank is selected, clear file input and show Pattern Bank/Time Signature
+        // If bank is selected, clear file input and show Pattern Bank
+        // Time Signature visibility is controlled by editor state (step vs code editor)
         if (bankValue && bankValue !== '') {
           if (fileInput) {
             fileInput.value = '';
           }
           const patternBankGroup = document.getElementById('modal-pattern-bank')?.closest('.form-group');
-          const timeSignatureGroup = document.getElementById('modal-time-signature-select')?.closest('.form-group');
           if (patternBankGroup) {
             patternBankGroup.style.display = 'block';
           }
-          if (timeSignatureGroup) {
-            timeSignatureGroup.style.display = 'block';
+          // Time Signature visibility is handled by applyPatternEditorState()
+          
+          // Show/hide Key/Scale controls based on bank selection
+          const keyScaleGroup = document.getElementById('modal-key-scale-group');
+          if (keyScaleGroup) {
+            const isSampleSynth = SAMPLE_SYNTHS.includes(bankValue.toLowerCase());
+            const patternValue = getStrudelEditorValue('modal-pattern');
+            const hasNotePattern = patternValue && containsNoteCall(patternValue);
+            keyScaleGroup.style.display = (hasNotePattern || isSampleSynth) ? 'block' : 'none';
+          }
+        } else {
+          // Hide Key/Scale if no bank selected and pattern doesn't use note()
+          const keyScaleGroup = document.getElementById('modal-key-scale-group');
+          if (keyScaleGroup) {
+            const patternValue = getStrudelEditorValue('modal-pattern');
+            const hasNotePattern = patternValue && containsNoteCall(patternValue);
+            keyScaleGroup.style.display = hasNotePattern ? 'block' : 'none';
           }
         }
         
@@ -6106,11 +6958,11 @@ class InteractiveSoundApp {
               'supersaw': 'Saw Synth',
               'gtr': 'Guitar',
               'casio': 'Casio',
-              'wood': 'Wood',
+              'wood': 'Jazz',  // Wood is now called Jazz
+              'jazz': 'Jazz',
               'metal': 'Metal',
               'folkharp': 'Folk Harp',
-              'superpiano': 'Piano',
-              'jazz': 'Wood'
+              'superpiano': 'Piano'
             };
             const displayName = displayNames[canonicalBankValue] || displayNames[bankValue] || canonicalBankValue.charAt(0).toUpperCase() + canonicalBankValue.slice(1);
             
@@ -6188,6 +7040,11 @@ class InteractiveSoundApp {
             setStrudelEditorValue('modal-pattern', strudelPattern);
             // Clear placeholder when pattern is set
             patternTextarea.placeholder = '';
+            
+            // Update checkbox visibility after pattern update
+            setTimeout(() => {
+              updateNoteConversionCheckboxVisibility();
+            }, 50);
             
             // Verify it was set
             const verifyPattern = getStrudelEditorValue('modal-pattern');
@@ -6340,9 +7197,14 @@ class InteractiveSoundApp {
                   strudelPattern = `note("c3").s("${bankValue}")`;
                   console.log(`📝 Created default synth pattern: ${bankValue}`);
                 }
-                // Keep pattern in Strudel format (don't convert to drum display for synth patterns)
-                setStrudelEditorValue('modal-pattern', strudelPattern);
-                patternTextarea.placeholder = '';
+            // Keep pattern in Strudel format (don't convert to drum display for synth patterns)
+            setStrudelEditorValue('modal-pattern', strudelPattern);
+            patternTextarea.placeholder = '';
+            
+            // Update checkbox visibility after pattern update
+            setTimeout(() => {
+              updateNoteConversionCheckboxVisibility();
+            }, 50);
                 console.log(`   Pattern: ${strudelPattern.substring(0, 80)}...`);
               }
               else if (bankValue && !bankValue.startsWith('github:')) {
@@ -6494,7 +7356,11 @@ class InteractiveSoundApp {
           finalPattern = displayPattern;
         }
         
-        if (finalPattern && containsNoteCall(finalPattern) && !containsNumericNotePattern(finalPattern)) {
+        // Convert notes to semitones only if checkbox is NOT checked
+        const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+        const shouldKeepNotes = keepNotesCheckbox && keepNotesCheckbox.checked;
+        
+        if (finalPattern && containsNoteCall(finalPattern) && !containsNumericNotePattern(finalPattern) && !shouldKeepNotes) {
           const convertedPattern = soundManager.convertPatternForScale(finalPattern);
           if (convertedPattern && convertedPattern !== finalPattern) {
             finalPattern = convertedPattern;
@@ -6505,10 +7371,14 @@ class InteractiveSoundApp {
         }
         
         // Save config with updated bank and pattern
+        const keepNotesCheckboxForSave = document.getElementById('modal-keep-notes-as-written');
+        const keepNotesAsWrittenForSave = keepNotesCheckboxForSave ? keepNotesCheckboxForSave.checked : false;
+        
         this.saveElementConfig(elementId, {
           title: currentTitle || bankDisplayName,
           pattern: finalPattern,
-          bank: bankValue || undefined
+          bank: bankValue || undefined,
+          keepNotesAsWritten: keepNotesAsWrittenForSave
         });
         console.log(`💾 Saved config with bank: ${bankValue}`);
         
@@ -6527,7 +7397,12 @@ class InteractiveSoundApp {
           // Get the final pattern from the textarea (convert display to Strudel format)
           const displayPattern = patternTextarea.value.trim();
           let updatedPattern = drumDisplayToPattern(displayPattern);
-          if (updatedPattern && containsNoteCall(updatedPattern) && !containsNumericNotePattern(updatedPattern)) {
+          
+          // Convert notes to semitones only if checkbox is NOT checked
+          const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+          const shouldKeepNotes = keepNotesCheckbox && keepNotesCheckbox.checked;
+          
+          if (updatedPattern && containsNoteCall(updatedPattern) && !containsNumericNotePattern(updatedPattern) && !shouldKeepNotes) {
             const convertedPattern = soundManager.convertPatternForScale(updatedPattern);
             if (convertedPattern && convertedPattern !== updatedPattern) {
               updatedPattern = convertedPattern;
@@ -6612,13 +7487,58 @@ class InteractiveSoundApp {
           pattern = drumDisplayToPattern(displayPattern);
         }
 
-        if (pattern && containsNoteCall(pattern) && !containsNumericNotePattern(pattern)) {
+        // Convert notes to semitones only if checkbox is NOT checked
+        const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+        const shouldKeepNotes = keepNotesCheckbox ? keepNotesCheckbox.checked : false;
+        
+        if (pattern && containsNoteCall(pattern) && !containsNumericNotePattern(pattern) && !shouldKeepNotes) {
           const convertedPattern = soundManager.convertPatternForScale(pattern);
           if (convertedPattern && convertedPattern !== pattern) {
             pattern = convertedPattern;
             setStrudelEditorValue('modal-pattern', convertedPattern);
           }
         }
+        
+        // Save checkbox state
+        const keepNotesAsWritten = keepNotesCheckbox ? keepNotesCheckbox.checked : false;
+        
+        // Get key/scale from modal (only for note patterns)
+        const modalKeySelect = document.getElementById('modal-key-select');
+        const modalScaleSelect = document.getElementById('modal-scale-select');
+        const elementKey = (modalKeySelect && containsNoteCall(pattern)) ? modalKeySelect.value : undefined;
+        const elementScale = (modalScaleSelect && containsNoteCall(pattern)) ? modalScaleSelect.value : undefined;
+        
+        // Apply key/scale to pattern if set in modal (only for numeric note patterns without chord modifiers)
+        if (pattern && containsNoteCall(pattern) && (elementKey || elementScale)) {
+          // Use the same detection logic as applyGlobalSettingsToPattern
+          const hasNoteFunction = /\b(note|n)\s*\(/.test(pattern);
+          const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-g][#b]?/.test(pattern);
+          const hasChordNames = /\b(note|n)\s*\(\s*["'][a-g][#b]?[a-z0-9]*\s*[a-z]/.test(pattern) ||
+                               /\b(note|n)\s*\(\s*["'][^"']*\b(maj|min|m|dim|aug|sus|add|7|9|11|13)\b/i.test(pattern);
+          const hasChordModifier = /\.\s*chord\s*\(/i.test(pattern);
+          const hasLetterNotes = /\b(note|n)\s*\(\s*["'][^"']*[a-g][#b]?\s/.test(pattern);
+          const hasExplicitNotes = hasNoteNames || hasChordNames || hasLetterNotes || hasChordModifier;
+          const isNumericPattern = hasNoteFunction && !hasExplicitNotes && !hasChordModifier;
+          
+          console.log(`🎼 Modal save: pattern="${pattern.substring(0, 50)}...", hasNoteFunction=${hasNoteFunction}, hasExplicitNotes=${hasExplicitNotes}, isNumericPattern=${isNumericPattern}, elementKey="${elementKey}", elementScale="${elementScale}"`);
+          
+          if (!hasChordModifier && isNumericPattern) {
+            // Apply key/scale to pattern using soundManager's function
+            const patternWithScale = soundManager.applyGlobalSettingsToPattern(pattern, false, false, elementKey || null, elementScale || null);
+            console.log(`🎼 Modal save: patternWithScale="${patternWithScale ? patternWithScale.substring(0, 80) : 'null'}..."`);
+            if (patternWithScale && patternWithScale !== pattern) {
+              pattern = patternWithScale;
+              // Update the editor to show the pattern with scale
+              setStrudelEditorValue('modal-pattern', pattern);
+              console.log(`✅ Applied key/scale to pattern: ${pattern.substring(0, 80)}...`);
+            } else {
+              console.log(`⚠️ Scale not applied - pattern unchanged or applyGlobalSettingsToPattern returned same pattern`);
+            }
+          } else {
+            console.log(`⚠️ Scale not applied - hasChordModifier=${hasChordModifier}, isNumericPattern=${isNumericPattern}`);
+          }
+        }
+        
         const sampleUrl = document.getElementById('modal-sample-url').value.trim();
         const fileInput = document.getElementById('modal-sample-file');
         const bankValue = bankSelect ? bankSelect.value : '';
@@ -6637,15 +7557,13 @@ class InteractiveSoundApp {
               pattern: pattern,
               sampleUrl: finalSampleUrl,
               fileName: file.name,
-              bank: bankValue || undefined
+              bank: bankValue || undefined,
+              keepNotesAsWritten: keepNotesAsWritten,
+              key: elementKey,
+              scale: elementScale
             });
             
-            // If element is currently playing, restart with new pattern
-            if (this.activeElements.has(this.currentEditingElementId)) {
-              soundManager.stopSound(this.currentEditingElementId);
-              soundManager.triggerSound(this.currentEditingElementId);
-            }
-            
+            // Don't start playback when saving - user can manually trigger playback
             closeModal();
           };
           reader.readAsDataURL(file);
@@ -6655,15 +7573,13 @@ class InteractiveSoundApp {
             title: title || this.currentEditingElementId,
             pattern: pattern,
             sampleUrl: finalSampleUrl,
-            bank: bankValue || undefined
+            bank: bankValue || undefined,
+            keepNotesAsWritten: keepNotesAsWritten,
+            key: elementKey,
+            scale: elementScale
           });
           
-          // If element is currently playing, restart with new pattern
-          if (this.activeElements.has(this.currentEditingElementId)) {
-            soundManager.stopSound(this.currentEditingElementId);
-            soundManager.triggerSound(this.currentEditingElementId);
-          }
-          
+          // Don't start playback when saving - user can manually trigger playback
           closeModal();
         }
       });
