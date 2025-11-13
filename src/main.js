@@ -2376,7 +2376,7 @@ class InteractiveSoundApp {
       return -1;
     };
     
-    const visualizerMethods = ['scope', 'tscope', 'fscope', 'spectrum', 'visual', 'spiral', 'pianoroll', 'barchart'];
+    const visualizerMethods = ['scope', 'tscope', 'fscope', 'spectrum', 'visual', 'spiral', 'pitchwheel', 'pianoroll', 'barchart'];
     visualizerMethods.forEach(method => {
       const searchPattern = new RegExp(`\\.\\s*_?${method}\\s*\\(`, 'gi');
       let match;
@@ -2401,27 +2401,34 @@ class InteractiveSoundApp {
     let patternWithVisualizer = basePattern;
     const canvasId = 'master-punchcard-canvas';
     
-    // For pianoroll, ensure canvas is registered with getDrawContext first
-    if (this.selectedVisualizer === 'pianoroll') {
+    // For visualizers that need canvas context, register with getDrawContext first
+    if (this.selectedVisualizer === 'pianoroll' || this.selectedVisualizer === 'spiral' || this.selectedVisualizer === 'pitchwheel' || this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
       try {
         // Register canvas with Strudel's draw system
         const ctx = getDrawContext(canvasId, { contextType: '2d' });
         window.__strudelVisualizerCtx = ctx;
-        console.log(`✅ Registered canvas "${canvasId}" with getDrawContext for pianoroll`);
+        console.log(`✅ Registered canvas "${canvasId}" with getDrawContext for ${this.selectedVisualizer}`);
       } catch (error) {
-        console.warn('⚠️ Failed to register canvas with getDrawContext:', error);
+        console.warn(`⚠️ Failed to register canvas with getDrawContext for ${this.selectedVisualizer}:`, error);
       }
     }
     
     // Prepare ctx expression for visualizers that need it
     const ctxExpression = "window.__strudelVisualizerCtx || (document.getElementById('master-punchcard-canvas') && document.getElementById('master-punchcard-canvas').getContext && document.getElementById('master-punchcard-canvas').getContext('2d'))";
     
+    // Setup analyser for visualizers that need audio data
+    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum' || this.selectedVisualizer === 'spiral' || this.selectedVisualizer === 'pitchwheel') {
+      soundManager.setupVisualizerAnalyser();
+    }
+    
     if (this.selectedVisualizer === 'scope') {
-      patternWithVisualizer = `${basePattern}.scope({ id: '${canvasId}', ctx: ${ctxExpression} })`;
+      patternWithVisualizer = `${basePattern}.scope({ id: '${canvasId}' })`;
     } else if (this.selectedVisualizer === 'spectrum') {
-      patternWithVisualizer = `${basePattern}.spectrum({ id: '${canvasId}', ctx: ${ctxExpression} })`;
+      patternWithVisualizer = `${basePattern}.spectrum({ id: '${canvasId}' })`;
     } else if (this.selectedVisualizer === 'spiral') {
       patternWithVisualizer = `${basePattern}.spiral({ id: '${canvasId}', ctx: ${ctxExpression} })`;
+    } else if (this.selectedVisualizer === 'pitchwheel') {
+      patternWithVisualizer = `${basePattern}.pitchwheel({ id: '${canvasId}', ctx: ${ctxExpression} })`;
     } else if (this.selectedVisualizer === 'pianoroll') {
       // Pianoroll API: https://strudel.cc/learn/visualizers/#pianoroll
       // Pianoroll creates its own canvas element, so we need to intercept it
@@ -2657,10 +2664,11 @@ class InteractiveSoundApp {
     const useSpiral = this.shouldUseSpiralVisualizer(patternCode);
     const useScope = !useSpiral && this.shouldUseScopeVisualizer(patternCode);
     const useSpectrum = !useSpiral && !useScope && this.shouldUseSpectrumVisualizer(patternCode);
-    const usePianoroll = !useSpiral && !useScope && !useSpectrum && this.shouldUsePianorollVisualizer(patternCode);
-    const useBarchart = !useSpiral && !useScope && !useSpectrum && !usePianoroll && this.shouldUseBarchartVisualizer(patternCode);
+    const usePitchwheel = !useSpiral && !useScope && !useSpectrum && this.shouldUsePitchwheelVisualizer(patternCode);
+    const usePianoroll = !useSpiral && !useScope && !useSpectrum && !usePitchwheel && this.shouldUsePianorollVisualizer(patternCode);
+    const useBarchart = !useSpiral && !useScope && !useSpectrum && !usePitchwheel && !usePianoroll && this.shouldUseBarchartVisualizer(patternCode);
     
-    if (useScope || useSpectrum || useSpiral || usePianoroll || useBarchart) {
+    if (useScope || useSpectrum || useSpiral || usePitchwheel || usePianoroll || useBarchart) {
       // External visualizers (scope, spectrum, spiral) rely on Strudel rendering directly
       this.prepareCanvasForExternalVisualizer();
       this.hideMasterPunchcardPlaceholder();
@@ -2804,6 +2812,12 @@ class InteractiveSoundApp {
   shouldUseSpectrumVisualizer(patternCode) {
     if (!patternCode) return false;
     return /\.\s*_?spectrum\s*\(/i.test(patternCode);
+  }
+
+  shouldUsePitchwheelVisualizer(patternCode) {
+    if (!patternCode) return false;
+    // pitchwheel can be used with or without underscore prefix
+    return /\.\s*_?pitchwheel\s*\(/i.test(patternCode);
   }
 
   shouldUsePianorollVisualizer(patternCode) {
