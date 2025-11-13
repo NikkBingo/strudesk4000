@@ -40,7 +40,7 @@ async function getStrudelModules() {
 
 const SYNTH_NAME_ALIASES = {
   superpiano: 'piano',
-  jazz: 'wood'
+  wood: 'jazz'  // Wood is now called Jazz
 };
 
 function replaceSynthAliasesInPattern(pattern) {
@@ -3958,7 +3958,7 @@ class SoundManager {
   /**
    * Apply global control settings (tempo, key, time signature) to a pattern
    */
-  applyGlobalSettingsToPattern(pattern, alreadyWrapped = false, preserveStructure = false) {
+  applyGlobalSettingsToPattern(pattern, alreadyWrapped = false, preserveStructure = false, elementKey = null, elementScale = null) {
     if (!pattern || pattern === 'silence') {
       return pattern;
     }
@@ -3972,19 +3972,43 @@ class SoundManager {
 
     // 1. Apply Key/Scale (only for numeric scale degree patterns)
     // Strudel's .scale() works with numeric patterns like n("0 2 4 7")
-    // It does NOT work with explicit note names like note("c3 e3 d3")
-    // Check if pattern uses notes but NOT explicit note names with octaves
+    // It does NOT work with explicit note names like note("c3 e3 d3") or chords like note("Cmaj7")
+    // Check if pattern uses notes but NOT explicit note names with octaves or chord names
     const hasNoteFunction = /\b(note|n)\s*\(/.test(modifiedPattern);
-    const hasExplicitNotes = /\b(note|n)\s*\(\s*["'][a-g][#b]?\d/.test(modifiedPattern);
-    const isNumericPattern = hasNoteFunction && !hasExplicitNotes;
+    
+    // Detect patterns with note names (with or without octaves) or chord names
+    // Examples: note("c3 d3 e3"), note("c d e f"), note("Cmaj7 Am Dm"), note("c# d e")
+    const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-g][#b]?/.test(modifiedPattern);
+    
+    // Detect chord names (patterns containing chord notation like maj, min, m, 7, etc.)
+    // Examples: "Cmaj7", "Am", "Dm7", "F#maj", "Bb7"
+    const hasChordNames = /\b(note|n)\s*\(\s*["'][a-g][#b]?[a-z0-9]*\s*[a-z]/.test(modifiedPattern) ||
+                         /\b(note|n)\s*\(\s*["'][^"']*\b(maj|min|m|dim|aug|sus|add|7|9|11|13)\b/i.test(modifiedPattern);
+    
+    // Detect .chord() modifier - patterns using chord() should not have scale applied
+    // Examples: n("0 1 2 3").chord("<C Am F G>"), note("c").chord("Cmaj7")
+    const hasChordModifier = /\.\s*chord\s*\(/i.test(modifiedPattern);
+    
+    // Check if pattern contains letter-based note names (not just numbers)
+    // This catches patterns like note("c d e f") without octaves
+    const hasLetterNotes = /\b(note|n)\s*\(\s*["'][^"']*[a-g][#b]?\s/.test(modifiedPattern);
+    
+    const hasExplicitNotes = hasNoteNames || hasChordNames || hasLetterNotes || hasChordModifier;
+    // Patterns with .chord() modifier should not be treated as numeric patterns for scale application
+    // Even if they use numeric note values like n("0 1 2 3").chord("<C Am F G>")
+    const isNumericPattern = hasNoteFunction && !hasExplicitNotes && !hasChordModifier;
 
-    const hasKey = this.currentKey && this.currentKey.trim() !== '';
-    const selectedScale = this.currentScale && this.currentScale.trim() !== '' ? this.currentScale.trim() : '';
+    // Use per-element key/scale if provided, otherwise fall back to global settings
+    const keyToUse = elementKey !== null ? elementKey : (this.currentKey && this.currentKey.trim() !== '' ? this.currentKey.trim() : '');
+    const scaleToUse = elementScale !== null ? elementScale : (this.currentScale && this.currentScale.trim() !== '' ? this.currentScale.trim() : '');
+    
+    const hasKey = keyToUse && keyToUse.trim() !== '';
+    const selectedScale = scaleToUse && scaleToUse.trim() !== '' ? scaleToUse.trim() : '';
     let rootNote = '';
     let defaultScaleFromKey = '';
 
     if (hasKey) {
-      const keyLower = this.currentKey.toLowerCase();
+      const keyLower = keyToUse.toLowerCase();
       if (keyLower.includes('m') && !keyLower.includes('major')) {
         rootNote = keyLower.replace('m', '').trim();
         defaultScaleFromKey = 'minor';
@@ -4006,7 +4030,7 @@ class SoundManager {
         // Map dropdown value to Tonal.js scale name
         const tonalScaleName = SCALE_NAME_TONAL_MAP[scaleName] || scaleName;
         appliedScaleName = tonalScaleName;
-        const root = rootNote || this.currentKey.trim().toLowerCase();
+        const root = rootNote || keyToUse.trim().toLowerCase();
         scaleIdentifier = root ? `${root}:${tonalScaleName}` : tonalScaleName;
       } else if (selectedScale) {
         // Map dropdown value to Tonal.js scale name
@@ -4015,7 +4039,23 @@ class SoundManager {
         scaleIdentifier = tonalScaleName;
       }
 
-      if (scaleIdentifier && !/\.\s*scale\s*\(/.test(modifiedPattern)) {
+      // Remove existing scale modifier if present, then add new one
+      const alreadyHasScale = /\.\s*scale\s*\(/i.test(modifiedPattern);
+      if (alreadyHasScale) {
+        // Remove existing .scale() modifier
+        // Match .scale('...') or .scale("...") - handle both single and double quotes
+        // This regex matches: .scale( followed by quoted string (handling escaped quotes) or any content until closing paren
+        modifiedPattern = modifiedPattern.replace(/\.\s*scale\s*\((['"])(?:(?=(\\?))\2.)*?\1\)/gi, '');
+        // Also handle cases without quotes: .scale(something)
+        modifiedPattern = modifiedPattern.replace(/\.\s*scale\s*\([^)]*\)/gi, '');
+        // Clean up any double dots or trailing dots
+        modifiedPattern = modifiedPattern.replace(/\.+/g, '.').replace(/\.\s*\./g, '.').trim();
+        // Remove trailing dots
+        modifiedPattern = modifiedPattern.replace(/\.+$/, '').trim();
+        console.log(`  🔄 Removed existing scale modifier`);
+      }
+      
+      if (scaleIdentifier && !hasChordModifier) {
         const scaleModifier = `.scale('${scaleIdentifier}')`;
         const sampleIndex = modifiedPattern.search(/\.(s|sound)\s*\(/);
         if (sampleIndex !== -1) {
@@ -4030,12 +4070,24 @@ class SoundManager {
         }
         console.log(`  🎼 Applied scale: ${scaleIdentifier}`);
       } else if (hasKey || selectedScale) {
-        console.log(`  ⏭️  Skipped scale application (pattern not compatible with key/scale settings)`);
+        if (hasChordModifier) {
+          console.log(`  ⏭️  Skipped scale application (pattern uses .chord() modifier)`);
+        } else if (alreadyHasScale) {
+          console.log(`  ⏭️  Skipped scale application (pattern already has scale)`);
+        } else {
+          console.log(`  ⏭️  Skipped scale application (pattern not compatible with key/scale settings)`);
+        }
       }
     } else if (hasExplicitNotes && (hasKey || selectedScale)) {
-      console.log(`  ⏭️  Skipped scale for explicit note pattern (use numeric n() for scale/key changes)`);
+      let noteType = 'note name';
+      if (hasChordModifier) {
+        noteType = 'chord modifier (.chord())';
+      } else if (hasChordNames) {
+        noteType = 'chord';
+      }
+      console.log(`  ⏭️  Skipped scale for ${noteType} pattern (use numeric n() for scale/key changes)`);
     } else if (!hasNoteFunction && (hasKey || selectedScale)) {
-      console.log(`  ⏭️  Skipped scale for non-note pattern (Key: ${this.currentKey || 'none'}, Scale: ${selectedScale || 'none'})`);
+      console.log(`  ⏭️  Skipped scale for non-note pattern (Key: ${keyToUse || 'none'}, Scale: ${selectedScale || 'none'})`);
     }
 
     // 2. Time Signature (informational - affects pattern interpretation)
@@ -4703,6 +4755,20 @@ class SoundManager {
       throw new Error('Strudel not initialized');
     }
     
+    // Early check: skip only oscillator waveforms (they're always available, don't need loading)
+    // Sample-based synths like "piano", "gtr", "wood", etc. need to be loaded via samples()
+    const builtInOscillatorSynths = new Set([
+      'sine', 'square', 'triangle', 'sawtooth', 'supersaw', 'pulse',
+      'saw', 'saw2', 'saw3', 'saw4', 'saw8'
+    ]);
+    
+    if (builtInOscillatorSynths.has(bankName.toLowerCase())) {
+      console.log(`⏭️ Skipping built-in oscillator synth "${bankName}" (no loading needed)`);
+      this.loadedBanks.add(bankName.toLowerCase());
+      this.loadedBanks.add(bankName); // Also add original case
+      return true;
+    }
+    
     // Local custom drum banks (in assets folder)
     // When using .bank("RolandTR909"), Strudel expects samples named "RolandTR909_bd", "RolandTR909_sd", etc.
     const localDrumBanks = {
@@ -4881,19 +4947,37 @@ class SoundManager {
       }
     }
     
-    if (builtInSampleBanks.includes(bankName.toLowerCase())) {
+    // Normalize bank name (e.g., "wood" -> "jazz") before checking
+    const bankNameLower = bankName.toLowerCase();
+    let normalizedBankName = bankNameLower;
+    if (SYNTH_NAME_ALIASES[bankNameLower]) {
+      normalizedBankName = SYNTH_NAME_ALIASES[bankNameLower];
+      console.log(`🔄 Normalizing bank name "${bankName}" to "${normalizedBankName}"`);
+    }
+    
+    if (builtInSampleBanks.includes(normalizedBankName)) {
+      // These are sample banks that need to be loaded via samples()
+      // Examples: piano, gtr, casio, jazz (was wood), metal, folkharp, etc.
       const samplesFunc = window.strudel?.samples || globalThis.samples;
       if (samplesFunc && typeof samplesFunc === 'function') {
         try {
-          console.log(`📦 Loading sample bank "${bankName}" via samples()`);
-          await samplesFunc(bankName.toLowerCase());
-          this.loadedBanks.add(bankName.toLowerCase());
-          console.log(`✅ Sample bank "${bankName}" loaded`);
+          console.log(`📦 Loading sample bank "${normalizedBankName}" via samples()`);
+          await samplesFunc(normalizedBankName);
+          this.loadedBanks.add(normalizedBankName);
+          this.loadedBanks.add(bankNameLower); // Also mark original name as loaded
+          console.log(`✅ Sample bank "${normalizedBankName}" loaded`);
           return true;
         } catch (error) {
-          console.warn(`⚠️ Failed to load sample bank "${bankName}":`, error);
-          return false;
+          // If samples() fails, log but continue - pattern might still work
+          console.warn(`⚠️ Failed to load sample bank "${normalizedBankName}":`, error.message || error);
+          // Still mark as attempted so we don't retry endlessly
+          this.loadedBanks.add(normalizedBankName);
+          this.loadedBanks.add(bankNameLower);
+          return false; // Return false to indicate loading failed
         }
+      } else {
+        console.warn(`⚠️ samples() function not available for loading "${normalizedBankName}"`);
+        return false;
       }
     }
     
@@ -5030,6 +5114,13 @@ class SoundManager {
       return;
     }
 
+    // Built-in oscillator waveforms that don't need to be loaded (they're always available)
+    // Note: Sample-based synths like "piano", "gtr", "wood", "casio", etc. need to be loaded via loadBank()
+    const builtInOscillatorSynths = new Set([
+      'sine', 'square', 'triangle', 'sawtooth', 'supersaw', 'pulse',
+      'saw', 'saw2', 'saw3', 'saw4', 'saw8'
+    ]);
+
     const bankNames = new Set();
 
     const bankRegex = /\.bank\(["']([^"']+)["']\)/g;
@@ -5045,29 +5136,64 @@ class SoundManager {
       const sampleName = match[1];
       if (!sampleName) continue;
       if (/\s|~|\[|\]|,/.test(sampleName)) continue;
-      bankNames.add(sampleName);
+      // Skip built-in oscillator synths - they don't need loading
+      // Sample-based synths (piano, gtr, wood, etc.) need to be loaded
+      if (!builtInOscillatorSynths.has(sampleName.toLowerCase())) {
+        bankNames.add(sampleName);
+      }
     }
 
     const soundRegex = /\.sound\(["']([^"']+)["']\)/g;
     while ((match = soundRegex.exec(pattern)) !== null) {
-      if (match[1]) {
-        bankNames.add(match[1]);
+      const soundName = match[1];
+      if (!soundName) continue;
+      // Skip built-in oscillator synths - they don't need loading
+      // Sample-based synths (piano, gtr, wood, etc.) need to be loaded
+      if (!builtInOscillatorSynths.has(soundName.toLowerCase())) {
+        bankNames.add(soundName);
       }
     }
 
     for (const name of bankNames) {
       if (this.loadedBanks.has(name) || !name) continue;
+      // Double-check: skip built-in oscillator synths (case-insensitive)
+      // Sample-based synths (piano, gtr, jazz/wood, etc.) need to be loaded
+      const nameLower = name.toLowerCase();
+      if (builtInOscillatorSynths.has(nameLower)) {
+        console.log(`⏭️ Skipping built-in oscillator synth "${name}" (no loading needed)`);
+        // Mark as "loaded" so we don't try again
+        this.loadedBanks.add(nameLower);
+        this.loadedBanks.add(name); // Also add original case
+        continue;
+      }
+      
+      // Normalize synth aliases (e.g., "wood" -> "jazz") before loading
+      let normalizedName = nameLower;
+      if (SYNTH_NAME_ALIASES[nameLower]) {
+        normalizedName = SYNTH_NAME_ALIASES[nameLower];
+        console.log(`🔄 Normalizing "${name}" to "${normalizedName}" for loading`);
+      }
+      
+      // Check if already loaded with normalized name
+      if (this.loadedBanks.has(normalizedName)) {
+        console.log(`✅ Resource "${name}" already loaded as "${normalizedName}"`);
+        this.loadedBanks.add(name); // Mark original name as loaded too
+        continue;
+      }
+      
       try {
-        console.log(`🎚️ ensurePatternResourcesLoaded: loading "${name}" for playback`);
-        const result = await this.loadBank(name);
+        console.log(`🎚️ ensurePatternResourcesLoaded: loading "${normalizedName}" for playback`);
+        const result = await this.loadBank(normalizedName);
         if (result) {
-          this.loadedBanks.add(name);
-          console.log(`✅ Resource "${name}" loaded`);
+          this.loadedBanks.add(normalizedName);
+          this.loadedBanks.add(name); // Also mark original name as loaded
+          console.log(`✅ Resource "${normalizedName}" loaded`);
         } else {
-          console.warn(`⚠️ Could not load resource "${name}" (continuing anyway)`);
+          console.warn(`⚠️ Could not load resource "${normalizedName}" (continuing anyway)`);
         }
       } catch (error) {
-        console.warn(`⚠️ Error loading resource "${name}":`, error);
+        // Don't let resource loading errors prevent visualization
+        console.warn(`⚠️ Error loading resource "${normalizedName}" (continuing anyway):`, error.message || error);
       }
     }
   }
@@ -5287,8 +5413,12 @@ class SoundManager {
         }
         
         // Apply global settings (scale) per pattern instead of entire stack
+        // Use per-element key/scale if available
+        const elementConfig = this.appInstance?.loadElementConfig?.(elementId) || {};
+        const elementKey = elementConfig.key || null;
+        const elementScale = elementConfig.scale || null;
         const isWrapped = patternCode.trim().startsWith('(');
-        patternCode = this.applyGlobalSettingsToPattern(patternCode, isWrapped);
+        patternCode = this.applyGlobalSettingsToPattern(patternCode, isWrapped, false, elementKey, elementScale);
         
         patterns.push(patternCode);
         patternChannels.push(channelNumber);
@@ -5439,6 +5569,54 @@ class SoundManager {
   }
 
   /**
+   * Set up analyser node for visualizers (scope, spectrum, etc.)
+   * This creates and connects an analyser that Strudel visualizers can use
+   */
+  setupVisualizerAnalyser() {
+    if (!this.audioContext || !window.strudel) {
+      return;
+    }
+    
+    const analyserId = 'master-punchcard-canvas';
+    
+    // Check if Strudel has getAnalyserById function (from superdough)
+    const getAnalyserById = window.strudel?.getAnalyserById || globalThis.getAnalyserById;
+    
+    if (!getAnalyserById || typeof getAnalyserById !== 'function') {
+      console.warn('⚠️ getAnalyserById not available - visualizers may not work');
+      return;
+    }
+    
+    try {
+      // Create/get analyser with appropriate FFT size for visualizers
+      // Larger FFT size = better frequency resolution for spectrum
+      const analyser = getAnalyserById(analyserId, 2048, 0.8);
+      
+      // Connect analyser to master gain node (after all processing)
+      // This allows the analyser to tap the final audio signal
+      if (this.masterGainNode && analyser) {
+        try {
+          // Connect analyser in parallel to master gain node
+          // masterGainNode can have multiple outputs, so this won't interfere with destination connection
+          this.masterGainNode.connect(analyser);
+          console.log(`✅ Connected visualizer analyser "${analyserId}" to master gain node`);
+        } catch (connectError) {
+          // Check if it's already connected
+          if (connectError.message && connectError.message.includes('already connected')) {
+            console.log(`ℹ️ Analyser "${analyserId}" already connected`);
+          } else {
+            console.warn(`⚠️ Failed to connect analyser "${analyserId}":`, connectError.message);
+          }
+        }
+      } else {
+        console.warn(`⚠️ Cannot connect analyser - masterGainNode: ${!!this.masterGainNode}, analyser: ${!!analyser}`);
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to setup visualizer analyser:', error);
+    }
+  }
+
+  /**
    * Inject visualizer targets (e.g., canvas IDs) into master pattern
    */
   applyVisualizerTargetsToPattern(pattern) {
@@ -5446,14 +5624,18 @@ class SoundManager {
     const canvasId = 'master-punchcard-canvas';
     const analyserId = canvasId;
     const ctxExpression = "window.__strudelVisualizerCtx || (document.getElementById('master-punchcard-canvas') && document.getElementById('master-punchcard-canvas').getContext && document.getElementById('master-punchcard-canvas').getContext('2d'))";
-    const canonicalPrefixes = ['spectrum', 'scope', 'tscope', 'fscope', 'visual', 'spiral'];
+    const canonicalPrefixes = ['spectrum', 'scope', 'tscope', 'fscope', 'visual', 'spiral', 'pianoroll', 'barchart'];
     let result = pattern;
     const canonicalRegex = new RegExp(`\\.\\s*_(${canonicalPrefixes.join('|')})\\s*\\(`, 'gi');
     result = result.replace(canonicalRegex, (match, name) => match.replace(`_${name}`, name));
 
-    const visualizers = ['spectrum', 'scope', 'tscope', 'fscope', 'visual', 'spiral'];
+    // Visualizers that support id/ctx parameters
+    // Note: pianoroll might support 'id' parameter even though docs don't mention it
+    // We'll include it but only inject id/ctx if they're missing (not force-add)
+    const visualizersWithId = ['spectrum', 'scope', 'tscope', 'fscope', 'visual', 'spiral', 'barchart', 'pianoroll'];
 
-    visualizers.forEach((fn) => {
+    // Process visualizers that support id/ctx
+    visualizersWithId.forEach((fn) => {
       const escaped = fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const emptyCallRegex = new RegExp(`\\.\\s*_?${escaped}\\s*\\(\\s*\\)`, 'gi');
       result = result.replace(emptyCallRegex, (match) => {
@@ -5503,6 +5685,9 @@ class SoundManager {
         console.log(`⏳ Waiting for Strudel to initialize...`);
         await this.initStrudel();
       }
+      
+      // Ensure analyser is set up for visualizers
+      this.setupVisualizerAnalyser();
       
       // Check if we have a valid pattern
       if (!this.masterPattern || this.masterPattern.trim() === '') {
@@ -5581,104 +5766,118 @@ class SoundManager {
         
         // Final safety check: fix any unwrapped method chains before .gain() or .pan()
         // This catches cases where patterns like s("bd").bank("AkaiLinn").gain(0.80) need wrapping
-        // We'll find all occurrences of .gain( or .pan( and check if the preceding expression needs wrapping
-        const fixUnwrappedGainPan = (pattern) => {
-          let result = pattern;
-          const gainPanRegex = /\.(gain|pan)\s*\(/g;
-          const fixes = [];
-          let match;
-          
-          // Find all .gain( and .pan( occurrences
-          while ((match = gainPanRegex.exec(result)) !== null) {
-            const modifierPos = match.index;
-            const modifier = match[1];
+        // BUT: Skip this if there's a visualizer present, as visualizers should come AFTER gain/pan
+        const hasVisualizer = /\.(scope|spectrum|spiral|pianoroll|barchart|tscope|fscope|visual)\s*\(/i.test(patternToEval);
+        
+        if (!hasVisualizer) {
+          const fixUnwrappedGainPan = (pattern) => {
+            let result = pattern;
+            const gainPanRegex = /\.(gain|pan)\s*\(/g;
+            const fixes = [];
+            let match;
             
-            // Work backwards to find where the expression starts
-            let startPos = modifierPos - 1;
-            let depth = 0;
-            let inString = false;
-            let stringChar = null;
-            let foundStart = false;
-            
-            // Skip whitespace and the dot
-            while (startPos >= 0 && (result[startPos] === ' ' || result[startPos] === '\n' || result[startPos] === '\t' || result[startPos] === '.')) {
-              startPos--;
-            }
-            
-            // Work backwards to find the start of the expression
-            while (startPos >= 0 && !foundStart) {
-              const char = result[startPos];
+            // Find all .gain( and .pan( occurrences
+            while ((match = gainPanRegex.exec(result)) !== null) {
+              const modifierPos = match.index;
+              const modifier = match[1];
               
-              // Handle strings
-              if ((char === '"' || char === "'") && (startPos === 0 || result[startPos - 1] !== '\\')) {
-                if (!inString) {
-                  inString = true;
-                  stringChar = char;
-                } else if (char === stringChar) {
-                  inString = false;
-                  stringChar = null;
-                }
-                startPos--;
+              // Check if this modifier is followed by a visualizer - if so, skip it
+              const afterModifier = result.substring(modifierPos + match[0].length);
+              const visualizerMatch = afterModifier.match(/^[^)]*\)\s*\.\s*(scope|spectrum|spiral|pianoroll|barchart|tscope|fscope|visual)\s*\(/i);
+              if (visualizerMatch) {
+                // This gain/pan is followed by a visualizer - don't wrap it
                 continue;
               }
               
-              if (!inString) {
-                if (char === ')') {
-                  depth++;
-                } else if (char === '(') {
-                  depth--;
-                  if (depth < 0) {
-                    // Found the start of a function call
+              // Work backwards to find where the expression starts
+              let startPos = modifierPos - 1;
+              let depth = 0;
+              let inString = false;
+              let stringChar = null;
+              let foundStart = false;
+              
+              // Skip whitespace and the dot
+              while (startPos >= 0 && (result[startPos] === ' ' || result[startPos] === '\n' || result[startPos] === '\t' || result[startPos] === '.')) {
+                startPos--;
+              }
+              
+              // Work backwards to find the start of the expression
+              while (startPos >= 0 && !foundStart) {
+                const char = result[startPos];
+                
+                // Handle strings
+                if ((char === '"' || char === "'") && (startPos === 0 || result[startPos - 1] !== '\\')) {
+                  if (!inString) {
+                    inString = true;
+                    stringChar = char;
+                  } else if (char === stringChar) {
+                    inString = false;
+                    stringChar = null;
+                  }
+                  startPos--;
+                  continue;
+                }
+                
+                if (!inString) {
+                  if (char === ')') {
+                    depth++;
+                  } else if (char === '(') {
+                    depth--;
+                    if (depth < 0) {
+                      // Found the start of a function call
+                      foundStart = true;
+                      startPos++;
+                      break;
+                    }
+                  } else if (depth === 0 && char === '.' && startPos < modifierPos - 1) {
+                    // Found a method call boundary
+                    foundStart = true;
+                    startPos++;
+                    break;
+                  } else if (depth === 0 && /[a-zA-Z_$0-9]/.test(char)) {
+                    // Continue looking
+                  } else if (depth === 0 && !/[a-zA-Z_$0-9\s\.]/.test(char)) {
+                    // Found a boundary
                     foundStart = true;
                     startPos++;
                     break;
                   }
-                } else if (depth === 0 && char === '.' && startPos < modifierPos - 1) {
-                  // Found a method call boundary
-                  foundStart = true;
-                  startPos++;
-                  break;
-                } else if (depth === 0 && /[a-zA-Z_$0-9]/.test(char)) {
-                  // Continue looking
-                } else if (depth === 0 && !/[a-zA-Z_$0-9\s\.]/.test(char)) {
-                  // Found a boundary
-                  foundStart = true;
-                  startPos++;
-                  break;
                 }
+                
+                startPos--;
               }
               
-              startPos--;
+              if (startPos < 0) startPos = 0;
+              
+              const expression = result.substring(startPos, modifierPos).trim();
+              
+              // Check if expression is already wrapped
+              if (expression && !expression.startsWith('(') && expression.includes('.')) {
+                // This looks like an unwrapped method chain
+                fixes.push({
+                  start: startPos,
+                  end: modifierPos,
+                  expression: expression,
+                  modifier: modifier
+                });
+              }
             }
             
-            if (startPos < 0) startPos = 0;
+            // Apply fixes in reverse order to maintain positions
+            fixes.reverse().forEach(fix => {
+              const before = result.substring(0, fix.start);
+              const after = result.substring(fix.end + fix.modifier.length + 1);
+              result = before + `(${fix.expression}).${fix.modifier}(` + after;
+              console.log(`🔧 Final fix: Wrapped pattern before .${fix.modifier}(): ${fix.expression.substring(0, 60)}...`);
+            });
             
-            const expression = result.substring(startPos, modifierPos).trim();
-            
-            // Check if expression is already wrapped
-            if (expression && !expression.startsWith('(') && expression.includes('.')) {
-              // This looks like an unwrapped method chain
-              fixes.push({
-                start: startPos,
-                end: modifierPos,
-                expression: expression,
-                modifier: modifier
-              });
-            }
-          }
+            return result;
+          };
           
-          // Apply fixes in reverse order to maintain positions
-          fixes.reverse().forEach(fix => {
-            const before = result.substring(0, fix.start);
-            const after = result.substring(fix.end + fix.modifier.length + 1);
-            result = before + `(${fix.expression}).${fix.modifier}(` + after;
-            console.log(`🔧 Final fix: Wrapped pattern before .${fix.modifier}(): ${fix.expression.substring(0, 60)}...`);
-          });
-          
-          return result;
-        };
-        
-        patternToEval = fixUnwrappedGainPan(patternToEval);
+          patternToEval = fixUnwrappedGainPan(patternToEval);
+        } else {
+          console.log(`⏭️ Skipping gain/pan wrapping fix (visualizer detected)`);
+        }
         
         // Add .loop() to master pattern if it doesn't already have it, so it plays continuously
         if (!patternToEval.includes('.loop(') && !patternToEval.includes('.loop()')) {
@@ -5695,8 +5894,10 @@ class SoundManager {
         const hasScope = /\.scope\s*\(/.test(code);
         const hasSpectrum = /\.spectrum\s*\(/.test(code);
         const hasSpiral = /\.spiral\s*\(/.test(code);
-        if (hasScope || hasSpectrum || hasSpiral) {
-          console.log(`   📊 Visualizer methods detected: scope=${hasScope}, spectrum=${hasSpectrum}, spiral=${hasSpiral}`);
+        const hasPianoroll = /\._?pianoroll\s*\(/.test(code);
+        const hasBarchart = /\._?barchart\s*\(/.test(code);
+        if (hasScope || hasSpectrum || hasSpiral || hasPianoroll || hasBarchart) {
+          console.log(`   📊 Visualizer methods detected: scope=${hasScope}, spectrum=${hasSpectrum}, spiral=${hasSpiral}, pianoroll=${hasPianoroll}, barchart=${hasBarchart}`);
           
           // Check if canvas ID is in the pattern
           const hasCanvasId = /master-punchcard-canvas/.test(code);
@@ -5706,9 +5907,13 @@ class SoundManager {
           const scopeMatch = code.match(/\.scope\([^)]*\)/);
           const spectrumMatch = code.match(/\.spectrum\([^)]*\)/);
           const spiralMatch = code.match(/\.spiral\([^)]*\)/);
+          const pianorollMatch = code.match(/\._?pianoroll\([^)]*\)/);
+          const barchartMatch = code.match(/\._?barchart\([^)]*\)/);
           if (scopeMatch) console.log(`   📊 Scope call: ${scopeMatch[0]}`);
           if (spectrumMatch) console.log(`   📊 Spectrum call: ${spectrumMatch[0]}`);
           if (spiralMatch) console.log(`   📊 Spiral call: ${spiralMatch[0]}`);
+          if (pianorollMatch) console.log(`   📊 Pianoroll call: ${pianorollMatch[0]}`);
+          if (barchartMatch) console.log(`   📊 Barchart call: ${barchartMatch[0]}`);
         }
         
       // Ensure all tracked elements have audio nodes created (for gain/pan control)

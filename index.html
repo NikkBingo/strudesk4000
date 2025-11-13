@@ -11,7 +11,7 @@
   <div class="container">
     <header>
       <h1>Strudesk 4000</h1>
-      <div class="header-right">Strudel Pattern Mixer</div>
+      <div class="header-right">Strudel Pattern Mixer v0.9.0</div>
     </header>
 
     <!-- Status Indicator -->
@@ -471,6 +471,7 @@
           <select id="visualizer-select" class="visualizer-select">
             <option value="scope">Scope (Waveform)</option>
             <option value="spectrum">Spectrum (Frequency)</option>
+            <option value="pianoroll">Pianoroll</option>
           </select>
         </div>
         <div id="master-punchcard" class="punchcard-grid">
@@ -529,47 +530,6 @@
               <button id="tap-tempo-btn" class="tap-tempo-button" title="Tap to set tempo">TAP</button>
             </div>
           </div>
-          <div class="master-controls-row master-controls-row--secondary">
-            <div class="control-group">
-            <select id="key-select" class="control-select" aria-label="Key">
-              <option value="" selected>Select Key</option>
-              <option value="C">C</option>
-              <option value="C#">C#</option>
-              <option value="Db">Db</option>
-              <option value="D">D</option>
-              <option value="D#">D#</option>
-              <option value="Eb">Eb</option>
-              <option value="E">E</option>
-              <option value="F">F</option>
-              <option value="F#">F#</option>
-              <option value="Gb">Gb</option>
-              <option value="G">G</option>
-              <option value="G#">G#</option>
-              <option value="Ab">Ab</option>
-              <option value="A">A</option>
-              <option value="A#">A#</option>
-              <option value="Bb">Bb</option>
-              <option value="B">B</option>
-            </select>
-            </div>
-            <div class="control-group">
-            <select id="scale-select" class="control-select" aria-label="Scale">
-              <option value="" selected>Select Scale</option>
-              <option value="major">Major</option>
-              <option value="minor">Minor</option>
-              <option value="harmonicMinor">Harmonic Minor</option>
-              <option value="melodicMinor">Melodic Minor</option>
-              <option value="dorian">Dorian</option>
-              <option value="phrygian">Phrygian</option>
-              <option value="lydian">Lydian</option>
-              <option value="mixolydian">Mixolydian</option>
-              <option value="locrian">Locrian</option>
-              <option value="blues">Blues</option>
-              <option value="pentatonicMajor">Pentatonic Major</option>
-              <option value="pentatonicMinor">Pentatonic Minor</option>
-            </select>
-            </div>
-          </div>
         </div>
         <div class="master-status">
           <div class="status-dots">
@@ -581,7 +541,8 @@
         <div class="master-pattern-header">
           <label for="master-pattern">Master Pattern Code</label>
           <div class="header-buttons">
-            <button id="copy-code-btn" class="copy-code-button" title="Copy Code">📋 Copy Code</button>
+            <button id="clear-all-btn" class="clear-all-button" title="Clear All">Clear All</button>
+            <button id="copy-code-btn" class="copy-code-button" title="Copy Code">Copy Code</button>
           </div>
         </div>
         <textarea 
@@ -592,9 +553,7 @@
           rows="15"
         ></textarea>
         <div class="master-pattern-controls">
-          <button id="play-master-btn" class="play-master-button">▶ Play Master</button>
-          <button id="stop-master-btn" class="stop-master-button">⏹ Stop Master</button>
-          <button id="reset-master-btn" class="reset-master-button">🔄 Reset All</button>
+          <button id="play-master-btn" class="play-master-button" title="Play Master">▶</button>
     </div>
       </div>
     </div>
@@ -637,9 +596,8 @@
               <optgroup label="Sample-based Synths">
                 <option value="piano">Piano</option>
                 <option value="supersaw">Saw Synth</option>
-                <option value="gtr">Guitar</option>
                 <option value="casio">Casio</option>
-                <option value="wood">Wood</option>
+                <option value="jazz">Jazz</option>
                 <option value="metal">Metal</option>
                 <option value="folkharp">Folk Harp</option>
               </optgroup>
@@ -664,6 +622,51 @@
               <option value="5/8">5/8</option>
               <option value="7/4">7/4</option>
             </select>
+          </div>
+          <div class="form-group" id="modal-key-scale-group" style="display: none;">
+            <div style="display: flex; gap: 16px;">
+              <div style="flex: 1;">
+                <label for="modal-key-select">Key:</label>
+                <select id="modal-key-select" class="control-select" aria-label="Key">
+                  <option value="">Select Key</option>
+                  <option value="C">C</option>
+                  <option value="C#">C#</option>
+                  <option value="Db">Db</option>
+                  <option value="D">D</option>
+                  <option value="D#">D#</option>
+                  <option value="Eb">Eb</option>
+                  <option value="E">E</option>
+                  <option value="F">F</option>
+                  <option value="F#">F#</option>
+                  <option value="Gb">Gb</option>
+                  <option value="G">G</option>
+                  <option value="G#">G#</option>
+                  <option value="Ab">Ab</option>
+                  <option value="A">A</option>
+                  <option value="A#">A#</option>
+                  <option value="Bb">Bb</option>
+                  <option value="B">B</option>
+                </select>
+              </div>
+              <div style="flex: 1;">
+                <label for="modal-scale-select">Scale:</label>
+                <select id="modal-scale-select" class="control-select" aria-label="Scale">
+                  <option value="">Select Scale</option>
+                  <option value="major">Major</option>
+                  <option value="minor">Minor</option>
+                  <option value="harmonicMinor">Harmonic Minor</option>
+                  <option value="melodicMinor">Melodic Minor</option>
+                  <option value="dorian">Dorian</option>
+                  <option value="phrygian">Phrygian</option>
+                  <option value="lydian">Lydian</option>
+                  <option value="mixolydian">Mixolydian</option>
+                  <option value="locrian">Locrian</option>
+                  <option value="blues">Blues</option>
+                  <option value="pentatonicMajor">Pentatonic Major</option>
+                  <option value="pentatonicMinor">Pentatonic Minor</option>
+                </select>
+              </div>
+            </div>
           </div>
           <div class="form-group">
             <div class="pattern-label-row">
@@ -692,6 +695,15 @@
               <div class="drum-grid-hint">Toggle 16th-note steps to build a drum groove. Pattern updates automatically.</div>
             </div>
             <div id="modal-pattern-editor-wrapper" style="display: none;">
+              <div id="modal-note-conversion-control" style="display: none; margin-bottom: 12px;">
+                <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+                  <input type="checkbox" id="modal-keep-notes-as-written" style="margin-top: 2px; cursor: pointer;">
+                  <div style="flex: 1;">
+                    <div style="font-weight: 500; margin-bottom: 4px;">Keep notes as written (do not convert to semitones)</div>
+                    <div style="font-size: 0.85em; color: #666; font-style: italic;">⚠️ Key and Scales do not work unless converted to semitones</div>
+                  </div>
+                </label>
+              </div>
               <textarea id="modal-pattern" rows="8" placeholder=''></textarea>
             </div>
         <div class="pattern-preview-controls">
