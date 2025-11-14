@@ -1812,6 +1812,9 @@ class InteractiveSoundApp {
       console.log('🔄 Master pattern updated - refreshing display');
       this.updateMasterPatternDisplay();
       
+      // Update pattern slots display when master pattern changes
+      this.updateActiveElementsDisplay();
+      
       this.updateMasterPatternHighlights().catch(error => {
         console.warn('⚠️ Could not update master highlight data:', error);
       });
@@ -5167,13 +5170,23 @@ class InteractiveSoundApp {
     uiController.updateActiveElements(activeList);
     
     // Also update pattern slots display with patterns
+    // Check trackedPatterns (elements in master) instead of just activeElements
     const slotsInfo = document.getElementById('slots-info');
     if (slotsInfo) {
-      if (this.activeElements.size === 0) {
+      // Get elements that are tracked in master pattern (have patterns saved)
+      const trackedElementIds = soundManager.trackedPatterns ? Array.from(soundManager.trackedPatterns.keys()) : [];
+      
+      // Combine active elements and tracked elements (elements can be active without being in master, or in master without being active)
+      const allRelevantElements = new Set([...this.activeElements, ...trackedElementIds]);
+      
+      if (allRelevantElements.size === 0) {
         slotsInfo.textContent = 'None active';
       } else {
-        const slotsData = Array.from(this.activeElements).map(id => {
+        const slotsData = Array.from(allRelevantElements).map(id => {
           const slot = soundManager.strudelPatternSlots?.get(id);
+          const isTracked = soundManager.trackedPatterns?.has(id);
+          const isActive = this.activeElements.has(id);
+          
           // Get pattern from saved config or default config
           let pattern = '';
           try {
@@ -5191,7 +5204,17 @@ class InteractiveSoundApp {
           }
           
           // Format display: element-id→slot: pattern (truncate if too long)
-          const slotDisplay = slot ? `${id}→${slot}` : id;
+          // Show status: (A)ctive, (M)aster, or both
+          let statusIndicator = '';
+          if (isActive && isTracked) {
+            statusIndicator = ' (A+M)';
+          } else if (isActive) {
+            statusIndicator = ' (A)';
+          } else if (isTracked) {
+            statusIndicator = ' (M)';
+          }
+          
+          const slotDisplay = slot ? `${id}→${slot}${statusIndicator}` : `${id}${statusIndicator}`;
           if (pattern && pattern.trim()) {
             const patternDisplay = pattern.length > 80 ? pattern.substring(0, 80) + '...' : pattern;
             return `${slotDisplay}: ${patternDisplay}`;
@@ -6036,6 +6059,9 @@ class InteractiveSoundApp {
   setupModal() {
     const modal = document.getElementById('config-modal');
     if (!modal) return;
+    
+    // Capture 'this' for use in nested functions
+    const appInstance = this;
     
     const bankSelect = document.getElementById('modal-pattern-bank');
 
@@ -7745,6 +7771,24 @@ class InteractiveSoundApp {
       modalScaleSelect.dataset.listenerAttached = 'true';
     }
     
+    // Function to extract scale from pattern's .scale() modifier
+    const extractScaleFromPattern = (pattern) => {
+      // Look for .scale('key:scale') or .scale('scale')
+      const scaleMatch = pattern.match(/\.\s*scale\s*\(\s*['"]([^'"]+)['"]\s*\)/i);
+      if (scaleMatch && scaleMatch[1]) {
+        const scaleValue = scaleMatch[1];
+        // Check if it's in format "key:scale" or just "scale"
+        if (scaleValue.includes(':')) {
+          const [keyPart, scalePart] = scaleValue.split(':');
+          return { key: keyPart.trim(), scale: scalePart.trim() };
+        } else {
+          // Just scale name, use C as default key
+          return { key: 'C', scale: scaleValue.trim() };
+        }
+      }
+      return null;
+    };
+    
     // Function to convert pattern between semitones and note names
     const convertPatternFormat = (pattern, toNoteNames) => {
       if (!pattern || !containsNoteCall(pattern)) return pattern;
@@ -7755,19 +7799,29 @@ class InteractiveSoundApp {
       if (toNoteNames) {
         // Convert semitones to note names
         if (hasNumericNotes && !hasNoteNames) {
-          // Get key/scale from modal
+          // First, try to extract scale from pattern's .scale() modifier
+          const patternScale = extractScaleFromPattern(pattern);
+          
+          // Get key/scale from modal or pattern
           const modalKeySelect = document.getElementById('modal-key-select');
           const modalScaleSelect = document.getElementById('modal-scale-select');
-          const keyValue = modalKeySelect ? (modalKeySelect.value || null) : null;
-          const scaleValue = modalScaleSelect ? (modalScaleSelect.value || null) : null;
+          let keyValue = modalKeySelect ? (modalKeySelect.value || null) : null;
+          let scaleValue = modalScaleSelect ? (modalScaleSelect.value || null) : null;
+          
+          // If pattern has .scale() modifier, use that scale (it's what's actually being played)
+          if (patternScale) {
+            keyValue = patternScale.key;
+            scaleValue = patternScale.scale;
+            console.log(`🎼 Using scale from pattern .scale() modifier: ${keyValue}:${scaleValue}`);
+          }
           
           if (keyValue || scaleValue) {
-            // Use key/scale to convert
-            return this.convertNumericPatternToNoteNames(pattern, keyValue, scaleValue || 'major');
+            // Use key/scale to convert - call method on app instance
+            return appInstance.convertNumericPatternToNoteNames(pattern, keyValue, scaleValue || 'major');
           } else {
             // No key/scale, use default C major
             console.log(`⚠️ No key/scale selected, using C major for conversion`);
-            return this.convertNumericPatternToNoteNames(pattern, 'C', 'major');
+            return appInstance.convertNumericPatternToNoteNames(pattern, 'C', 'major');
           }
         }
         // Already in note names or can't convert
@@ -7775,7 +7829,12 @@ class InteractiveSoundApp {
       } else {
         // Convert note names to semitones
         if (hasNoteNames && !hasNumericNotes) {
-          return soundManager.convertPatternForScale(pattern);
+          // When explicitly switching to semitones, we need to convert note names to numbers
+          // Use convertNoteNamesToSemitones which bypasses convertPatternForScale's preservation logic
+          // This function converts note("C4 D4 E4") to n("0 2 4")
+          const converted = soundManager.convertNoteNamesToSemitones(pattern);
+          console.log(`🔄 Converting note names to semitones: ${pattern.substring(0, 50)}... → ${converted.substring(0, 50)}...`);
+          return converted;
         }
         // Already in semitones or can't convert
         return pattern;
@@ -7790,7 +7849,19 @@ class InteractiveSoundApp {
         const useNoteNames = keepNotesCheckbox.checked;
         
         // Convert pattern format based on toggle state
-        const convertedPattern = convertPatternFormat(patternValue, useNoteNames);
+        let convertedPattern = convertPatternFormat(patternValue, useNoteNames);
+        
+        // If switching to note names, remove .scale() modifier
+        if (useNoteNames && convertedPattern) {
+          // Remove .scale() modifier - note names don't need it
+          convertedPattern = convertedPattern.replace(/\.\s*scale\s*\((['"])(?:(?=(\\?))\2.)*?\1\)/gi, '');
+          convertedPattern = convertedPattern.replace(/\.\s*scale\s*\([^)]*\)/gi, '');
+          // Clean up any double dots or trailing dots
+          convertedPattern = convertedPattern.replace(/\.+/g, '.').replace(/\.\s*\./g, '.').trim();
+          convertedPattern = convertedPattern.replace(/\.+$/, '').trim();
+          console.log(`🗑️ Removed .scale() modifier when switching to note names`);
+        }
+        
         if (convertedPattern !== patternValue) {
           setStrudelEditorValue('modal-pattern', convertedPattern);
           console.log(`🔄 Converted pattern ${useNoteNames ? 'to note names' : 'to semitones'}: ${convertedPattern.substring(0, 100)}...`);
@@ -8398,10 +8469,31 @@ class InteractiveSoundApp {
         }
         
         // Do not auto-play when bank is selected - user can manually preview if needed
-        // Stop any currently playing sound but don't restart
+        // Stop any currently playing sound and remove from active elements to prevent looping
         if (this.activeElements.has(elementId)) {
           console.log(`🛑 Stopping sound for ${elementId} (bank changed, not auto-playing)`);
           soundManager.stopSound(elementId);
+          this.activeElements.delete(elementId);
+          // Update UI to reflect stopped state
+          const element = document.querySelector(`[data-sound-id="${elementId}"]`);
+          if (element) {
+            const elementCircle = element.querySelector('.element-circle');
+            if (elementCircle) {
+              elementCircle.classList.remove('playing');
+            }
+            this.updateStatusDots(elementId, true, false);
+          }
+        }
+        
+        // Also check if element has loop active and stop it
+        const element = document.querySelector(`[data-sound-id="${elementId}"]`);
+        if (element) {
+          const loopButton = element.querySelector('.loop-button');
+          if (loopButton && loopButton.classList.contains('active')) {
+            console.log(`🛑 Stopping loop for ${elementId} (bank changed)`);
+            loopButton.classList.remove('active');
+            soundManager.stopSound(elementId);
+          }
         }
 
         // When switching to a drum bank, disable pattern editor to show drum grid
@@ -8463,43 +8555,31 @@ class InteractiveSoundApp {
           pattern = drumDisplayToPattern(displayPattern);
         }
 
-        // Respect toggle state: if "Note names" is selected, keep note names; if "Semitones" is selected, convert to semitones
+        // Preserve the format as written: if pattern uses note names, keep note names; if semitones, keep semitones
+        // Don't convert based on toggle state - preserve what user wrote
         const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
         const useNoteNames = keepNotesCheckbox ? keepNotesCheckbox.checked : false;
         
-        // Convert pattern format based on toggle state
+        // Check pattern format and preserve it
         if (pattern && containsNoteCall(pattern)) {
+          // Note names have letter notes (a-g) followed by optional accidental and octave
           const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(pattern);
-          const hasNumericNotes = /\b(n|note)\s*\(\s*["'][\d\s]+["']/.test(pattern);
+          // Numeric notes are pure numbers/spaces (e.g., n("0 2 4")), NOT note names with octaves
+          // Match patterns that start with digits/spaces only (no letters a-g)
+          const hasNumericNotes = /\b(n|note)\s*\(\s*["'][\d\s\-]+["']/.test(pattern) && 
+                                  !/\b(note|n)\s*\(\s*["'][a-gA-G]/.test(pattern);
           
-          if (useNoteNames) {
-            // "Note names" selected: convert semitones to note names if needed
-            if (hasNumericNotes && !hasNoteNames) {
-              const modalKeySelect = document.getElementById('modal-key-select');
-              const modalScaleSelect = document.getElementById('modal-scale-select');
-              const keyValue = modalKeySelect ? (modalKeySelect.value || null) : null;
-              const scaleValue = modalScaleSelect ? (modalScaleSelect.value || null) : null;
-              
-              if (keyValue || scaleValue) {
-                const convertedPattern = this.convertNumericPatternToNoteNames(pattern, keyValue, scaleValue || 'major');
-                if (convertedPattern && convertedPattern !== pattern) {
-                  pattern = convertedPattern;
-                  setStrudelEditorValue('modal-pattern', convertedPattern);
-                }
-              }
-            }
-            // If already in note names, keep as-is
-          } else {
-            // "Semitones" selected: convert note names to semitones if needed
-            if (hasNoteNames && !hasNumericNotes) {
-              const convertedPattern = soundManager.convertPatternForScale(pattern);
-              if (convertedPattern && convertedPattern !== pattern) {
-                pattern = convertedPattern;
-                setStrudelEditorValue('modal-pattern', convertedPattern);
-              }
-            }
-            // If already in semitones, keep as-is
+          // Preserve the format: if written in note names, keep note names; if written in semitones, keep semitones
+          if (hasNoteNames && !hasNumericNotes) {
+            // Pattern is in note names format - keep it as note names
+            console.log(`📝 Preserving note names format: ${pattern.substring(0, 50)}...`);
+            // Don't convert - keep as-is
+          } else if (hasNumericNotes && !hasNoteNames) {
+            // Pattern is in semitones format - keep it as semitones
+            console.log(`📝 Preserving semitones format: ${pattern.substring(0, 50)}...`);
+            // Don't convert - keep as-is
           }
+          // If mixed format, keep as-is
         }
         
         // Save checkbox state
@@ -8514,20 +8594,27 @@ class InteractiveSoundApp {
         console.log(`🎼 Modal save: Reading key/scale from dropdowns - elementKey="${elementKey}", elementScale="${elementScale}", modalKeySelect.value="${modalKeySelect?.value}", modalScaleSelect.value="${modalScaleSelect?.value}"`);
         
         // Apply key/scale to pattern if set in modal (only for numeric note patterns without chord modifiers)
+        // Don't apply scale to note names patterns - they already have explicit notes
         if (pattern && containsNoteCall(pattern) && (elementKey || elementScale)) {
           // Use the same detection logic as applyGlobalSettingsToPattern
           const hasNoteFunction = /\b(note|n)\s*\(/.test(pattern);
-          const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-g][#b]?/.test(pattern);
+          // Note names have letter notes (a-g) followed by optional accidental and octave
+          const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(pattern);
+          // Numeric notes are pure numbers/spaces (e.g., n("0 2 4")), NOT note names with octaves
+          // Match patterns that start with digits/spaces only (no letters a-g)
+          const hasNumericNotes = /\b(n|note)\s*\(\s*["'][\d\s\-]+["']/.test(pattern) && 
+                                  !/\b(note|n)\s*\(\s*["'][a-gA-G]/.test(pattern);
           const hasChordNames = /\b(note|n)\s*\(\s*["'][a-g][#b]?[a-z0-9]*\s*[a-z]/.test(pattern) ||
                                /\b(note|n)\s*\(\s*["'][^"']*\b(maj|min|m|dim|aug|sus|add|7|9|11|13)\b/i.test(pattern);
           const hasChordModifier = /\.\s*chord\s*\(/i.test(pattern);
           const hasLetterNotes = /\b(note|n)\s*\(\s*["'][^"']*[a-g][#b]?\s/.test(pattern);
           const hasExplicitNotes = hasNoteNames || hasChordNames || hasLetterNotes || hasChordModifier;
-          const isNumericPattern = hasNoteFunction && !hasExplicitNotes && !hasChordModifier;
+          const isNumericPattern = hasNoteFunction && hasNumericNotes && !hasNoteNames && !hasChordModifier;
           
-          console.log(`🎼 Modal save: pattern="${pattern.substring(0, 50)}...", hasNoteFunction=${hasNoteFunction}, hasExplicitNotes=${hasExplicitNotes}, isNumericPattern=${isNumericPattern}, elementKey="${elementKey}", elementScale="${elementScale}"`);
+          console.log(`🎼 Modal save: pattern="${pattern.substring(0, 50)}...", hasNoteFunction=${hasNoteFunction}, hasNoteNames=${hasNoteNames}, hasNumericNotes=${hasNumericNotes}, isNumericPattern=${isNumericPattern}, elementKey="${elementKey}", elementScale="${elementScale}"`);
           
-          if (!hasChordModifier && isNumericPattern) {
+          // Only apply scale to numeric patterns (semitones), not to note names patterns
+          if (!hasChordModifier && isNumericPattern && !hasNoteNames) {
             // Apply key/scale to pattern using soundManager's function
             const patternWithScale = soundManager.applyGlobalSettingsToPattern(pattern, false, false, elementKey || null, elementScale || null);
             console.log(`🎼 Modal save: patternWithScale="${patternWithScale ? patternWithScale.substring(0, 80) : 'null'}..."`);
@@ -8540,7 +8627,11 @@ class InteractiveSoundApp {
               console.log(`⚠️ Scale not applied - pattern unchanged or applyGlobalSettingsToPattern returned same pattern`);
             }
           } else {
-            console.log(`⚠️ Scale not applied - hasChordModifier=${hasChordModifier}, isNumericPattern=${isNumericPattern}`);
+            if (hasNoteNames) {
+              console.log(`📝 Pattern uses note names - preserving format, not applying scale modifier`);
+            } else {
+              console.log(`⚠️ Scale not applied - hasChordModifier=${hasChordModifier}, isNumericPattern=${isNumericPattern}`);
+            }
           }
         } else {
           console.log(`⚠️ Key/Scale not applied - pattern: ${!!pattern}, hasNoteCall: ${pattern ? containsNoteCall(pattern) : false}, elementKey: ${elementKey}, elementScale: ${elementScale}`);
