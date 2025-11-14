@@ -9,6 +9,7 @@ import { initStrudelReplEditors, getStrudelEditor, getStrudelEditorValue, setStr
 import { getDrawContext } from '@strudel/draw';
 import { transpiler as strudelTranspiler } from '@strudel/transpiler';
 import { evaluate as strudelCoreEvaluate } from '@strudel/core';
+import { Scale, Note } from '@tonaljs/tonal';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -53,7 +54,7 @@ const DRUM_BANK_DISPLAY_NAMES = {
   CasioRZ1: 'Casio RZ-1'
 };
 
-const NOTE_CALL_REGEX = /\bnote\s*\(/i;
+const NOTE_CALL_REGEX = /\b(note|n)\s*\(/i;
 const NUMERIC_NOTE_REGEX = /\bn\(\s*["'][^"']*["']\s*\)/i;
 
 const containsNoteCall = (value) => {
@@ -2128,7 +2129,11 @@ class InteractiveSoundApp {
           }
 
           console.log(`🎨 Applying visualizer "${this.selectedVisualizer || 'punchcard'}" before playing`);
-          await this.applyVisualizerToMaster();
+          try {
+            await this.applyVisualizerToMaster();
+          } catch (visualizerError) {
+            console.warn(`⚠️ Error applying visualizer, continuing with playback:`, visualizerError);
+          }
           
           const result = await soundManager.playMasterPattern();
           
@@ -2331,11 +2336,26 @@ class InteractiveSoundApp {
   async applyVisualizerToMaster() {
     console.log(`🎨 Applying visualizer "${this.selectedVisualizer}" to master pattern`);
     
-    // Clean up any existing pianoroll observer
+    // Clean up any existing visualizer observers and intervals
     if (this.pianorollObserver) {
       this.pianorollObserver.disconnect();
       this.pianorollObserver = null;
       console.log('🧹 Cleaned up previous pianoroll observer');
+    }
+    if (this.pianorollCheckInterval) {
+      clearInterval(this.pianorollCheckInterval);
+      this.pianorollCheckInterval = null;
+      console.log('🧹 Cleaned up previous pianoroll check interval');
+    }
+    if (this.scopeSpectrumObserver) {
+      this.scopeSpectrumObserver.disconnect();
+      this.scopeSpectrumObserver = null;
+      console.log('🧹 Cleaned up previous scope/spectrum observer');
+    }
+    if (this.scopeSpectrumCopyLoop) {
+      cancelAnimationFrame(this.scopeSpectrumCopyLoop);
+      this.scopeSpectrumCopyLoop = null;
+      console.log('🧹 Cleaned up previous scope/spectrum copy loop');
     }
     
     // Clean up any existing pianoroll canvases from previous sessions
@@ -2354,8 +2374,8 @@ class InteractiveSoundApp {
     // Get the current master pattern without any visualizers
     let basePattern = soundManager.getMasterPatternCode();
     if (!basePattern || basePattern.trim() === '') {
-      console.warn('⚠️ No master pattern to apply visualizer to');
-      return;
+      console.warn('⚠️ No master pattern to apply visualizer to, using silence');
+      basePattern = 'silence';
     }
     
     // Strip JavaScript comments (// and /* */)
@@ -2376,7 +2396,7 @@ class InteractiveSoundApp {
       return -1;
     };
     
-    const visualizerMethods = ['scope', 'tscope', 'fscope', 'spectrum', 'visual', 'spiral', 'pitchwheel', 'pianoroll', 'barchart'];
+    const visualizerMethods = ['scope', 'tscope', 'fscope', 'spectrum', 'visual', 'pianoroll', 'barchart'];
     visualizerMethods.forEach(method => {
       const searchPattern = new RegExp(`\\.\\s*_?${method}\\s*\\(`, 'gi');
       let match;
@@ -2401,34 +2421,213 @@ class InteractiveSoundApp {
     let patternWithVisualizer = basePattern;
     const canvasId = 'master-punchcard-canvas';
     
-    // For visualizers that need canvas context, register with getDrawContext first
-    if (this.selectedVisualizer === 'pianoroll' || this.selectedVisualizer === 'spiral' || this.selectedVisualizer === 'pitchwheel' || this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
+    // Setup analyser for visualizers that need audio data (scope, spectrum)
+    // MUST be done BEFORE pattern evaluation so visualizers can find it
+    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
+      // Ensure analyser is set up and connected BEFORE pattern evaluation
+      soundManager.setupVisualizerAnalyser();
+      // Wait a bit longer to ensure analyser is fully connected and ready
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Verify analyser is connected
+      const analyserId = canvasId;
+      const getAnalyserById = window.strudel?.getAnalyserById || globalThis.getAnalyserById;
+      if (getAnalyserById) {
+        try {
+          const analyser = getAnalyserById(analyserId);
+          if (analyser && analyser.context === soundManager.audioContext) {
+            console.log(`✅ Verified analyser "${analyserId}" is ready in correct audio context`);
+          } else {
+            console.warn(`⚠️ Analyser "${analyserId}" not ready or in wrong context`);
+          }
+        } catch (e) {
+          console.warn(`⚠️ Could not verify analyser:`, e.message);
+        }
+      }
+    }
+    
+    // Ensure canvas is visible and properly sized BEFORE calling getDrawContext
+    // This is critical for scope/spectrum - they need to find the canvas by ID
+    const canvasElement = document.getElementById(canvasId);
+    if (canvasElement) {
+      // Ensure canvas is positioned correctly (not fixed/absolute which would make it full-page)
+      canvasElement.style.position = 'relative';
+      canvasElement.style.display = 'block';
+      canvasElement.style.visibility = 'visible';
+      canvasElement.style.opacity = '1';
+      canvasElement.style.left = '0';
+      canvasElement.style.top = '0';
+      canvasElement.style.width = '100%';
+      canvasElement.style.height = '100%';
+      // Ensure canvas has the correct ID (scope/spectrum look for canvas by analyser ID)
+      canvasElement.id = canvasId;
+      
+      // Ensure canvas is in the container, not moved elsewhere
+      const container = document.getElementById('master-punchcard');
+      if (container && canvasElement.parentNode !== container) {
+        container.appendChild(canvasElement);
+      }
+      
+      // Get container dimensions
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const pixelRatio = window.devicePixelRatio || 1;
+        const displayWidth = Math.max(rect.width || 320, 320);
+        const displayHeight = Math.max(rect.height || 200, 200);
+        
+        // Set canvas dimensions (internal size with pixel ratio)
+        canvasElement.width = displayWidth * pixelRatio;
+        canvasElement.height = displayHeight * pixelRatio;
+        canvasElement.style.width = `${displayWidth}px`;
+        canvasElement.style.height = `${displayHeight}px`;
+        
+        // For scope/spectrum, ensure canvas is ready and accessible
+        if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
+          // Force a reflow to ensure canvas is rendered
+          canvasElement.offsetHeight;
+          console.log(`✅ Canvas "${canvasId}" is ready for ${this.selectedVisualizer}:`, {
+            id: canvasElement.id,
+            width: canvasElement.width,
+            height: canvasElement.height,
+            visible: canvasElement.style.display !== 'none',
+            inDOM: document.contains(canvasElement)
+          });
+        }
+      }
+    } else {
+      console.error(`❌ Canvas "${canvasId}" not found!`);
+    }
+    
+    // For scope/spectrum, ensure they use our canvas directly
+    // They look for a canvas with the analyser ID, so our canvas must have that ID
+    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
+      // Ensure our canvas has the correct ID (it should already, but double-check)
+      if (canvasElement && canvasElement.id !== canvasId) {
+        canvasElement.id = canvasId;
+      }
+      
+      // Set up observer to copy content from canvases scope/spectrum create
+      // They might create their own canvases, so we'll copy the content to ours
+      let copyLoopId = null;
+      let lastCopyTime = 0;
+      
+      const copyVisualizerContent = () => {
+        // Find canvases created by scope/spectrum
+        const allCanvases = document.querySelectorAll('canvas');
+        let foundVisualizerCanvas = null;
+        
+        allCanvases.forEach(canvas => {
+          // Check if this is a canvas created by scope/spectrum
+          if (canvas !== canvasElement && canvas.width > 0 && canvas.height > 0) {
+            const style = window.getComputedStyle(canvas);
+            const rect = canvas.getBoundingClientRect();
+            
+            // Scope/spectrum might create canvases with our ID or without an ID
+            const isVisualizerCanvas = 
+              (canvas.id === canvasId) || // Same ID as ours
+              (rect.width > 100 && rect.height > 50) || // Reasonable size
+              (style.position === 'fixed' || style.position === 'absolute'); // Positioned
+            
+            if (isVisualizerCanvas && !foundVisualizerCanvas) {
+              foundVisualizerCanvas = canvas;
+            }
+          }
+        });
+        
+        // If we found a visualizer canvas, copy its content to ours
+        if (foundVisualizerCanvas) {
+          const targetCtx = canvasElement.getContext('2d');
+          const sourceCtx = foundVisualizerCanvas.getContext('2d');
+          
+          if (targetCtx && sourceCtx && foundVisualizerCanvas.width > 0 && foundVisualizerCanvas.height > 0) {
+            try {
+              // Copy the content
+              targetCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+              targetCtx.drawImage(foundVisualizerCanvas, 0, 0, canvasElement.width, canvasElement.height);
+              
+              // Only log occasionally to avoid spam
+              const now = Date.now();
+              if (now - lastCopyTime > 2000) {
+                console.log(`🎨 Copied ${this.selectedVisualizer} content to our canvas (${foundVisualizerCanvas.width}x${foundVisualizerCanvas.height})`);
+                lastCopyTime = now;
+              }
+            } catch (e) {
+              // Ignore copy errors
+            }
+          }
+          
+          // Hide the visualizer's canvas but keep it for copying
+          foundVisualizerCanvas.style.position = 'absolute';
+          foundVisualizerCanvas.style.left = '-9999px';
+          foundVisualizerCanvas.style.top = '-9999px';
+          foundVisualizerCanvas.style.opacity = '0';
+          foundVisualizerCanvas.style.pointerEvents = 'none';
+        }
+      };
+      
+      // Set up observer to watch for new canvases
+      const observer = new MutationObserver(() => {
+        copyVisualizerContent();
+      });
+      
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+      
+      // Store observer for cleanup
+      this.scopeSpectrumObserver = observer;
+      
+      // Set up animation loop to copy content continuously
+      const copyLoop = () => {
+        if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
+          copyVisualizerContent();
+          copyLoopId = requestAnimationFrame(copyLoop);
+        }
+      };
+      copyLoop();
+      
+      // Store copy loop ID for cleanup
+      this.scopeSpectrumCopyLoop = copyLoopId;
+      
+      // Also do an immediate check
+      setTimeout(() => {
+        copyVisualizerContent();
+      }, 200);
+    }
+    
+    // For visualizers that need canvas context, register with getDrawContext AFTER canvas is sized
+    // This MUST be done BEFORE pattern evaluation so visualizers can find the canvas
+    if (this.selectedVisualizer === 'pianoroll' || this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
       try {
         // Register canvas with Strudel's draw system
+        // getDrawContext will find our existing canvas and return its context
+        // For scope/spectrum, this ensures they use our canvas instead of creating their own
         const ctx = getDrawContext(canvasId, { contextType: '2d' });
+        
         window.__strudelVisualizerCtx = ctx;
+        
         console.log(`✅ Registered canvas "${canvasId}" with getDrawContext for ${this.selectedVisualizer}`);
+        
+        // For scope/spectrum, also ensure the canvas is ready before pattern evaluation
+        if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
+          // Wait a bit to ensure canvas registration is complete
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
       } catch (error) {
         console.warn(`⚠️ Failed to register canvas with getDrawContext for ${this.selectedVisualizer}:`, error);
       }
     }
     
     // Prepare ctx expression for visualizers that need it
-    const ctxExpression = "window.__strudelVisualizerCtx || (document.getElementById('master-punchcard-canvas') && document.getElementById('master-punchcard-canvas').getContext && document.getElementById('master-punchcard-canvas').getContext('2d'))";
-    
-    // Setup analyser for visualizers that need audio data
-    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum' || this.selectedVisualizer === 'spiral' || this.selectedVisualizer === 'pitchwheel') {
-      soundManager.setupVisualizerAnalyser();
-    }
+    // Use a simpler expression that directly references our stored context
+    const ctxExpression = "window.__strudelVisualizerCtx";
+    const analyserId = canvasId; // Analyser ID matches canvas ID
     
     if (this.selectedVisualizer === 'scope') {
       patternWithVisualizer = `${basePattern}.scope({ id: '${canvasId}' })`;
     } else if (this.selectedVisualizer === 'spectrum') {
       patternWithVisualizer = `${basePattern}.spectrum({ id: '${canvasId}' })`;
-    } else if (this.selectedVisualizer === 'spiral') {
-      patternWithVisualizer = `${basePattern}.spiral({ id: '${canvasId}', ctx: ${ctxExpression} })`;
-    } else if (this.selectedVisualizer === 'pitchwheel') {
-      patternWithVisualizer = `${basePattern}.pitchwheel({ id: '${canvasId}', ctx: ${ctxExpression} })`;
     } else if (this.selectedVisualizer === 'pianoroll') {
       // Pianoroll API: https://strudel.cc/learn/visualizers/#pianoroll
       // Pianoroll creates its own canvas element, so we need to intercept it
@@ -2455,139 +2654,196 @@ class InteractiveSoundApp {
         // Set up observer to catch pianoroll's canvas creation
         // Pianoroll creates a canvas that covers the entire page, so we need to catch it
         let intercepted = false; // Flag to prevent multiple interceptions
+        let checkInterval = null; // Interval for periodic checks
+        
+        const interceptPianorollCanvas = (canvas) => {
+          if (intercepted) return false;
+          if (!canvas || canvas.id === canvasId || canvas === canvasElement) {
+            return false;
+          }
+          
+          // Check if this is likely a pianoroll canvas
+          const style = window.getComputedStyle(canvas);
+          const rect = canvas.getBoundingClientRect();
+          const isFullPage = (rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.8) ||
+                            (style.position === 'absolute' || style.position === 'fixed') ||
+                            canvas.style.position === 'absolute' ||
+                            canvas.style.position === 'fixed';
+          
+          // Also check if it's a new canvas (recently added)
+          const isRecent = !canvas.hasAttribute('data-processed');
+          
+          // Check if it's positioned at top-left (common for pianoroll)
+          const isTopLeft = rect.top < 100 && rect.left < 100;
+          
+          if ((isFullPage || isRecent || isTopLeft) && !canvas.hasAttribute('data-processed')) {
+            console.log('🎹 Intercepted pianoroll canvas:', {
+              id: canvas.id,
+              width: rect.width,
+              height: rect.height,
+              position: style.position,
+              isFullPage,
+              isRecent,
+              isTopLeft
+            });
+            
+            intercepted = true; // Mark as intercepted
+            // Mark as processed
+            canvas.setAttribute('data-processed', 'true');
+            
+            // Clone the canvas content to our canvas
+            try {
+              const targetCtx = canvasElement.getContext('2d');
+              const sourceCtx = canvas.getContext('2d');
+              
+              if (targetCtx && sourceCtx) {
+                // Get source canvas dimensions
+                const sourceWidth = canvas.width;
+                const sourceHeight = canvas.height;
+                const pixelRatio = window.devicePixelRatio || 1;
+                
+                // Get container dimensions
+                const containerRect = containerElement.getBoundingClientRect();
+                const displayWidth = Math.max(containerRect.width || containerElement.offsetWidth || 320, 240);
+                const displayHeight = Math.max(containerRect.height || containerElement.offsetHeight || 200, 220);
+                
+                // Calculate scale to fit all notes - use the smaller scale to ensure everything fits
+                const scaleX = displayWidth / sourceWidth;
+                const scaleY = displayHeight / sourceHeight;
+                const scale = Math.min(scaleX, scaleY); // Use smaller scale to fit both dimensions
+                
+                const scaledWidth = sourceWidth * scale;
+                const scaledHeight = sourceHeight * scale;
+                
+                // Set our canvas to container size with pixel ratio
+                canvasElement.width = displayWidth * pixelRatio;
+                canvasElement.height = displayHeight * pixelRatio;
+                canvasElement.style.width = `${displayWidth}px`;
+                canvasElement.style.height = `${displayHeight}px`;
+                
+                // Set up transform to scale down the notes
+                targetCtx.setTransform(1, 0, 0, 1, 0, 0);
+                targetCtx.scale(pixelRatio, pixelRatio);
+                
+                // Center both horizontally and vertically
+                const offsetX = (displayWidth - scaledWidth) / 2;
+                const offsetY = (displayHeight - scaledHeight) / 2;
+                
+                // Set up animation loop to copy with scaling
+                // This scales down the notes so all notes fit in the visible area
+                const copyLoop = () => {
+                  if (this.selectedVisualizer === 'pianoroll' && canvas.parentNode) {
+                    // Clear the canvas
+                    targetCtx.clearRect(0, 0, displayWidth, displayHeight);
+                    
+                    // Draw the source canvas scaled down to fit all notes
+                    targetCtx.drawImage(
+                      canvas,
+                      0, 0, sourceWidth, sourceHeight,  // Source: full canvas
+                      offsetX, offsetY, scaledWidth, scaledHeight  // Destination: scaled to fit
+                    );
+                    
+                    requestAnimationFrame(copyLoop);
+                  }
+                };
+                copyLoop();
+                
+                // Hide the original canvas immediately
+                canvas.style.display = 'none';
+                canvas.style.visibility = 'hidden';
+                canvas.style.opacity = '0';
+                canvas.style.pointerEvents = 'none';
+                canvas.style.position = 'fixed';
+                canvas.style.left = '-9999px';
+                canvas.style.top = '-9999px';
+                
+                console.log('✅ Pianoroll canvas intercepted and copied to our canvas');
+                
+                // Disconnect observer and clear interval after intercepting
+                if (observer) observer.disconnect();
+                if (checkInterval) {
+                  clearInterval(checkInterval);
+                  checkInterval = null;
+                }
+                return true;
+              }
+            } catch (error) {
+              console.warn('⚠️ Error copying pianoroll canvas:', error);
+              // Fallback: try to hide the canvas at least
+              try {
+                canvas.style.display = 'none';
+                canvas.style.visibility = 'hidden';
+                canvas.style.opacity = '0';
+                canvas.style.pointerEvents = 'none';
+                canvas.style.position = 'fixed';
+                canvas.style.left = '-9999px';
+                canvas.style.top = '-9999px';
+              } catch (hideError) {
+                console.warn('⚠️ Error hiding pianoroll canvas:', hideError);
+              }
+            }
+          }
+          return false;
+        };
+        
         const observer = new MutationObserver((mutations) => {
-          if (intercepted) return; // Already intercepted, skip
+          if (intercepted) return;
           
           mutations.forEach((mutation) => {
             mutation.addedNodes.forEach((node) => {
               if (node.nodeType === 1) { // Element node
-                // Check all canvases in the document, not just newly added ones
+                // Check if the added node is a canvas
+                if (node.tagName === 'CANVAS') {
+                  interceptPianorollCanvas(node);
+                }
+                // Also check all canvases in the document
                 const allCanvases = document.querySelectorAll('canvas');
                 allCanvases.forEach(canvas => {
-                  if (intercepted) return;
-                  
-                  // Skip our own canvas
-                  if (canvas.id === canvasId || canvas === canvasElement) {
-                    return;
-                  }
-                  
-                  // Check if this is likely a pianoroll canvas
-                  const style = window.getComputedStyle(canvas);
-                  const rect = canvas.getBoundingClientRect();
-                  const isFullPage = (rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.8) ||
-                                    (style.position === 'absolute' || style.position === 'fixed') ||
-                                    canvas.style.position === 'absolute' ||
-                                    canvas.style.position === 'fixed';
-                  
-                  // Also check if it's a new canvas (recently added)
-                  const isRecent = !canvas.hasAttribute('data-processed');
-                  
-                  if ((isFullPage || isRecent) && !intercepted) {
-                    console.log('🎹 Intercepted pianoroll canvas:', {
-                      id: canvas.id,
-                      width: rect.width,
-                      height: rect.height,
-                      position: style.position,
-                      isFullPage
-                    });
-                    
-                    intercepted = true; // Mark as intercepted
-                    // Mark as processed
-                    canvas.setAttribute('data-processed', 'true');
-                    
-                    // Clone the canvas content to our canvas
-                    try {
-                      const targetCtx = canvasElement.getContext('2d');
-                      const sourceCtx = canvas.getContext('2d');
-                      
-                      if (targetCtx && sourceCtx) {
-                        // Get source canvas dimensions
-                        const sourceWidth = canvas.width;
-                        const sourceHeight = canvas.height;
-                        const pixelRatio = window.devicePixelRatio || 1;
-                        
-                        // Get container dimensions
-                        const containerRect = containerElement.getBoundingClientRect();
-                        const displayWidth = Math.max(containerRect.width || containerElement.offsetWidth || 320, 240);
-                        const displayHeight = Math.max(containerRect.height || containerElement.offsetHeight || 200, 220);
-                        
-                        // Match width exactly, scale height proportionally
-                        // This ensures pianoroll width matches visualizer canvas width
-                        const scale = displayWidth / sourceWidth; // Use width-based scale
-                        const scaledWidth = displayWidth; // Match canvas width exactly
-                        const scaledHeight = sourceHeight * scale; // Scale height proportionally
-                        
-                        // Set our canvas to container size with pixel ratio
-                        canvasElement.width = displayWidth * pixelRatio;
-                        canvasElement.height = displayHeight * pixelRatio;
-                        canvasElement.style.width = `${displayWidth}px`;
-                        canvasElement.style.height = `${displayHeight}px`;
-                        
-                        // Set up transform to scale down the notes
-                        targetCtx.setTransform(1, 0, 0, 1, 0, 0);
-                        targetCtx.scale(pixelRatio, pixelRatio);
-                        
-                        // Center vertically if scaled height is less than container height
-                        const offsetX = 0; // No horizontal offset, width matches exactly
-                        const offsetY = scaledHeight <= displayHeight ? (displayHeight - scaledHeight) / 2 : 0;
-                        
-                        // Set up animation loop to copy with scaling
-                        // This scales down the notes so all 11 fit in the visible area
-                        const copyLoop = () => {
-                          if (this.selectedVisualizer === 'pianoroll' && canvas.parentNode) {
-                            // Clear the canvas
-                            targetCtx.clearRect(0, 0, displayWidth, displayHeight);
-                            
-                            // Draw the source canvas scaled down to fit all notes
-                            // This ensures all 11 notes are visible by scaling down their height
-                            targetCtx.drawImage(
-                              canvas,
-                              0, 0, sourceWidth, sourceHeight,  // Source: full canvas
-                              offsetX, offsetY, scaledWidth, scaledHeight  // Destination: scaled to fit
-                            );
-                            
-                            requestAnimationFrame(copyLoop);
-                          }
-                        };
-                        copyLoop();
-                        
-                        // Hide the original canvas
-                        canvas.style.display = 'none';
-                        canvas.style.visibility = 'hidden';
-                        canvas.style.opacity = '0';
-                        canvas.style.pointerEvents = 'none';
-                        
-                        console.log('✅ Pianoroll canvas intercepted and copied to our canvas');
-                        
-                        // Disconnect observer after intercepting
-                        observer.disconnect();
-                        intercepted = true;
-                      }
-                    } catch (error) {
-                      console.warn('⚠️ Error copying pianoroll canvas:', error);
-                      // Fallback: try to move the canvas
-                      try {
-                        canvas.id = canvasId;
-                        canvas.style.position = 'relative';
-                        canvas.style.width = '100%';
-                        canvas.style.height = '100%';
-                        canvas.style.left = '0';
-                        canvas.style.top = '0';
-                        containerElement.replaceChild(canvas, canvasElement);
-                        this.masterPunchcardCanvas = canvas;
-                        console.log('✅ Pianoroll canvas moved to container');
-                        observer.disconnect();
-                        intercepted = true;
-                      } catch (moveError) {
-                        console.warn('⚠️ Error moving pianoroll canvas:', moveError);
-                      }
-                    }
-                  }
+                  interceptPianorollCanvas(canvas);
                 });
               }
             });
           });
         });
+        
+        // Periodic check for pianoroll canvases (in case MutationObserver misses them)
+        // Also hide any pianoroll canvases that appear on the page
+        checkInterval = setInterval(() => {
+          if (intercepted) {
+            if (checkInterval) {
+              clearInterval(checkInterval);
+              checkInterval = null;
+            }
+            return;
+          }
+          
+          const allCanvases = document.querySelectorAll('canvas');
+          allCanvases.forEach(canvas => {
+            if (interceptPianorollCanvas(canvas)) {
+              intercepted = true;
+            } else {
+              // Even if not intercepted, hide any suspicious canvases
+              if (canvas.id !== canvasId && canvas !== canvasElement && !canvas.hasAttribute('data-processed')) {
+                const style = window.getComputedStyle(canvas);
+                const rect = canvas.getBoundingClientRect();
+                const isFullPage = (rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.8);
+                const isPositioned = (style.position === 'absolute' || style.position === 'fixed');
+                
+                if (isFullPage || isPositioned) {
+                  // Hide suspicious canvases that might be pianoroll
+                  canvas.style.display = 'none';
+                  canvas.style.visibility = 'hidden';
+                  canvas.style.opacity = '0';
+                  canvas.style.pointerEvents = 'none';
+                  canvas.style.position = 'fixed';
+                  canvas.style.left = '-9999px';
+                  canvas.style.top = '-9999px';
+                  canvas.setAttribute('data-processed', 'true');
+                }
+              }
+            }
+          });
+        }, 100); // Check every 100ms
         
         // Start observing the document body for new canvas elements
         observer.observe(document.body, {
@@ -2595,8 +2851,9 @@ class InteractiveSoundApp {
           subtree: true
         });
         
-        // Store observer so we can disconnect it later
+        // Store observer and interval so we can disconnect/clear them later
         this.pianorollObserver = observer;
+        this.pianorollCheckInterval = checkInterval;
         
         // Ensure our canvas is visible
         canvasElement.style.display = 'block';
@@ -2624,6 +2881,45 @@ class InteractiveSoundApp {
     // For 'punchcard', we don't add any visualizer method - it's just the default rendering
     
     console.log(`🎨 Pattern with visualizer: ${patternWithVisualizer.substring(0, 150)}...`);
+    console.log(`🎨 Full pattern with visualizer:`, patternWithVisualizer);
+    
+    // Ensure we have a valid pattern
+    if (!patternWithVisualizer || patternWithVisualizer.trim() === '') {
+      console.warn(`⚠️ Pattern with visualizer is empty, using base pattern`);
+      patternWithVisualizer = basePattern || 'silence';
+    }
+    
+    // Verify visualizer is in the pattern
+    const hasVisualizer = patternWithVisualizer.includes(`.${this.selectedVisualizer}(`);
+    if (!hasVisualizer && this.selectedVisualizer !== 'punchcard') {
+      console.error(`❌ Visualizer "${this.selectedVisualizer}" not found in pattern! Pattern:`, patternWithVisualizer);
+    } else if (hasVisualizer) {
+      console.log(`✅ Visualizer "${this.selectedVisualizer}" found in pattern`);
+      
+      // For scope/spectrum, verify analyser and canvas are accessible
+      if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
+        const getAnalyserById = window.strudel?.getAnalyserById || globalThis.getAnalyserById;
+        if (getAnalyserById) {
+          try {
+            const analyser = getAnalyserById(canvasId);
+            if (analyser) {
+              console.log(`✅ Analyser "${canvasId}" accessible via getAnalyserById`);
+            } else {
+              console.warn(`⚠️ Analyser "${canvasId}" not accessible via getAnalyserById`);
+            }
+          } catch (e) {
+            console.warn(`⚠️ Could not get analyser:`, e);
+          }
+        }
+        
+        const canvas = document.getElementById(canvasId);
+        if (canvas) {
+          console.log(`✅ Canvas "${canvasId}" accessible via getElementById`);
+        } else {
+          console.warn(`⚠️ Canvas "${canvasId}" not accessible via getElementById`);
+        }
+      }
+    }
     
     // Update the master pattern and restart playback
     await soundManager.setMasterPatternCode(patternWithVisualizer);
@@ -4119,96 +4415,288 @@ class InteractiveSoundApp {
       });
     });
     
-    // Setup effect sliders
-    const effectSliders = element.querySelectorAll('.effect-slider');
-    console.log(`🎛️ Setting up ${effectSliders.length} effect sliders for ${elementId}`);
+    // Initialize filter dropdowns
+    this.setupFilterDropdowns(element, elementId);
     
-    effectSliders.forEach(slider => {
-      // Check if this slider already has a listener (avoid duplicates)
-      if (slider.dataset.hasListener === 'true') {
-        console.log(`⚠️ Slider ${elementId} already has listener, skipping`);
-        return;
-      }
+    // Initialize effects dropdowns
+    this.setupEffectsDropdowns(element, elementId);
+    
+    // Initialize synthesis dropdowns
+    this.setupSynthesisDropdowns(element, elementId);
+  }
+  
+  /**
+   * Setup filter collapsible rows (HPF, LPF, BPF)
+   */
+  setupFilterDropdowns(element, elementId) {
+    const filtersContent = element.querySelector('.filters-content');
+    if (!filtersContent) return;
+    
+    // Define filter types
+    const filterTypes = [
+      { key: 'hpf', label: 'HPF', params: [
+        { key: 'hpf', label: 'Frequency', unit: 'Hz' },
+        { key: 'hpq', label: 'Resonance', unit: '' }
+      ]},
+      { key: 'lpf', label: 'LPF', params: [
+        { key: 'lpf', label: 'Frequency', unit: 'Hz' },
+        { key: 'lpq', label: 'Resonance', unit: '' }
+      ]},
+      { key: 'bpf', label: 'BPF', params: [
+        { key: 'bpf', label: 'Frequency', unit: 'Hz' },
+        { key: 'bpq', label: 'Resonance', unit: '' },
+        { key: 'bpg', label: 'Gain', unit: '' }
+      ]}
+    ];
+    
+    // Create collapsible rows for each filter type
+    filterTypes.forEach((filterType, index) => {
+      const container = document.createElement('div');
+      container.className = 'filter-collapsible-row';
       
-      const valueDisplay = slider.nextElementSibling;
-      slider.dataset.hasListener = 'true'; // Mark as having listener
+      // Map filter types to their color classes
+      const filterColorClasses = {
+        'hpf': 'snippet-group-filters-hp',
+        'lpf': 'snippet-group-filters-lp',
+        'bpf': 'snippet-group-filters-bp'
+      };
       
-      // Update display value on input
-      slider.addEventListener('input', async (e) => {
+      const colorClass = filterColorClasses[filterType.key] || '';
+      
+      container.innerHTML = `
+        <button class="filter-toggle ${colorClass}" data-filter-key="${filterType.key}">
+          <span class="toggle-icon">▶</span> ${filterType.label}
+        </button>
+        <div class="filter-sliders-container" style="display: none;">
+          <!-- Sliders will be added here -->
+        </div>
+      `;
+      filtersContent.appendChild(container);
+      
+      const toggleBtn = container.querySelector('.filter-toggle');
+      const slidersContainer = container.querySelector('.filter-sliders-container');
+      
+      // Setup toggle handler
+      toggleBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const value = parseFloat(e.target.value);
-        const display = e.target.nextElementSibling;
-        if (display && display.classList.contains('slider-value')) {
-          display.textContent = value.toFixed(2);
+        toggleBtn.classList.toggle('active');
+        const isActive = toggleBtn.classList.contains('active');
+        slidersContainer.style.display = isActive ? 'block' : 'none';
+        
+        // Update toggle icon
+        const icon = toggleBtn.querySelector('.toggle-icon');
+        icon.textContent = isActive ? '▼' : '▶';
+        
+        // Create sliders if not already created
+        if (isActive && slidersContainer.children.length === 0) {
+          filterType.params.forEach((param) => {
+            const paramConfig = NUMERIC_TAG_PARAMS[param.key];
+            if (!paramConfig) return;
+            
+            const sliderRow = document.createElement('div');
+            sliderRow.className = 'slider-row';
+            sliderRow.innerHTML = `
+              <div class="slider-label-row">
+                <label>${param.label}</label>
+                <span class="slider-value">${paramConfig.default}${param.unit ? ' ' + param.unit : ''}</span>
+              </div>
+              <input type="range" class="filter-slider" data-filter-type="${filterType.key}" data-param-key="${param.key}" 
+                     min="${paramConfig.min}" max="${paramConfig.max}" step="${paramConfig.step}" 
+                     value="${paramConfig.default}" />
+            `;
+            slidersContainer.appendChild(sliderRow);
+            
+            // Setup slider listener
+            const slider = sliderRow.querySelector('.filter-slider');
+            if (slider && !slider.dataset.hasListener) {
+              slider.dataset.hasListener = 'true';
+              slider.addEventListener('input', async (e) => {
+                const value = parseFloat(e.target.value);
+                const display = sliderRow.querySelector('.slider-value');
+                if (display) {
+                  if (param.key.includes('f')) {
+                    display.textContent = Math.round(value) + ' Hz';
+                  } else {
+                    display.textContent = value.toFixed(1);
+                  }
+                }
+                await this.updateElementFilters(elementId);
+              });
+            }
+          });
+        }
+      });
+    });
+  }
+  
+  /**
+   * Setup effects collapsible rows dynamically
+   */
+  setupEffectsDropdowns(element, elementId) {
+    const effectsContent = element.querySelector('.effects-content');
+    if (!effectsContent) return;
+    
+    // Define available effects with their sub-parameters
+    const availableEffects = [
+      { 
+        key: 'delay', 
+        label: 'Delay',
+        params: [
+          { key: 'delaytime', label: 'Delay Time' },
+          { key: 'delayfeedback', label: 'Delay Feedback' }
+        ]
+      },
+      { 
+        key: 'room', 
+        label: 'Reverb',
+        params: [
+          { key: 'roomsize', label: 'Room Size' }
+        ]
+      },
+      { 
+        key: 'phaser', 
+        label: 'Phaser',
+        params: [
+          { key: 'phaserdepth', label: 'Phaser Depth' }
+        ]
+      },
+      { 
+        key: 'tremolo', 
+        label: 'Tremolo',
+        params: [
+          { key: 'tremolodepth', label: 'Tremolo Depth' }
+        ]
+      }
+    ];
+    
+    // Create collapsible rows for each effect
+    availableEffects.forEach((effect) => {
+      const container = document.createElement('div');
+      container.className = 'effect-collapsible-row';
+      
+      // Map effect types to their color classes
+      const effectColorClasses = {
+        'delay': 'snippet-group-delay',
+        'room': 'snippet-group-reverb',
+        'phaser': 'snippet-group-phaser',
+        'tremolo': 'snippet-group-amplitude-modulation'
+      };
+      
+      const colorClass = effectColorClasses[effect.key] || '';
+      
+      container.innerHTML = `
+        <button class="effect-toggle ${colorClass}" data-effect-key="${effect.key}">
+          <span class="toggle-icon">▶</span> ${effect.label}
+        </button>
+        <div class="effect-sliders-container" style="display: none;">
+          <!-- Sliders will be added here -->
+        </div>
+      `;
+      effectsContent.appendChild(container);
+      
+      const toggleBtn = container.querySelector('.effect-toggle');
+      const slidersContainer = container.querySelector('.effect-sliders-container');
+      
+      // Setup toggle handler
+      toggleBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        toggleBtn.classList.toggle('active');
+        const isActive = toggleBtn.classList.contains('active');
+        slidersContainer.style.display = isActive ? 'block' : 'none';
+        
+        // Update toggle icon
+        const icon = toggleBtn.querySelector('.toggle-icon');
+        icon.textContent = isActive ? '▼' : '▶';
+        
+        // Create sliders if not already created
+        if (isActive && slidersContainer.children.length === 0) {
+          effect.params.forEach((param) => {
+            const paramConfig = NUMERIC_TAG_PARAMS[param.key];
+            if (!paramConfig) return;
+            
+            const sliderRow = document.createElement('div');
+            sliderRow.className = 'slider-row';
+            sliderRow.innerHTML = `
+              <div class="slider-label-row">
+                <label>${param.label}</label>
+                <span class="slider-value">${paramConfig.default.toFixed(2)}${paramConfig.unit ? ' ' + paramConfig.unit : ''}</span>
+              </div>
+              <input type="range" class="effect-slider" data-effect-key="${param.key}" 
+                     min="${paramConfig.min}" max="${paramConfig.max}" step="${paramConfig.step}" 
+                     value="${paramConfig.default}" />
+            `;
+            slidersContainer.appendChild(sliderRow);
+            
+            // Setup slider listener
+            const slider = sliderRow.querySelector('.effect-slider');
+            if (slider && !slider.dataset.hasListener) {
+              slider.dataset.hasListener = 'true';
+              slider.addEventListener('input', async (e) => {
+                const value = parseFloat(e.target.value);
+                const display = sliderRow.querySelector('.slider-value');
+                if (display) {
+                  display.textContent = value.toFixed(2) + (paramConfig.unit ? ' ' + paramConfig.unit : '');
+                }
+                await this.updateElementEffects(elementId);
+              });
+            }
+          });
         }
         
-        // Update the pattern with effects
         await this.updateElementEffects(elementId);
       });
     });
+  }
+  
+  /**
+   * Setup synthesis ADSR sliders (always visible, vertical)
+   */
+  setupSynthesisDropdowns(element, elementId) {
+    const synthesisContent = element.querySelector('.synthesis-content');
+    if (!synthesisContent) return;
     
-    // Synth type selector is now only in the modal, not in elements
+    // Create ADSR sliders container - always visible
+    const container = document.createElement('div');
+    container.className = 'synthesis-sliders-container';
     
-    // Setup filter sliders
-    const filterSliders = element.querySelectorAll('.filter-slider');
-    console.log(`🎛️ Setting up ${filterSliders.length} filter sliders for ${elementId}`);
+    // Define ADSR parameters
+    const adsrParams = [
+      { key: 'attack', label: 'Attack', min: 0, max: 2, step: 0.01, default: 0.01, unit: 's' },
+      { key: 'decay', label: 'Decay', min: 0, max: 2, step: 0.01, default: 0.1, unit: 's' },
+      { key: 'sustain', label: 'Sustain', min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+      { key: 'release', label: 'Release', min: 0, max: 5, step: 0.01, default: 0.1, unit: 's' }
+    ];
     
-    filterSliders.forEach(slider => {
-      // Check if this slider already has a listener (avoid duplicates)
-      if (slider.dataset.hasListener === 'true') {
-        console.log(`⚠️ Slider ${elementId} already has listener, skipping`);
-        return;
-      }
+    adsrParams.forEach((param) => {
+      const sliderRow = document.createElement('div');
+      sliderRow.className = 'slider-row';
+      sliderRow.innerHTML = `
+        <div class="slider-label-row">
+          <label>${param.label}</label>
+          <span class="slider-value">${param.default.toFixed(2)}${param.unit ? ' ' + param.unit : ''}</span>
+        </div>
+        <input type="range" class="synth-slider ${param.key}-slider" 
+               min="${param.min}" max="${param.max}" step="${param.step}" 
+               value="${param.default}" />
+      `;
+      container.appendChild(sliderRow);
       
-      const valueDisplay = slider.nextElementSibling;
-      slider.dataset.hasListener = 'true'; // Mark as having listener
-      
-      // Update display value on input
-      slider.addEventListener('input', async (e) => {
-        e.stopPropagation();
-        const value = parseFloat(e.target.value);
-        const display = e.target.nextElementSibling;
-        if (display && display.classList.contains('slider-value')) {
-          // Format based on slider type
-          if (e.target.classList.contains('lpf-slider') || e.target.classList.contains('hpf-slider')) {
-            display.textContent = Math.round(value);
-          } else {
-            display.textContent = value.toFixed(1);
+      // Setup slider listener
+      const slider = sliderRow.querySelector('.synth-slider');
+      if (slider && !slider.dataset.hasListener) {
+        slider.dataset.hasListener = 'true';
+        slider.addEventListener('input', async (e) => {
+          const value = parseFloat(e.target.value);
+          const display = sliderRow.querySelector('.slider-value');
+          if (display) {
+            display.textContent = value.toFixed(2) + (param.unit ? ' ' + param.unit : '');
           }
-        }
-        
-        // Update the pattern with filters
-        await this.updateElementFilters(elementId);
-      });
-    });
-    
-    // Setup synth sliders
-    const synthSliders = element.querySelectorAll('.synth-slider');
-    console.log(`🎛️ Setting up ${synthSliders.length} synth sliders for ${elementId}`);
-    
-    synthSliders.forEach(slider => {
-      // Check if this slider already has a listener (avoid duplicates)
-      if (slider.dataset.hasListener === 'true') {
-        console.log(`⚠️ Slider ${elementId} already has listener, skipping`);
-        return;
+          await this.updateElementSynthesis(elementId);
+        });
       }
-      
-      const valueDisplay = slider.nextElementSibling;
-      slider.dataset.hasListener = 'true'; // Mark as having listener
-      
-      // Update display value on input
-      slider.addEventListener('input', async (e) => {
-        e.stopPropagation();
-        const value = parseFloat(e.target.value);
-        const display = e.target.nextElementSibling;
-        if (display && display.classList.contains('slider-value')) {
-          display.textContent = value.toFixed(2);
-        }
-        
-        // Update the pattern with synthesis parameters
-        await this.updateElementSynthesis(elementId);
-      });
     });
+    
+    synthesisContent.appendChild(container);
   }
   
   /**
@@ -4218,30 +4706,37 @@ class InteractiveSoundApp {
     const element = document.querySelector(`[data-sound-id="${elementId}"]`);
     if (!element) return;
     
-    // Get effect values
-    const reverbSlider = element.querySelector('.reverb-slider');
-    const delaySlider = element.querySelector('.delay-slider');
-    const distortionSlider = element.querySelector('.distortion-slider');
+    // Get effect values from collapsible rows
+    const effectRows = element.querySelectorAll('.effect-collapsible-row');
+    const effects = {};
     
-    const reverb = reverbSlider ? parseFloat(reverbSlider.value) : 0;
-    const delay = delaySlider ? parseFloat(delaySlider.value) : 0;
-    const distortion = distortionSlider ? parseFloat(distortionSlider.value) : 0;
+    effectRows.forEach(row => {
+      const toggleBtn = row.querySelector('.effect-toggle');
+      const isActive = toggleBtn.classList.contains('active');
+      const sliders = row.querySelectorAll('.effect-slider');
+      
+      if (isActive && sliders.length > 0) {
+        // Get all parameter values for this effect
+        sliders.forEach(slider => {
+          const effectKey = slider.dataset.effectKey;
+          if (effectKey) {
+            effects[effectKey] = parseFloat(slider.value);
+          }
+        });
+      }
+    });
     
     // Store effect values for later use when updating patterns
     if (!this.elementEffects) {
       this.elementEffects = {};
     }
     
-    this.elementEffects[elementId] = {
-      reverb,
-      delay,
-      distortion
-    };
+    this.elementEffects[elementId] = effects;
     
     console.log(`🎛️ Effects updated for ${elementId}:`, this.elementEffects[elementId]);
     
     // Apply effects to the pattern (works for both master and individual playback)
-      await this.applyEffectsAndFiltersToPattern(elementId);
+    await this.applyEffectsAndFiltersToPattern(elementId);
   }
   
   /**
@@ -4251,30 +4746,37 @@ class InteractiveSoundApp {
     const element = document.querySelector(`[data-sound-id="${elementId}"]`);
     if (!element) return;
     
-    // Get filter values
-    const lpfSlider = element.querySelector('.lpf-slider');
-    const hpfSlider = element.querySelector('.hpf-slider');
-    const resonanceSlider = element.querySelector('.resonance-slider');
+    // Get filter values from collapsible rows
+    const filterRows = element.querySelectorAll('.filter-collapsible-row');
+    const filters = {};
     
-    const lpf = lpfSlider ? parseFloat(lpfSlider.value) : 20000;
-    const hpf = hpfSlider ? parseFloat(hpfSlider.value) : 20;
-    const resonance = resonanceSlider ? parseFloat(resonanceSlider.value) : 0;
+    filterRows.forEach(row => {
+      const toggleBtn = row.querySelector('.filter-toggle');
+      const isActive = toggleBtn.classList.contains('active');
+      const sliders = row.querySelectorAll('.filter-slider');
+      
+      if (isActive && sliders.length > 0) {
+        // Get all parameter values for this filter type
+        sliders.forEach(slider => {
+          const paramKey = slider.dataset.paramKey;
+          if (paramKey) {
+            filters[paramKey] = parseFloat(slider.value);
+          }
+        });
+      }
+    });
     
     // Store filter values for later use when updating patterns
     if (!this.elementFilters) {
       this.elementFilters = {};
     }
     
-    this.elementFilters[elementId] = {
-      lpf,
-      hpf,
-      resonance
-    };
+    this.elementFilters[elementId] = filters;
     
     console.log(`🔊 Filters updated for ${elementId}:`, this.elementFilters[elementId]);
     
     // Apply filters to the pattern (works for both master and individual playback)
-      await this.applyEffectsAndFiltersToPattern(elementId);
+    await this.applyEffectsAndFiltersToPattern(elementId);
   }
   
   /**
@@ -4329,25 +4831,43 @@ class InteractiveSoundApp {
     let modifiers = [];
     
     // Add effects
-    if (effects.reverb > 0) {
-      modifiers.push(`.room(${effects.reverb.toFixed(2)})`);
+    if (effects.delaytime !== undefined) {
+      modifiers.push(`.delay(${effects.delaytime.toFixed(2)})`);
     }
-    if (effects.delay > 0) {
-      modifiers.push(`.delay(${effects.delay.toFixed(2)})`);
+    if (effects.delayfeedback !== undefined) {
+      modifiers.push(`.delayfeedback(${effects.delayfeedback.toFixed(2)})`);
     }
-    if (effects.distortion > 0) {
-      modifiers.push(`.distort(${effects.distortion.toFixed(1)})`);
+    if (effects.roomsize !== undefined) {
+      modifiers.push(`.room(${effects.roomsize.toFixed(2)})`);
+    }
+    if (effects.phaserdepth !== undefined) {
+      modifiers.push(`.phaser(${effects.phaserdepth.toFixed(2)})`);
+    }
+    if (effects.tremolodepth !== undefined) {
+      modifiers.push(`.tremolo(${effects.tremolodepth.toFixed(2)})`);
     }
     
     // Add filters
-    if (filters.lpf < 20000) {
+    if (filters.lpf !== undefined && filters.lpf < 20000) {
       modifiers.push(`.lpf(${Math.round(filters.lpf)})`);
     }
-    if (filters.hpf > 20) {
+    if (filters.hpf !== undefined && filters.hpf > 20) {
       modifiers.push(`.hpf(${Math.round(filters.hpf)})`);
     }
-    if (filters.resonance > 0) {
-      modifiers.push(`.resonance(${filters.resonance.toFixed(1)})`);
+    if (filters.bpf !== undefined) {
+      modifiers.push(`.bpf(${Math.round(filters.bpf)})`);
+    }
+    if (filters.lpq !== undefined && filters.lpq > 0) {
+      modifiers.push(`.lpq(${filters.lpq.toFixed(1)})`);
+    }
+    if (filters.hpq !== undefined && filters.hpq > 0) {
+      modifiers.push(`.hpq(${filters.hpq.toFixed(1)})`);
+    }
+    if (filters.bpq !== undefined && filters.bpq > 0) {
+      modifiers.push(`.bpq(${filters.bpq.toFixed(1)})`);
+    }
+    if (filters.bpg !== undefined && filters.bpg !== 0) {
+      modifiers.push(`.bpg(${filters.bpg.toFixed(1)})`);
     }
     
     // Add synthesis (ADSR envelope) - only if values differ from defaults
@@ -4784,6 +5304,208 @@ class InteractiveSoundApp {
   }
 
   /**
+   * Convert numeric pattern (n("0 2 4 5")) to note names (note("c4 e4 g4 a4")) based on key/scale
+   */
+  convertNumericPatternToNoteNames(pattern, key, scale) {
+    if (!pattern || !scale) return pattern;
+    
+    // Map scale names to Tonal.js scale names
+    const SCALE_NAME_TONAL_MAP = {
+      major: 'major',
+      minor: 'minor',
+      harmonicMinor: 'harmonic minor',
+      melodicMinor: 'melodic minor',
+      dorian: 'dorian',
+      phrygian: 'phrygian',
+      lydian: 'lydian',
+      mixolydian: 'mixolydian',
+      locrian: 'locrian',
+      blues: 'blues',
+      pentatonicMajor: 'major pentatonic',
+      pentatonicMinor: 'minor pentatonic'
+    };
+    
+    const tonalScaleName = SCALE_NAME_TONAL_MAP[scale] || scale;
+    
+    // Normalize key root
+    let rootNote = 'C';
+    if (key) {
+      const match = key.trim().match(/^([a-gA-G])([#b]?)/);
+      if (match) {
+        rootNote = `${match[1].toUpperCase()}${match[2] || ''}`;
+      } else {
+        rootNote = key.trim();
+      }
+    }
+    
+    const scaleName = `${rootNote} ${tonalScaleName}`;
+    
+    // Get scale notes using Tonal.js
+    const scaleObj = Scale.get(scaleName);
+    if (!scaleObj || !scaleObj.notes || scaleObj.notes.length === 0) {
+      console.warn(`⚠️ Could not get scale notes for "${scaleName}"`);
+      return pattern;
+    }
+    
+    const scaleNotes = scaleObj.notes;
+    console.log(`🎼 Scale "${scaleName}" notes:`, scaleNotes);
+    
+    // Extract numeric pattern from n("0 2 4 5") or note("0 2 4 5")
+    const numericPatternRegex = /\b(n|note)\s*\(\s*(["'])([^"']+)\2\s*\)/g;
+    
+    return pattern.replace(numericPatternRegex, (match, funcName, quote, content) => {
+      // Split content by spaces and other separators, preserving them
+      const separatorRegex = /(\s+|[,;:<>()[\]{}|\\/]+|\*+)/g;
+      const parts = [];
+      let lastIndex = 0;
+      let sepMatch;
+      
+      // Split while preserving separators
+      while ((sepMatch = separatorRegex.exec(content)) !== null) {
+        if (sepMatch.index > lastIndex) {
+          parts.push({ type: 'number', value: content.substring(lastIndex, sepMatch.index) });
+        }
+        parts.push({ type: 'separator', value: sepMatch[0] });
+        lastIndex = sepMatch.index + sepMatch[0].length;
+      }
+      if (lastIndex < content.length) {
+        parts.push({ type: 'number', value: content.substring(lastIndex) });
+      }
+      
+      const noteNames = [];
+      for (const part of parts) {
+        if (part.type === 'separator') {
+          noteNames.push(part.value);
+        } else {
+          // Try to parse as number (scale degree)
+          const scaleDegree = parseInt(part.value.trim(), 10);
+          if (!isNaN(scaleDegree) && scaleDegree >= 0) {
+            // Map scale degree to note name (0 = root, 1 = second, etc.)
+            const noteIndex = scaleDegree % scaleNotes.length;
+            const octaveOffset = Math.floor(scaleDegree / scaleNotes.length);
+            const noteName = scaleNotes[noteIndex];
+            
+            // Add octave (default to octave 4, adjust based on offset)
+            const baseOctave = 4;
+            const finalOctave = baseOctave + octaveOffset;
+            noteNames.push(`${noteName}${finalOctave}`);
+          } else {
+            // Not a number, preserve as-is
+            noteNames.push(part.value);
+          }
+        }
+      }
+      
+      // Convert back to note() call
+      return `note(${quote}${noteNames.join('')}${quote})`;
+    });
+  }
+
+  /**
+   * Get all scale notes as a pattern string n("0 1 2 3 4 5 6...")
+   */
+  getAllScaleNotesAsPattern(key, scale) {
+    if (!scale) return '';
+    
+    // Map scale names to Tonal.js scale names
+    const SCALE_NAME_TONAL_MAP = {
+      major: 'major',
+      minor: 'minor',
+      harmonicMinor: 'harmonic minor',
+      melodicMinor: 'melodic minor',
+      dorian: 'dorian',
+      phrygian: 'phrygian',
+      lydian: 'lydian',
+      mixolydian: 'mixolydian',
+      locrian: 'locrian',
+      blues: 'blues',
+      pentatonicMajor: 'major pentatonic',
+      pentatonicMinor: 'minor pentatonic'
+    };
+    
+    const tonalScaleName = SCALE_NAME_TONAL_MAP[scale] || scale;
+    
+    // Normalize key root
+    let rootNote = 'C';
+    if (key) {
+      const match = key.trim().match(/^([a-gA-G])([#b]?)/);
+      if (match) {
+        rootNote = `${match[1].toUpperCase()}${match[2] || ''}`;
+      } else {
+        rootNote = key.trim();
+      }
+    }
+    
+    const scaleName = `${rootNote} ${tonalScaleName}`;
+    
+    // Get scale notes using Tonal.js
+    const scaleObj = Scale.get(scaleName);
+    if (!scaleObj || !scaleObj.notes || scaleObj.notes.length === 0) {
+      console.warn(`⚠️ Could not get scale notes for "${scaleName}"`);
+      return '';
+    }
+    
+    const scaleNotes = scaleObj.notes;
+    console.log(`🎼 Scale "${scaleName}" notes:`, scaleNotes);
+    
+    // Create pattern with all scale degrees (0, 1, 2, 3, ... up to scale length)
+    const scaleDegrees = Array.from({ length: scaleNotes.length }, (_, i) => i);
+    return `n("${scaleDegrees.join(' ')}")`;
+  }
+
+  /**
+   * Get all scale notes as note names pattern note("C4 D4 E4 F4 G4 A4 B4")
+   */
+  getAllScaleNotesAsNoteNames(key, scale) {
+    if (!scale) return '';
+    
+    // Map scale names to Tonal.js scale names
+    const SCALE_NAME_TONAL_MAP = {
+      major: 'major',
+      minor: 'minor',
+      harmonicMinor: 'harmonic minor',
+      melodicMinor: 'melodic minor',
+      dorian: 'dorian',
+      phrygian: 'phrygian',
+      lydian: 'lydian',
+      mixolydian: 'mixolydian',
+      locrian: 'locrian',
+      blues: 'blues',
+      pentatonicMajor: 'major pentatonic',
+      pentatonicMinor: 'minor pentatonic'
+    };
+    
+    const tonalScaleName = SCALE_NAME_TONAL_MAP[scale] || scale;
+    
+    // Normalize key root
+    let rootNote = 'C';
+    if (key) {
+      const match = key.trim().match(/^([a-gA-G])([#b]?)/);
+      if (match) {
+        rootNote = `${match[1].toUpperCase()}${match[2] || ''}`;
+      } else {
+        rootNote = key.trim();
+      }
+    }
+    
+    const scaleName = `${rootNote} ${tonalScaleName}`;
+    
+    // Get scale notes using Tonal.js
+    const scaleObj = Scale.get(scaleName);
+    if (!scaleObj || !scaleObj.notes || scaleObj.notes.length === 0) {
+      console.warn(`⚠️ Could not get scale notes for "${scaleName}"`);
+      return '';
+    }
+    
+    const scaleNotes = scaleObj.notes;
+    console.log(`🎼 Scale "${scaleName}" notes:`, scaleNotes);
+    
+    // Create pattern with all scale notes as note names with octave 4
+    const noteNames = scaleNotes.map(note => `${note}4`);
+    return `note("${noteNames.join(' ')}")`;
+  }
+
+  /**
    * Reset all elements and master pattern
    */
   resetAll() {
@@ -4791,6 +5513,29 @@ class InteractiveSoundApp {
     
     // Stop all sounds first
     soundManager.stopAllSounds();
+    
+    // Remove all dynamically created elements (element-5 and above)
+    const allElements = document.querySelectorAll('.sound-element');
+    allElements.forEach(element => {
+      const elementId = element.dataset.soundId;
+      if (elementId) {
+        // Extract element number
+        const elementNumber = parseInt(elementId.replace('element-', ''));
+        
+        // Remove dynamically created elements (element-5 and above)
+        if (elementNumber > 4) {
+          console.log(`🗑️ Removing dynamically created element: ${elementId}`);
+          element.remove();
+        }
+      }
+    });
+    
+    // Reset element counter to initial state
+    this.elementCounter = 4;
+    
+    // Clear ALL localStorage (complete cache clear)
+    console.log('🗑️ Clearing all localStorage...');
+    localStorage.clear();
     
     // Clear master pattern by clearing all tracked patterns
     soundManager.trackedPatterns.clear();
@@ -4801,19 +5546,22 @@ class InteractiveSoundApp {
       this.masterPatternField.placeholder = 'Combined pattern will appear here...';
     }
     
-    // Clear all element configs from localStorage
-    const allElements = document.querySelectorAll('.sound-element');
-    allElements.forEach(element => {
+    // Reset all default elements (element-1 through element-4) to initial state
+    const defaultElements = document.querySelectorAll('.sound-element');
+    defaultElements.forEach(element => {
       const elementId = element.dataset.soundId;
       if (elementId) {
-        // Remove from localStorage
-        localStorage.removeItem(`element-config-${elementId}`);
-        
         // Clear element config in memory
         const elementConfig = soundConfig.getElementConfig(elementId);
         if (elementConfig) {
           elementConfig.pattern = '';
           elementConfig.description = 'No sound assigned';
+          elementConfig.title = '';
+          elementConfig.sampleUrl = '';
+          elementConfig.bank = undefined;
+          elementConfig.key = undefined;
+          elementConfig.scale = undefined;
+          elementConfig.keepNotesAsWritten = false;
         }
         
         // Remove from master
@@ -4823,7 +5571,9 @@ class InteractiveSoundApp {
         const titleEl = element.querySelector('.element-title');
         const configButton = element.querySelector('.config-button');
         if (titleEl) {
-          titleEl.textContent = elementId;
+          // Extract element number from elementId
+          const elementNumber = elementId.replace('element-', '');
+          titleEl.textContent = `Element ${elementNumber}`;
         }
         if (configButton) {
           configButton.textContent = 'Configure Sound';
@@ -4831,8 +5581,6 @@ class InteractiveSoundApp {
         
         // Reset status dots
         this.updateStatusDots(elementId, false, false);
-        
-        // Visualizations removed - no longer needed
         
         // Reset element circle
         const elementCircle = element.querySelector('.element-circle');
@@ -4844,6 +5592,53 @@ class InteractiveSoundApp {
         const masterIndicator = element.querySelector('.master-status-indicator');
         if (masterIndicator) {
           masterIndicator.classList.remove('active');
+        }
+        
+        // Reset sliders to defaults
+        const gainSlider = element.querySelector('.gain-slider');
+        const panSlider = element.querySelector('.pan-slider');
+        if (gainSlider) gainSlider.value = 0.8;
+        if (panSlider) panSlider.value = 0;
+        
+        // Clear effects, filters, and synthesis UI
+        const filterRows = element.querySelectorAll('.filter-collapsible-row');
+        filterRows.forEach(row => {
+          const toggleBtn = row.querySelector('.filter-toggle');
+          const slidersContainer = row.querySelector('.filter-sliders-container');
+          if (toggleBtn) {
+            toggleBtn.classList.remove('active');
+            const icon = toggleBtn.querySelector('.toggle-icon');
+            if (icon) icon.textContent = '▶';
+          }
+          if (slidersContainer) {
+            slidersContainer.style.display = 'none';
+            slidersContainer.innerHTML = '';
+          }
+        });
+        
+        const effectRows = element.querySelectorAll('.effect-collapsible-row');
+        effectRows.forEach(row => {
+          const toggleBtn = row.querySelector('.effect-toggle');
+          const slidersContainer = row.querySelector('.effect-sliders-container');
+          if (toggleBtn) {
+            toggleBtn.classList.remove('active');
+            const icon = toggleBtn.querySelector('.toggle-icon');
+            if (icon) icon.textContent = '▶';
+          }
+          if (slidersContainer) {
+            slidersContainer.style.display = 'none';
+            slidersContainer.innerHTML = '';
+          }
+        });
+        
+        // Reset synthesis section
+        const synthesisSection = element.querySelector('.synthesis-section');
+        if (synthesisSection) {
+          synthesisSection.style.display = 'none';
+          const synthesisContent = synthesisSection.querySelector('.synthesis-content');
+          if (synthesisContent) {
+            synthesisContent.innerHTML = '';
+          }
         }
       }
     });
@@ -4858,13 +5653,38 @@ class InteractiveSoundApp {
     this.elementFilters = {};
     this.elementSynthesis = {};
     
+    // Reset master state
+    this.masterActive = false;
+    this.currentEditingElementId = null;
+    
+    // Reset visualizer
+    this.selectedVisualizer = 'scope';
+    const visualizerSelect = document.getElementById('visualizer-select');
+    if (visualizerSelect) {
+      visualizerSelect.value = 'scope';
+    }
+    
+    // Clear master visualizer canvas
+    if (this.masterPunchcardCanvas) {
+      const ctx = this.masterPunchcardCanvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, this.masterPunchcardCanvas.width, this.masterPunchcardCanvas.height);
+      }
+    }
+    
     // Update UI
     this.updateActiveElementsDisplay();
     this.updateMasterPatternDisplay();
     this.updateMasterIndicators();
-    uiController.updateStatus('🔄 All elements and master pattern reset');
     
-    console.log('✅ Reset complete');
+    // Reload page to reset to initial state completely
+    console.log('🔄 Reloading page to complete reset...');
+    uiController.updateStatus('🔄 All cleared - reloading page...');
+    
+    // Small delay to show the status message, then reload
+    setTimeout(() => {
+      window.location.reload();
+    }, 500);
   }
 
   /**
@@ -5938,11 +6758,13 @@ class InteractiveSoundApp {
         const actualElementId = this.currentEditingElementId;
         if (actualElementId) {
           // Copy gain/pan values from the actual element to preview element
+          // Lower preview volume by -6dB (multiply by 0.501)
           const actualGain = soundManager.elementGainValues.get(actualElementId) || 0.8;
           const actualPan = soundManager.elementPanValues.get(actualElementId) || 0;
-          soundManager.elementGainValues.set(previewElementId, actualGain);
+          const previewGain = actualGain * 0.501; // -6dB reduction
+          soundManager.elementGainValues.set(previewElementId, previewGain);
           soundManager.elementPanValues.set(previewElementId, actualPan);
-          console.log(`🎵 Preview: Using gain=${actualGain}, pan=${actualPan} from element ${actualElementId}`);
+          console.log(`🎵 Preview: Using gain=${previewGain} (${actualGain} * 0.501 for -6dB), pan=${actualPan} from element ${actualElementId}`);
         }
         
         // Ensure bank is loaded before previewing if one is selected
@@ -6034,8 +6856,8 @@ class InteractiveSoundApp {
       const hasNoteCall = patternValue && containsNoteCall(patternValue);
       const isNumericPattern = hasNoteCall && containsNumericNotePattern(patternValue);
       
-      // Show checkbox only if pattern uses note() but is NOT already numeric (semitone) format
-      if (hasNoteCall && !isNumericPattern) {
+      // Show toggle switch if pattern uses n() or note() - show for both numeric and non-numeric patterns
+      if (hasNoteCall) {
         checkboxControl.style.display = 'block';
       } else {
         checkboxControl.style.display = 'none';
@@ -6635,6 +7457,20 @@ class InteractiveSoundApp {
           // Load saved key/scale or use defaults
           modalKeySelect.value = savedConfig?.key || '';
           modalScaleSelect.value = savedConfig?.scale || '';
+          
+          // Apply key/scale immediately if pattern exists and values are set
+          // Use setTimeout to ensure the pattern editor is ready
+          setTimeout(() => {
+            if (patternValue && (savedConfig?.key || savedConfig?.scale)) {
+              // applyKeyScaleToPattern will be defined below, so we'll call it after it's defined
+              // For now, trigger a change event to apply it
+              if (savedConfig?.key) {
+                modalKeySelect.dispatchEvent(new Event('change'));
+              } else if (savedConfig?.scale) {
+                modalScaleSelect.dispatchEvent(new Event('change'));
+              }
+            }
+          }, 100);
         } else {
           keyScaleGroup.style.display = 'none';
         }
@@ -6778,18 +7614,48 @@ class InteractiveSoundApp {
     
     const applyKeyScaleToPattern = () => {
       const patternValue = getStrudelEditorValue('modal-pattern');
-      if (!patternValue || !containsNoteCall(patternValue)) {
-        return;
-      }
-      
-      const keyValue = modalKeySelect ? modalKeySelect.value : '';
-      const scaleValue = modalScaleSelect ? modalScaleSelect.value : '';
+      const keyValue = modalKeySelect ? (modalKeySelect.value || null) : null;
+      const scaleValue = modalScaleSelect ? (modalScaleSelect.value || null) : null;
       
       console.log(`🎼 applyKeyScaleToPattern called: keyValue="${keyValue}", scaleValue="${scaleValue}"`);
       
+      // Apply if at least one value is set (key or scale)
       if (!keyValue && !scaleValue) {
         console.log(`⚠️ No key/scale selected, skipping`);
         return; // No key/scale selected
+      }
+      
+      // When selecting key/scale, always show all available notes in that scale
+      const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+      const useNoteNames = keepNotesCheckbox && keepNotesCheckbox.checked;
+      
+      if (scaleValue) {
+        let allScaleNotesPattern;
+        if (useNoteNames) {
+          allScaleNotesPattern = this.getAllScaleNotesAsNoteNames(keyValue, scaleValue);
+          console.log(`🎼 Showing all ${scaleValue} scale notes as note names: ${allScaleNotesPattern?.substring(0, 100)}...`);
+        } else {
+          allScaleNotesPattern = this.getAllScaleNotesAsPattern(keyValue, scaleValue);
+          console.log(`🎼 Showing all ${scaleValue} scale notes as semitones: ${allScaleNotesPattern?.substring(0, 100)}...`);
+        }
+        
+        if (allScaleNotesPattern) {
+          setStrudelEditorValue('modal-pattern', allScaleNotesPattern);
+          // Apply scale modifier if using semitones
+          if (!useNoteNames) {
+            const patternWithScale = soundManager.applyGlobalSettingsToPattern(allScaleNotesPattern, false, false, keyValue, scaleValue);
+            if (patternWithScale && patternWithScale !== allScaleNotesPattern) {
+              setStrudelEditorValue('modal-pattern', patternWithScale);
+            }
+          }
+          return;
+        }
+      }
+      
+      // Fallback: if no scale selected but pattern has notes, convert them
+      if (!patternValue || !containsNoteCall(patternValue)) {
+        console.log(`⚠️ No pattern or no note call found, skipping key/scale application`);
+        return;
       }
       
       // Use the same detection logic as applyGlobalSettingsToPattern
@@ -6803,18 +7669,65 @@ class InteractiveSoundApp {
       const isNumericPattern = hasNoteFunction && !hasExplicitNotes && !hasChordModifier;
       
       if (!hasChordModifier && isNumericPattern) {
-        // Apply key/scale to pattern
+        // Apply key/scale to pattern immediately
         console.log(`🎼 applyKeyScaleToPattern: keyValue="${keyValue}", scaleValue="${scaleValue}", pattern="${patternValue.substring(0, 50)}..."`);
-        const patternWithScale = soundManager.applyGlobalSettingsToPattern(patternValue, false, false, keyValue || null, scaleValue || null);
+        
+        // Ensure we pass empty string as null for proper handling
+        const keyToPass = keyValue && keyValue.trim() !== '' ? keyValue : null;
+        const scaleToPass = scaleValue && scaleValue.trim() !== '' ? scaleValue : null;
+        
+        // Check if we should use note names or semitones
+        const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+        const useNoteNames = keepNotesCheckbox && keepNotesCheckbox.checked;
+        
+        // Convert pattern to new scale - preserve existing notes, convert them to new scale
+        let convertedPattern = patternValue;
+        if (scaleToPass && (keyToPass || scaleToPass)) {
+          if (useNoteNames) {
+            // Convert existing pattern to note names in the new scale
+            const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(patternValue);
+            const hasNumericNotes = /\b(n|note)\s*\(\s*["'][\d\s]+["']/.test(patternValue);
+            
+            if (hasNumericNotes && !hasNoteNames) {
+              // Convert numeric pattern to note names in the new scale
+              convertedPattern = this.convertNumericPatternToNoteNames(patternValue, keyToPass, scaleToPass);
+              console.log(`🎼 Converted numeric pattern to note names in ${scaleToPass}: ${convertedPattern.substring(0, 100)}...`);
+            } else if (hasNoteNames) {
+              // Pattern already has note names - convert them to the new scale
+              // First convert to numeric (semitone offsets), then back to note names in new scale
+              const numericPattern = soundManager.convertPatternForScale(patternValue);
+              if (numericPattern && numericPattern !== patternValue) {
+                convertedPattern = this.convertNumericPatternToNoteNames(numericPattern, keyToPass, scaleToPass);
+                console.log(`🎼 Converted note names to ${scaleToPass} scale: ${convertedPattern.substring(0, 100)}...`);
+              } else {
+                // If conversion failed, try direct conversion
+                convertedPattern = this.convertNumericPatternToNoteNames(patternValue, keyToPass, scaleToPass);
+              }
+            }
+          } else {
+            // For semitones mode, preserve existing pattern - the .scale() modifier will apply the scale
+            // The numeric pattern stays the same, but .scale() modifier ensures it uses the new scale
+            convertedPattern = patternValue;
+            console.log(`🎼 Preserving semitone pattern - scale modifier will apply ${scaleToPass}`);
+          }
+        }
+        
+        // Only add .scale() modifier if using semitones (not note names)
+        const patternWithScale = useNoteNames 
+          ? convertedPattern  // Don't add scale modifier for note names
+          : soundManager.applyGlobalSettingsToPattern(convertedPattern, false, false, keyToPass, scaleToPass);
         console.log(`🎼 applyKeyScaleToPattern: result="${patternWithScale ? patternWithScale.substring(0, 80) : 'null'}..."`);
-        if (patternWithScale && patternWithScale !== patternValue) {
+        console.log(`🎼 Pattern comparison - original length: ${patternValue.length}, new length: ${patternWithScale ? patternWithScale.length : 0}, same: ${patternWithScale === patternValue}`);
+        
+        if (patternWithScale) {
+          // Always update the editor, even if the pattern appears the same (to ensure scale is updated)
           setStrudelEditorValue('modal-pattern', patternWithScale);
-          console.log(`✅ Applied key/scale to pattern: ${patternWithScale.substring(0, 80)}...`);
+          console.log(`✅ Applied key/scale to pattern immediately: ${patternWithScale.substring(0, 100)}...`);
         } else {
-          console.log(`⚠️ Pattern unchanged - patternWithScale: ${!!patternWithScale}, same: ${patternWithScale === patternValue}`);
+          console.log(`⚠️ Pattern unchanged - applyGlobalSettingsToPattern returned null or undefined`);
         }
       } else {
-        console.log(`⚠️ Cannot apply scale - hasChordModifier: ${hasChordModifier}, isNumericPattern: ${isNumericPattern}`);
+        console.log(`⚠️ Cannot apply scale - hasChordModifier: ${hasChordModifier}, isNumericPattern: ${isNumericPattern}, hasNoteFunction: ${hasNoteFunction}, hasExplicitNotes: ${hasExplicitNotes}`);
       }
     };
     
@@ -6831,6 +7744,98 @@ class InteractiveSoundApp {
       });
       modalScaleSelect.dataset.listenerAttached = 'true';
     }
+    
+    // Function to convert pattern between semitones and note names
+    const convertPatternFormat = (pattern, toNoteNames) => {
+      if (!pattern || !containsNoteCall(pattern)) return pattern;
+      
+      const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(pattern);
+      const hasNumericNotes = /\b(n|note)\s*\(\s*["'][\d\s]+["']/.test(pattern);
+      
+      if (toNoteNames) {
+        // Convert semitones to note names
+        if (hasNumericNotes && !hasNoteNames) {
+          // Get key/scale from modal
+          const modalKeySelect = document.getElementById('modal-key-select');
+          const modalScaleSelect = document.getElementById('modal-scale-select');
+          const keyValue = modalKeySelect ? (modalKeySelect.value || null) : null;
+          const scaleValue = modalScaleSelect ? (modalScaleSelect.value || null) : null;
+          
+          if (keyValue || scaleValue) {
+            // Use key/scale to convert
+            return this.convertNumericPatternToNoteNames(pattern, keyValue, scaleValue || 'major');
+          } else {
+            // No key/scale, use default C major
+            console.log(`⚠️ No key/scale selected, using C major for conversion`);
+            return this.convertNumericPatternToNoteNames(pattern, 'C', 'major');
+          }
+        }
+        // Already in note names or can't convert
+        return pattern;
+      } else {
+        // Convert note names to semitones
+        if (hasNoteNames && !hasNumericNotes) {
+          return soundManager.convertPatternForScale(pattern);
+        }
+        // Already in semitones or can't convert
+        return pattern;
+      }
+    };
+    
+    // Toggle switch - update pattern when switched between Semitones and Note names
+    const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+    if (keepNotesCheckbox && !keepNotesCheckbox.dataset.listenerAttached) {
+      keepNotesCheckbox.addEventListener('change', () => {
+        const patternValue = getStrudelEditorValue('modal-pattern');
+        const useNoteNames = keepNotesCheckbox.checked;
+        
+        // Convert pattern format based on toggle state
+        const convertedPattern = convertPatternFormat(patternValue, useNoteNames);
+        if (convertedPattern !== patternValue) {
+          setStrudelEditorValue('modal-pattern', convertedPattern);
+          console.log(`🔄 Converted pattern ${useNoteNames ? 'to note names' : 'to semitones'}: ${convertedPattern.substring(0, 100)}...`);
+        }
+        
+        // Update key/scale visibility based on toggle state
+        updateKeyScaleVisibility();
+        // When toggle changes, reapply scale to update pattern format (if semitones mode)
+        if (!useNoteNames) {
+          applyKeyScaleToPattern();
+        }
+      });
+      keepNotesCheckbox.dataset.listenerAttached = 'true';
+    }
+    
+    // Function to update key/scale visibility based on toggle state
+    const updateKeyScaleVisibility = () => {
+      const keyScaleGroup = document.getElementById('modal-key-scale-group');
+      if (!keyScaleGroup) return;
+      
+      const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+      const useNoteNames = keepNotesCheckbox && keepNotesCheckbox.checked;
+      const patternValue = getStrudelEditorValue('modal-pattern');
+      const hasNotePattern = patternValue && containsNoteCall(patternValue);
+      
+      // Show key/scale only if pattern has notes AND semitones mode is selected (not note names)
+      if (hasNotePattern && !useNoteNames) {
+        keyScaleGroup.style.display = 'block';
+      } else {
+        keyScaleGroup.style.display = 'none';
+      }
+    };
+    
+    // Apply key/scale immediately when modal opens if pattern and values exist
+    // This ensures the pattern is updated right away when the modal opens
+    setTimeout(() => {
+      const patternValue = getStrudelEditorValue('modal-pattern');
+      const keyValue = modalKeySelect ? (modalKeySelect.value || null) : null;
+      const scaleValue = modalScaleSelect ? (modalScaleSelect.value || null) : null;
+      
+      if (patternValue && containsNoteCall(patternValue) && (keyValue || scaleValue)) {
+        console.log(`🎼 Applying initial key/scale on modal open: key="${keyValue}", scale="${scaleValue}"`);
+        applyKeyScaleToPattern();
+      }
+    }, 200);
     
     // Bank dropdown - load bank when changed
     if (bankSelect && !bankSelect.dataset.listenerAttached) {
@@ -6852,22 +7857,11 @@ class InteractiveSoundApp {
           }
           // Time Signature visibility is handled by applyPatternEditorState()
           
-          // Show/hide Key/Scale controls based on bank selection
-          const keyScaleGroup = document.getElementById('modal-key-scale-group');
-          if (keyScaleGroup) {
-            const isSampleSynth = SAMPLE_SYNTHS.includes(bankValue.toLowerCase());
-            const patternValue = getStrudelEditorValue('modal-pattern');
-            const hasNotePattern = patternValue && containsNoteCall(patternValue);
-            keyScaleGroup.style.display = (hasNotePattern || isSampleSynth) ? 'block' : 'none';
-          }
+          // Show/hide Key/Scale controls based on bank selection and toggle state
+          updateKeyScaleVisibility();
         } else {
-          // Hide Key/Scale if no bank selected and pattern doesn't use note()
-          const keyScaleGroup = document.getElementById('modal-key-scale-group');
-          if (keyScaleGroup) {
-            const patternValue = getStrudelEditorValue('modal-pattern');
-            const hasNotePattern = patternValue && containsNoteCall(patternValue);
-            keyScaleGroup.style.display = hasNotePattern ? 'block' : 'none';
-          }
+          // Hide Key/Scale if no bank selected or toggle state requires it
+          updateKeyScaleVisibility();
         }
         
         if (!elementId) {
@@ -7403,43 +8397,11 @@ class InteractiveSoundApp {
           console.log(`📦 Pre-evaluated pattern for ${elementId}`);
         }
         
-        // Always restart sound if element is currently playing, using updated pattern
-        if (this.activeElements.has(elementId) && patternTextarea) {
-          console.log(`🔄 Restarting sound for ${elementId} with new bank...`);
+        // Do not auto-play when bank is selected - user can manually preview if needed
+        // Stop any currently playing sound but don't restart
+        if (this.activeElements.has(elementId)) {
+          console.log(`🛑 Stopping sound for ${elementId} (bank changed, not auto-playing)`);
           soundManager.stopSound(elementId);
-          
-          // Get the final pattern from the textarea (convert display to Strudel format)
-          const displayPattern = patternTextarea.value.trim();
-          let updatedPattern = drumDisplayToPattern(displayPattern);
-          
-          // Convert notes to semitones only if checkbox is NOT checked
-          const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
-          const shouldKeepNotes = keepNotesCheckbox && keepNotesCheckbox.checked;
-          
-          if (updatedPattern && containsNoteCall(updatedPattern) && !containsNumericNotePattern(updatedPattern) && !shouldKeepNotes) {
-            const convertedPattern = soundManager.convertPatternForScale(updatedPattern);
-            if (convertedPattern && convertedPattern !== updatedPattern) {
-              updatedPattern = convertedPattern;
-              setStrudelEditorValue('modal-pattern', convertedPattern);
-            }
-          }
-          
-          // Small delay to ensure stop completes and old pattern evaluations finish
-          setTimeout(async () => {
-            try {
-              if (updatedPattern) {
-                console.log(`🎵 Playing updated pattern: ${updatedPattern.substring(0, 60)}...`);
-                await soundManager.playStrudelPattern(elementId, updatedPattern);
-                console.log(`✅ Restarted sound with new bank`);
-              } else {
-                // Fallback to triggerSound if no pattern in textarea
-                console.log(`⚠️ No pattern to play, using saved config`);
-                await soundManager.triggerSound(elementId);
-              }
-            } catch (err) {
-              console.error(`Error restarting sound for ${elementId}:`, err);
-            }
-          }, 300); // Increased delay to ensure old pattern stops completely
         }
 
         // When switching to a drum bank, disable pattern editor to show drum grid
@@ -7501,26 +8463,55 @@ class InteractiveSoundApp {
           pattern = drumDisplayToPattern(displayPattern);
         }
 
-        // Convert notes to semitones only if checkbox is NOT checked
+        // Respect toggle state: if "Note names" is selected, keep note names; if "Semitones" is selected, convert to semitones
         const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
-        const shouldKeepNotes = keepNotesCheckbox ? keepNotesCheckbox.checked : false;
+        const useNoteNames = keepNotesCheckbox ? keepNotesCheckbox.checked : false;
         
-        if (pattern && containsNoteCall(pattern) && !containsNumericNotePattern(pattern) && !shouldKeepNotes) {
-          const convertedPattern = soundManager.convertPatternForScale(pattern);
-          if (convertedPattern && convertedPattern !== pattern) {
-            pattern = convertedPattern;
-            setStrudelEditorValue('modal-pattern', convertedPattern);
+        // Convert pattern format based on toggle state
+        if (pattern && containsNoteCall(pattern)) {
+          const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(pattern);
+          const hasNumericNotes = /\b(n|note)\s*\(\s*["'][\d\s]+["']/.test(pattern);
+          
+          if (useNoteNames) {
+            // "Note names" selected: convert semitones to note names if needed
+            if (hasNumericNotes && !hasNoteNames) {
+              const modalKeySelect = document.getElementById('modal-key-select');
+              const modalScaleSelect = document.getElementById('modal-scale-select');
+              const keyValue = modalKeySelect ? (modalKeySelect.value || null) : null;
+              const scaleValue = modalScaleSelect ? (modalScaleSelect.value || null) : null;
+              
+              if (keyValue || scaleValue) {
+                const convertedPattern = this.convertNumericPatternToNoteNames(pattern, keyValue, scaleValue || 'major');
+                if (convertedPattern && convertedPattern !== pattern) {
+                  pattern = convertedPattern;
+                  setStrudelEditorValue('modal-pattern', convertedPattern);
+                }
+              }
+            }
+            // If already in note names, keep as-is
+          } else {
+            // "Semitones" selected: convert note names to semitones if needed
+            if (hasNoteNames && !hasNumericNotes) {
+              const convertedPattern = soundManager.convertPatternForScale(pattern);
+              if (convertedPattern && convertedPattern !== pattern) {
+                pattern = convertedPattern;
+                setStrudelEditorValue('modal-pattern', convertedPattern);
+              }
+            }
+            // If already in semitones, keep as-is
           }
         }
         
         // Save checkbox state
-        const keepNotesAsWritten = keepNotesCheckbox ? keepNotesCheckbox.checked : false;
+        const keepNotesAsWritten = useNoteNames;
         
-        // Get key/scale from modal (only for note patterns)
+        // Get key/scale from modal (always read, even if empty)
         const modalKeySelect = document.getElementById('modal-key-select');
         const modalScaleSelect = document.getElementById('modal-scale-select');
-        const elementKey = (modalKeySelect && containsNoteCall(pattern)) ? modalKeySelect.value : undefined;
-        const elementScale = (modalScaleSelect && containsNoteCall(pattern)) ? modalScaleSelect.value : undefined;
+        const elementKey = modalKeySelect ? (modalKeySelect.value || null) : null;
+        const elementScale = modalScaleSelect ? (modalScaleSelect.value || null) : null;
+        
+        console.log(`🎼 Modal save: Reading key/scale from dropdowns - elementKey="${elementKey}", elementScale="${elementScale}", modalKeySelect.value="${modalKeySelect?.value}", modalScaleSelect.value="${modalScaleSelect?.value}"`);
         
         // Apply key/scale to pattern if set in modal (only for numeric note patterns without chord modifiers)
         if (pattern && containsNoteCall(pattern) && (elementKey || elementScale)) {
@@ -7551,6 +8542,8 @@ class InteractiveSoundApp {
           } else {
             console.log(`⚠️ Scale not applied - hasChordModifier=${hasChordModifier}, isNumericPattern=${isNumericPattern}`);
           }
+        } else {
+          console.log(`⚠️ Key/Scale not applied - pattern: ${!!pattern}, hasNoteCall: ${pattern ? containsNoteCall(pattern) : false}, elementKey: ${elementKey}, elementScale: ${elementScale}`);
         }
         
         const sampleUrl = document.getElementById('modal-sample-url').value.trim();

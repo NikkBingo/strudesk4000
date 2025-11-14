@@ -2941,6 +2941,46 @@ class SoundManager {
       }
       console.log('✅ REPL initialized - functions available via globalThis');
       
+      // Load @strudel/draw functions (spiral, pitchwheel, etc.) into REPL context
+      // This is needed because @strudel/web doesn't export @strudel/draw
+      try {
+        let drawModule = null;
+        try {
+          // Try local import first (Vite will resolve dependencies properly)
+          drawModule = await import('@strudel/draw');
+          console.log('✅ Draw module imported from local packages');
+        } catch (localError) {
+          // Fallback to CDN if local import fails
+          drawModule = await import('https://unpkg.com/@strudel/draw@1.2.4/dist/index.mjs');
+          console.log('✅ Draw module imported from CDN');
+        }
+        
+        if (drawModule && replInstance && replInstance.evaluate) {
+          // Import @strudel/draw in REPL context - this will add spiral, pitchwheel, etc. to Pattern.prototype
+          // Use CDN URL since REPL can't resolve module specifiers
+          const importPath = 'https://unpkg.com/@strudel/draw@1.2.4/dist/index.mjs';
+          try {
+            await replInstance.evaluate(`
+              (async function() {
+                // Import the draw module - this automatically adds methods to Pattern.prototype
+                const draw = await import('${importPath}')
+                // Export getDrawContext for use in visualizers
+                if (draw.getDrawContext) {
+                  globalThis.getDrawContext = draw.getDrawContext
+                }
+              })()
+            `);
+            // Wait a bit for async import to complete
+            await new Promise(resolve => setTimeout(resolve, 300));
+            console.log('✅ Draw functions (spiral, pitchwheel) loaded into REPL context');
+          } catch (replError) {
+            console.warn('⚠️ Could not load @strudel/draw in REPL context:', replError);
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not load @strudel/draw functions:', error);
+      }
+      
       // Store REPL instance
       this.strudelRepl = replInstance;
       
@@ -3164,7 +3204,8 @@ class SoundManager {
           try {
             // Try to make core functions available via evaluation
             // Use local import if possible, otherwise CDN
-            const importPath = '@strudel/core'; // Vite will resolve this
+            // Use CDN URL since REPL can't resolve module specifiers
+            const importPath = 'https://unpkg.com/@strudel/core@1.2.5/dist/index.mjs';
             // Use simpler syntax without semicolons to avoid REPL parsing issues
             await replInstance.evaluate(`
               (async function() {
@@ -3178,6 +3219,52 @@ class SoundManager {
           } catch (error) {
             console.warn('Could not load core functions via evaluation:', error);
           }
+        }
+        
+        // Load @strudel/draw functions (spiral, pitchwheel, etc.) into REPL context
+        // This is needed because @strudel/web doesn't export @strudel/draw
+        try {
+          let drawModule = null;
+          try {
+            // Try local import first (Vite will resolve dependencies properly)
+            drawModule = await import('@strudel/draw');
+            console.log('✅ Draw module imported from local packages');
+          } catch (localError) {
+            // Fallback to CDN if local import fails
+            drawModule = await import('https://unpkg.com/@strudel/draw@1.2.4/dist/index.mjs');
+            console.log('✅ Draw module imported from CDN');
+          }
+          
+          if (drawModule) {
+            // Import @strudel/draw in REPL context - this will add spiral, pitchwheel, etc. to Pattern.prototype
+            // Use CDN URL since REPL can't resolve module specifiers
+            const importPath = 'https://unpkg.com/@strudel/draw@1.2.4/dist/index.mjs';
+            await replInstance.evaluate(`
+              (async function() {
+                // Import the draw module - this automatically adds methods to Pattern.prototype
+                await import('${importPath}')
+                // Also export getDrawContext for use in visualizers
+                const draw = await import('${importPath}')
+                if (draw.getDrawContext) {
+                  const originalGetDrawContext = draw.getDrawContext;
+                  // Patch getDrawContext to use our canvas when available
+                  globalThis.getDrawContext = function(id, options) {
+                    // If no ID or default ID, try to use our canvas context
+                    if ((!id || id === 'test-canvas') && window.__strudelVisualizerCtx) {
+                      return window.__strudelVisualizerCtx;
+                    }
+                    // Otherwise use original function
+                    return originalGetDrawContext(id, options);
+                  };
+                }
+              })()
+            `);
+            // Wait a bit for async import to complete
+            await new Promise(resolve => setTimeout(resolve, 300));
+            console.log('✅ Draw functions (spiral, pitchwheel) loaded into REPL context');
+          }
+        } catch (error) {
+          console.warn('⚠️ Could not load @strudel/draw functions:', error);
         }
         
         window.strudel = {
@@ -5232,7 +5319,16 @@ class SoundManager {
       
       // Normalize quotes in pattern before storing
       const normalizedPattern = (pattern || '').replace(/[""]/g, '"').replace(/['']/g, "'");
-      const preparedPattern = this.convertPatternForScale(normalizedPattern);
+      
+      // Check if pattern is in note names format (e.g., note("C4 E4 G4"))
+      const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(normalizedPattern);
+      const hasNumericNotes = /\b(n|note)\s*\(\s*["'][\d\s]+["']/.test(normalizedPattern);
+      
+      // Only convert to semitones if pattern uses note names but not numeric notes
+      // If pattern is already in note names, keep it as note names
+      const preparedPattern = (hasNoteNames && !hasNumericNotes) 
+        ? normalizedPattern  // Keep note names as-is
+        : this.convertPatternForScale(normalizedPattern);  // Convert note names to semitones if needed
       
       this.trackedPatterns.set(elementId, {
         rawPattern: normalizedPattern,
@@ -5588,18 +5684,111 @@ class SoundManager {
     }
     
     try {
-      // Create/get analyser with appropriate FFT size for visualizers
-      // Larger FFT size = better frequency resolution for spectrum
-      const analyser = getAnalyserById(analyserId, 2048, 0.8);
+      // Create analyser in OUR audio context to avoid context mismatch
+      // Strudel's getAnalyserById might create analyser in a different context
+      let analyser = null;
+      
+      // First, try to get existing analyser from Strudel
+      try {
+        analyser = getAnalyserById(analyserId, 2048, 0.8);
+        
+        // Check if analyser is in the same audio context
+        if (analyser && analyser.context !== this.audioContext) {
+          console.warn(`⚠️ Analyser from getAnalyserById is in different audio context, creating new one`);
+          analyser = null;
+        }
+      } catch (e) {
+        console.warn(`⚠️ Could not get analyser from getAnalyserById:`, e.message);
+      }
+      
+      // If we don't have an analyser or it's in wrong context, create one ourselves
+      if (!analyser) {
+        analyser = this.audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.8;
+        
+        // Store it so Strudel can find it by ID
+        // Patch getAnalyserById to return our analyser for this ID
+        const originalGetAnalyserById = getAnalyserById;
+        const ourAnalyser = analyser;
+        
+        // Also try to store it in Strudel's internal analyser registry if it exists
+        if (window.strudel) {
+          // Check if Strudel has an analyser registry/map
+          if (window.strudel.analysers && typeof window.strudel.analysers === 'object') {
+            window.strudel.analysers[analyserId] = analyser;
+            console.log(`✅ Stored analyser "${analyserId}" in Strudel's analyser registry`);
+          }
+          
+          // Replace getAnalyserById with a patched version that returns our analyser
+          window.strudel.getAnalyserById = function(id, fftSize, smoothing) {
+            if (id === analyserId) {
+              return ourAnalyser;
+            }
+            return originalGetAnalyserById(id, fftSize, smoothing);
+          };
+        }
+        if (globalThis.getAnalyserById) {
+          globalThis.getAnalyserById = function(id, fftSize, smoothing) {
+            if (id === analyserId) {
+              return ourAnalyser;
+            }
+            return originalGetAnalyserById(id, fftSize, smoothing);
+          };
+        }
+        
+        // Also store in globalThis for direct access
+        if (!globalThis.analysers) {
+          globalThis.analysers = {};
+        }
+        globalThis.analysers[analyserId] = analyser;
+        
+        console.log(`✅ Created analyser "${analyserId}" in our audio context and patched getAnalyserById`);
+      }
+      
+      // Store analyser reference so we can verify it later
+      this.visualizerAnalyser = analyser;
       
       // Connect analyser to master gain node (after all processing)
       // This allows the analyser to tap the final audio signal
       if (this.masterGainNode && analyser) {
         try {
+          // Disconnect if already connected to avoid errors
+          try {
+            this.masterGainNode.disconnect(analyser);
+          } catch (e) {
+            // Ignore if not connected
+          }
+          
           // Connect analyser in parallel to master gain node
           // masterGainNode can have multiple outputs, so this won't interfere with destination connection
           this.masterGainNode.connect(analyser);
           console.log(`✅ Connected visualizer analyser "${analyserId}" to master gain node`);
+          
+          // Verify the connection worked
+          const connections = this.masterGainNode.numberOfOutputs;
+          console.log(`🔍 Master gain node has ${connections} output(s)`);
+          
+          // Verify analyser is receiving data (check after a short delay to allow audio to flow)
+          setTimeout(() => {
+            try {
+              const dataArray = new Uint8Array(analyser.frequencyBinCount);
+              analyser.getByteFrequencyData(dataArray);
+              const hasData = dataArray.some(val => val > 0);
+              const maxValue = Math.max(...dataArray);
+              console.log(`🔍 Analyser data check: hasData=${hasData}, maxValue=${maxValue}, frequencyBinCount=${analyser.frequencyBinCount}`);
+              
+              // Also check if canvas exists and is accessible
+              const canvas = document.getElementById(analyserId);
+              if (canvas) {
+                console.log(`🔍 Canvas check: found canvas with ID "${analyserId}", width=${canvas.width}, height=${canvas.height}`);
+              } else {
+                console.warn(`⚠️ Canvas with ID "${analyserId}" not found!`);
+              }
+            } catch (e) {
+              console.warn(`⚠️ Could not check analyser data:`, e);
+            }
+          }, 500);
         } catch (connectError) {
           // Check if it's already connected
           if (connectError.message && connectError.message.includes('already connected')) {
@@ -5624,18 +5813,38 @@ class SoundManager {
     const canvasId = 'master-punchcard-canvas';
     const analyserId = canvasId;
     const ctxExpression = "window.__strudelVisualizerCtx || (document.getElementById('master-punchcard-canvas') && document.getElementById('master-punchcard-canvas').getContext && document.getElementById('master-punchcard-canvas').getContext('2d'))";
-    const canonicalPrefixes = ['spectrum', 'scope', 'tscope', 'fscope', 'visual', 'spiral', 'pianoroll', 'barchart'];
+    const canonicalPrefixes = ['spectrum', 'scope', 'tscope', 'fscope', 'visual', 'pianoroll', 'barchart'];
     let result = pattern;
     const canonicalRegex = new RegExp(`\\.\\s*_(${canonicalPrefixes.join('|')})\\s*\\(`, 'gi');
     result = result.replace(canonicalRegex, (match, name) => match.replace(`_${name}`, name));
 
+    // Visualizers that support id parameter (scope, spectrum only use id, not ctx)
+    const visualizersWithIdOnly = ['spectrum', 'scope', 'tscope', 'fscope'];
     // Visualizers that support id/ctx parameters
-    // Note: pianoroll might support 'id' parameter even though docs don't mention it
-    // We'll include it but only inject id/ctx if they're missing (not force-add)
-    const visualizersWithId = ['spectrum', 'scope', 'tscope', 'fscope', 'visual', 'spiral', 'barchart', 'pianoroll'];
+    const visualizersWithIdAndCtx = ['visual', 'barchart', 'pianoroll'];
 
-    // Process visualizers that support id/ctx
-    visualizersWithId.forEach((fn) => {
+    // Process visualizers that only support id (scope, spectrum)
+    visualizersWithIdOnly.forEach((fn) => {
+      const escaped = fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const emptyCallRegex = new RegExp(`\\.\\s*_?${escaped}\\s*\\(\\s*\\)`, 'gi');
+      result = result.replace(emptyCallRegex, (match) => {
+        return match.replace(/\(\s*\)/, `({ id: '${analyserId}' })`);
+      });
+
+      const objectCallRegex = new RegExp(`\\.\\s*_?${escaped}\\s*\\(\\s*\\{([^}]*)\\}\\s*\\)`, 'gi');
+      result = result.replace(objectCallRegex, (match, body) => {
+        let modifiedBody = body.trim();
+        const hasId = /(^|,)\s*id\s*:/.test(modifiedBody);
+
+        if (!hasId) {
+          modifiedBody = modifiedBody.length > 0 ? `${modifiedBody}, id: '${analyserId}'` : `id: '${analyserId}'`;
+        }
+        return match.replace(body, modifiedBody);
+      });
+    });
+
+    // Process visualizers that support id/ctx parameters
+    visualizersWithIdAndCtx.forEach((fn) => {
       const escaped = fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const emptyCallRegex = new RegExp(`\\.\\s*_?${escaped}\\s*\\(\\s*\\)`, 'gi');
       result = result.replace(emptyCallRegex, (match) => {
@@ -5716,8 +5925,12 @@ class SoundManager {
           return { success: false, error: 'Master pattern is empty' };
         }
         
+        console.log(`🎼 Master pattern before processing:`, patternToEval.substring(0, 200));
+        
         patternToEval = replaceSynthAliasesInPattern(patternToEval);
         patternToEval = this.applyVisualizerTargetsToPattern(patternToEval);
+        
+        console.log(`🎼 Master pattern after visualizer injection:`, patternToEval.substring(0, 200));
 
         // Ensure any referenced banks are loaded before evaluating
         const bankMatchesForMaster = patternToEval.match(/\.bank\(["']([^"']+)["']\)/g);

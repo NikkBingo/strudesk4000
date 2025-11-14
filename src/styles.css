@@ -706,6 +706,8 @@ header h1 {
   background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
   border: 2px solid rgba(102, 126, 234, 0.25);
   box-shadow: 0 10px 24px rgba(102, 126, 234, 0.18);
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .master-visualizer-header {
@@ -757,10 +759,12 @@ header h1 {
 .punchcard-grid {
   position: relative;
   min-height: 220px;
+  height: 400px;
   border-radius: 12px;
   border: 1px solid rgba(102, 126, 234, 0.25);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .punchcard-grid canvas {
@@ -769,6 +773,7 @@ header h1 {
   display: block;
   border-radius: inherit;
   background: rgba(255, 255, 255, 0.9);
+  object-fit: contain;
 }
 
 .punchcard-placeholder {
@@ -2621,6 +2626,169 @@ header h1 {
   transform: rotate(90deg);
 }
 
+/* Filter and Effect Toggle Buttons - Full Width with Tag Colors */
+.filter-toggle,
+.effect-toggle {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  background: rgba(102, 126, 234, 0.1);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  color: #4c51bf;
+  margin-bottom: 4px;
+}
+
+.filter-toggle:hover,
+.effect-toggle:hover {
+  background: rgba(102, 126, 234, 0.2);
+  border-color: rgba(102, 126, 234, 0.5);
+}
+
+.filter-toggle.active,
+.effect-toggle.active {
+  background: rgba(102, 126, 234, 0.3);
+  border-color: rgba(102, 126, 234, 0.6);
+}
+
+/* Filter Colors */
+.filter-toggle.snippet-group-filters-hp {
+  border-color: rgba(94, 206, 255, 0.5);
+  background: rgba(178, 229, 255, 0.28);
+  color: #136189;
+}
+
+.filter-toggle.snippet-group-filters-hp:hover {
+  background: rgba(178, 229, 255, 0.4);
+  border-color: rgba(94, 206, 255, 0.7);
+}
+
+.filter-toggle.snippet-group-filters-hp.active {
+  background: rgba(178, 229, 255, 0.5);
+  border-color: rgba(94, 206, 255, 0.8);
+}
+
+.filter-toggle.snippet-group-filters-lp {
+  border-color: rgba(183, 139, 88, 0.5);
+  background: rgba(223, 190, 146, 0.32);
+  color: #5b3200;
+}
+
+.filter-toggle.snippet-group-filters-lp:hover {
+  background: rgba(223, 190, 146, 0.45);
+  border-color: rgba(183, 139, 88, 0.7);
+}
+
+.filter-toggle.snippet-group-filters-lp.active {
+  background: rgba(223, 190, 146, 0.55);
+  border-color: rgba(183, 139, 88, 0.8);
+}
+
+.filter-toggle.snippet-group-filters-bp {
+  border-color: rgba(122, 189, 198, 0.5);
+  background: rgba(188, 224, 228, 0.32);
+  color: #1f4f56;
+}
+
+.filter-toggle.snippet-group-filters-bp:hover {
+  background: rgba(188, 224, 228, 0.45);
+  border-color: rgba(122, 189, 198, 0.7);
+}
+
+.filter-toggle.snippet-group-filters-bp.active {
+  background: rgba(188, 224, 228, 0.55);
+  border-color: rgba(122, 189, 198, 0.8);
+}
+
+/* Effect Colors */
+.effect-toggle.snippet-group-delay {
+  border-color: rgba(80, 150, 255, 0.45);
+  background: rgba(158, 198, 255, 0.28);
+  color: #1a4c9b;
+}
+
+.effect-toggle.snippet-group-delay:hover {
+  background: rgba(158, 198, 255, 0.4);
+  border-color: rgba(80, 150, 255, 0.65);
+}
+
+.effect-toggle.snippet-group-delay.active {
+  background: rgba(158, 198, 255, 0.5);
+  border-color: rgba(80, 150, 255, 0.8);
+}
+
+.effect-toggle.snippet-group-reverb {
+  border-color: rgba(52, 109, 204, 0.5);
+  background: rgba(115, 163, 255, 0.28);
+  color: #15326e;
+}
+
+.effect-toggle.snippet-group-reverb:hover {
+  background: rgba(115, 163, 255, 0.4);
+  border-color: rgba(52, 109, 204, 0.7);
+}
+
+.effect-toggle.snippet-group-reverb.active {
+  background: rgba(115, 163, 255, 0.5);
+  border-color: rgba(52, 109, 204, 0.8);
+}
+
+.effect-toggle.snippet-group-phaser {
+  border-color: rgba(38, 122, 82, 0.5);
+  background: rgba(102, 191, 142, 0.26);
+  color: #0f3f2a;
+}
+
+.effect-toggle.snippet-group-phaser:hover {
+  background: rgba(102, 191, 142, 0.4);
+  border-color: rgba(38, 122, 82, 0.7);
+}
+
+.effect-toggle.snippet-group-phaser.active {
+  background: rgba(102, 191, 142, 0.5);
+  border-color: rgba(38, 122, 82, 0.8);
+}
+
+.effect-toggle.snippet-group-amplitude-modulation {
+  border-color: rgba(165, 123, 255, 0.45);
+  background: rgba(208, 184, 255, 0.28);
+  color: #47288d;
+}
+
+.effect-toggle.snippet-group-amplitude-modulation:hover {
+  background: rgba(208, 184, 255, 0.4);
+  border-color: rgba(165, 123, 255, 0.65);
+}
+
+.effect-toggle.snippet-group-amplitude-modulation.active {
+  background: rgba(208, 184, 255, 0.5);
+  border-color: rgba(165, 123, 255, 0.8);
+}
+
+/* Collapsible Row Containers */
+.filter-collapsible-row,
+.effect-collapsible-row {
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+/* Synthesis Sliders - Same style as filters/effects */
+.synthesis-sliders-container {
+  width: 100%;
+  padding: 0;
+}
+
+.slider-value {
+  white-space: nowrap;
+}
+
 .collapsible-content {
   max-height: 0;
   overflow: hidden;
@@ -2631,16 +2799,78 @@ header h1 {
   border-radius: 0 0 4px 4px;
 }
 
+.effects-content {
+  margin-bottom: 8px;
+}
+
+/* Toggle Switch for Note Names / Semitones */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: 0.3s;
+  border-radius: 24px;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background-color: #667eea;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(26px);
+}
+
+.toggle-switch:hover .toggle-slider {
+  background-color: #bbb;
+}
+
+.toggle-switch input:checked:hover + .toggle-slider {
+  background-color: #5568d3;
+}
+
 .collapsible-content.active {
   max-height: 200px;
   overflow-y: auto;
 }
 
+/* Ensure sound elements don't affect visualizer layout */
+.sound-element {
+  contain: layout style;
+}
+
 .slider-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   padding: 8px 8px 8px 4px;
   border-bottom: 1px solid #eee;
 }
@@ -2649,12 +2879,26 @@ header h1 {
   border-bottom: none;
 }
 
+.slider-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
 .slider-row label {
-  flex: 0 0 48px;
+  flex: 0 0 auto;
   font-size: 9px;
   font-weight: 500;
   color: #555;
   text-align: left;
+}
+
+.slider-row .slider-value {
+  flex: 0 0 auto;
+  font-size: 9px;
+  color: #666;
+  text-align: right;
 }
 
 .slider-row input[type="range"] {
