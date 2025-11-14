@@ -634,15 +634,26 @@ class SoundManager {
         const ourContext = this.audioContext;
         
         // Replace constructor with a function that returns our context
-        window.AudioContext = function() {
+        // Preserve prototype chain for proper inheritance
+        const HijackedAudioContext = function() {
           console.log('🎚️ AudioContext constructor hijacked - returning our shared context');
           return ourContext;
         };
         
+        // Copy prototype from original AudioContext to maintain compatibility
+        HijackedAudioContext.prototype = OriginalAudioContext.prototype;
+        HijackedAudioContext.__proto__ = OriginalAudioContext;
+        
+        // Replace the constructor
+        window.AudioContext = HijackedAudioContext;
+        
         // Also handle webkitAudioContext for Safari
         if (window.webkitAudioContext) {
-          window.webkitAudioContext = window.AudioContext;
+          window.webkitAudioContext = HijackedAudioContext;
         }
+        
+        // Store reference for debugging
+        window.__hijackedAudioContext = ourContext;
         
         // Mark our context so we can identify it
         this.audioContext.__masterPanNode = true; // Marker for debugging
@@ -788,14 +799,30 @@ class SoundManager {
                       console.error(`⚠️ Could not tap signal to analyser for ${elementId}:`, e);
                     }
                   } else {
-                    // Only log context mismatch once per session
+                    // AudioContext mismatch - Strudel node is in different context than our analyser
+                    // This happens when Strudel creates nodes before our hijack, or uses cached context
+                    // Solution: Route through our element gain node which IS in the correct context
                     if (!soundManagerInstance._contextMismatchLogged) {
-                      console.warn(`⚠️ AudioContext mismatch! Strudel is using a different AudioContext`);
+                      console.warn(`⚠️ AudioContext mismatch detected for ${elementId}`);
                       console.warn(`  Strudel node context:`, nodeContext);
                       console.warn(`  Our analyser context:`, analyserContext);
-                      console.warn(`  Sound manager context:`, soundManagerInstance.audioContext);
-                      console.warn(`  This means VU meters cannot work with current architecture.`);
+                      console.warn(`  Attempting to route through element gain node instead...`);
                       soundManagerInstance._contextMismatchLogged = true;
+                    }
+                    
+                    // Try to route through element gain node instead
+                    // The element gain node is in our context, so it can connect to the analyser
+                    const elementNodes = soundManagerInstance.getElementAudioNodes(elementId);
+                    if (elementNodes && elementNodes.gainNode && elementNodes.gainNode.context === analyserContext) {
+                      // Route Strudel node -> element gain node (which is in correct context)
+                      // This allows audio to flow: Strudel node -> elementGain -> elementPan -> analyser -> master
+                      try {
+                        this.__originalConnect.call(this, elementNodes.gainNode, outputIndex, inputIndex);
+                        console.log(`✅ Routed ${elementId} audio through element gain node (context fix)`);
+                        return; // Don't connect to original destination
+                      } catch (e) {
+                        console.error(`⚠️ Could not route through element gain node:`, e);
+                      }
                     }
                   }
                   // Continue with original connection
@@ -812,26 +839,77 @@ class SoundManager {
 
             // If connecting to the master destination, check for element routing first
             if (isMasterDestination) {
-              // Only log on first intercept per session
-              if (!soundManagerInstance._masterInterceptLogged) {
-                console.log(`🎚️ GLOBAL INTERCEPT: ${this.constructor.name} connecting to master destination`);
-                soundManagerInstance._masterInterceptLogged = true;
-              }
-
-              // Check if we have a current evaluating slot for element routing
+              // Check if this is a visualizer analyser (created by Strudel's .scope()/.spectrum())
+              // Visualizer analysers are created by Strudel and connect to the destination
+              // We need to intercept the audio SOURCE (GainNode) before it reaches the visualizer analyser
+              // However, we can't easily detect visualizer analysers, so we'll intercept all connections
+              // and let the element gain node handle routing
+              
+              // For now, intercept all connections - the element gain node will route correctly
+              
               let elementId = null;
               
-              if (soundManagerInstance.currentEvaluatingSlot) {
-                elementId = soundManagerInstance.patternSlotToElementId.get(soundManagerInstance.currentEvaluatingSlot);
+              // PRIORITY 1: Check trackedPatterns first (for master pattern routing)
+              // This is the most reliable way to route master pattern audio
+              if (soundManagerInstance.trackedPatterns.size > 0) {
+                const trackedElementIds = Array.from(soundManagerInstance.trackedPatterns.keys());
+                
+                if (trackedElementIds.length === 1) {
+                  // Single element master - route through that element's gain node
+                  elementId = trackedElementIds[0];
+                  if (!soundManagerInstance._singleElementMasterRoutingLogged) {
+                    console.log(`🎚️ Single element master detected, routing through ${elementId} (trackedPatterns.size=${soundManagerInstance.trackedPatterns.size})`);
+                    soundManagerInstance._singleElementMasterRoutingLogged = true;
+                  }
+                } else {
+                  // Multiple elements - try to match by currentEvaluatingSlot first
+                  if (soundManagerInstance.currentEvaluatingSlot) {
+                    const slotElementId = soundManagerInstance.patternSlotToElementId.get(soundManagerInstance.currentEvaluatingSlot);
+                    if (slotElementId && trackedElementIds.includes(slotElementId)) {
+                      elementId = slotElementId;
+                      console.log(`🎚️ Multi-element master: routing via currentEvaluatingSlot ${soundManagerInstance.currentEvaluatingSlot} -> ${elementId}`);
+                    }
+                  }
+                  
+                  // If no match by slot, check all tracked slots
+                  if (!elementId) {
+                    for (const [slotName, elemId] of soundManagerInstance.patternSlotToElementId.entries()) {
+                      if (trackedElementIds.includes(elemId)) {
+                        try {
+                          const slotValue = globalThis[slotName];
+                          // Check if this slot has an active pattern (not silence) and is tracked
+                          if (slotValue && slotValue !== globalThis.silence && 
+                              slotValue._Pattern) {
+                            // This element is part of the master stack - route through its gain node
+                            elementId = elemId;
+                            console.log(`🎚️ Found element from tracked slot: ${elementId} (slot: ${slotName})`);
+                            break;
+                          }
+                        } catch (e) {
+                          // Ignore errors
+                        }
+                      }
+                    }
+                  }
+                }
               }
               
-              // If no current slot, try to find which element this pattern belongs to
+              // PRIORITY 2: Check currentEvaluatingSlot (for individual element playback)
+              if (!elementId && soundManagerInstance.currentEvaluatingSlot) {
+                elementId = soundManagerInstance.patternSlotToElementId.get(soundManagerInstance.currentEvaluatingSlot);
+                if (elementId) {
+                  console.log(`🎚️ Found element from currentEvaluatingSlot: ${elementId} (slot: ${soundManagerInstance.currentEvaluatingSlot})`);
+                }
+              }
+              
+              // PRIORITY 3: Check all active slots (fallback)
               if (!elementId) {
                 for (const [slotName, elemId] of soundManagerInstance.patternSlotToElementId.entries()) {
                   try {
                     const slotValue = globalThis[slotName];
                     if (slotValue && slotValue !== globalThis.silence) {
                       elementId = elemId;
+                      console.log(`🎚️ Found element from active slot: ${elementId} (slot: ${slotName})`);
                       break;
                     }
                   } catch (e) {
@@ -844,15 +922,35 @@ class SoundManager {
               if (elementId) {
                 const elementNodes = soundManagerInstance.getElementAudioNodes(elementId);
                 if (elementNodes && elementNodes.gainNode) {
-                  // Only log once per element
-                  if (!soundManagerInstance._elementRoutingLogged) {
-                    soundManagerInstance._elementRoutingLogged = new Set();
+                  // Route audio through element gain node for VU meter
+                  // The element gain node is already connected to element analyser -> master
+                  // So audio will flow: source -> elementGain -> elementPan -> elementAnalyser -> master
+                  console.log(`🎚️ INTERCEPTED: Routing ${elementId} audio through element gain node for VU meter (${this.constructor.name} -> ${elementNodes.gainNode.constructor.name})`);
+                  
+                  // Connect to element gain node - this routes through the analyser chain
+                  const connectResult = this.__originalConnect.call(this, elementNodes.gainNode, outputIndex, inputIndex);
+                  
+                  // Also connect to destination for visualizers (if this is not an AnalyserNode)
+                  // This allows visualizers to receive audio while VU meter also works
+                  if (!(this instanceof AnalyserNode) && destination === audioContextInstance.destination) {
+                    // Connect directly to destination as well for visualizers
+                    // The visualizer analyser will tap this connection
+                    try {
+                      this.__originalConnect.call(this, audioContextInstance.destination, outputIndex, inputIndex);
+                    } catch (e) {
+                      // Ignore if already connected
+                    }
                   }
-                  if (!soundManagerInstance._elementRoutingLogged.has(elementId)) {
-                    console.log(`🎚️ INTERCEPTED: Routing ${elementId} audio through element gain node for VU meter`);
-                    soundManagerInstance._elementRoutingLogged.add(elementId);
-                  }
-                  return this.__originalConnect.call(this, elementNodes.gainNode, outputIndex, inputIndex);
+                  
+                  return connectResult;
+                } else {
+                  console.warn(`⚠️ Element ${elementId} found but no gain node available`);
+                }
+              } else {
+                // Log why no element was found (only occasionally to avoid spam)
+                if (!soundManagerInstance._noElementRoutingLogged) {
+                  console.log(`🎚️ No element found for routing - trackedPatterns.size=${soundManagerInstance.trackedPatterns.size}, currentEvaluatingSlot=${soundManagerInstance.currentEvaluatingSlot}`);
+                  soundManagerInstance._noElementRoutingLogged = true;
                 }
               }
               
@@ -1099,14 +1197,22 @@ class SoundManager {
       panNode.pan.value = panValue;
       
       // Connect: elementGain -> elementPan -> analyser -> masterPan
-      // Note: We connect the chain internally, but DON'T connect analyser to master yet
-      // The analyser will be tapped in parallel when Strudel connects through this chain
+      // The analyser is in the chain so it receives all audio flowing through the element
       gainNode.connect(panNode);
       panNode.connect(analyser);
       // Connect analyser to master so the chain is complete
+      // This ensures audio flows: Strudel -> elementGain -> elementPan -> analyser -> masterPan -> masterGain -> destination
       analyser.connect(this.masterPanNode || this.gainNode);
       
+      // Verify the connection chain
+      console.log(`🎚️ Element audio chain for ${elementId}:`);
+      console.log(`   gainNode (${gainNode.numberOfInputs} inputs, ${gainNode.numberOfOutputs} outputs)`);
+      console.log(`   panNode (${panNode.numberOfInputs} inputs, ${panNode.numberOfOutputs} outputs)`);
+      console.log(`   analyser (${analyser.numberOfInputs} inputs, ${analyser.numberOfOutputs} outputs)`);
+      console.log(`   masterPanNode (${this.masterPanNode ? this.masterPanNode.numberOfInputs : 'N/A'} inputs)`);
+      
       console.log(`🎚️ Created element audio chain for ${elementId}: gain -> pan -> analyser -> master (total analysers: ${this.elementAnalysers.size})`);
+      console.log(`🎚️ Analyser context: ${analyser.context === this.audioContext ? 'MATCH' : 'MISMATCH'}, fftSize: ${analyser.fftSize}, frequencyBinCount: ${analyser.frequencyBinCount}`);
 
       // Reset warning flag now that at least one analyser exists
       this.vuMeterWarnedNoAnalysers = false;
@@ -6188,6 +6294,9 @@ class SoundManager {
           if (barchartMatch) console.log(`   📊 Barchart call: ${barchartMatch[0]}`);
         }
         
+      // Set masterActive BEFORE evaluation so audio routing can find elements
+      this.masterActive = true;
+      
       // Ensure all tracked elements have audio nodes created (for gain/pan control)
       console.log(`🔧 Ensuring audio nodes exist for ${this.trackedPatterns.size} tracked elements...`);
       for (const [elementId] of this.trackedPatterns.entries()) {
@@ -6197,8 +6306,30 @@ class SoundManager {
         }
       }
       
-      // Set current evaluating slot to master for audio routing
-      this.currentEvaluatingSlot = this.masterSlot;
+      // Set current evaluating slot for audio routing
+      // For single-element masters, use the element's slot so routing can find it
+      // For multi-element masters, use the master slot
+      if (this.trackedPatterns.size === 1) {
+        const singleElementId = Array.from(this.trackedPatterns.keys())[0];
+        // Find the slot for this element by searching patternSlotToElementId
+        let elementSlot = null;
+        for (const [slotName, elemId] of this.patternSlotToElementId.entries()) {
+          if (elemId === singleElementId) {
+            elementSlot = slotName;
+            break;
+          }
+        }
+        if (elementSlot) {
+          this.currentEvaluatingSlot = elementSlot;
+          console.log(`🎚️ Single-element master: routing via element slot ${elementSlot} (${singleElementId})`);
+        } else {
+          this.currentEvaluatingSlot = this.masterSlot;
+          console.log(`🎚️ Single-element master: element slot not found, using master slot ${this.masterSlot}`);
+        }
+      } else {
+        this.currentEvaluatingSlot = this.masterSlot;
+        console.log(`🎚️ Multi-element master: using master slot ${this.masterSlot}`);
+      }
       
       try {
         const result = await window.strudel.evaluate(code);
@@ -6228,7 +6359,7 @@ class SoundManager {
         this.masterPlaybackTempo = this.currentTempo || 120;
         const speedMultiplier = this.masterPlaybackTempo / 120;
         this.masterPlaybackSpeed = Number.isFinite(speedMultiplier) && speedMultiplier > 0 ? speedMultiplier : 1;
-        this.masterActive = true;
+        // masterActive is already set before evaluation to ensure proper routing
         console.log(`✅ Master pattern playing on ${this.masterSlot} (volume/pan/mute via Web Audio API)`);
         console.log(`🔊 Audio context state: ${this.audioContext?.state || 'unknown'}`);
         console.log(`🔊 Master gain value: ${this.masterGainNode?.gain?.value || 'unknown'}`);
@@ -7350,6 +7481,19 @@ class SoundManager {
       const vuBar = element.querySelector('.vu-bar');
       if (!vuBar) return;
 
+      // Check if analyser is connected and receiving data
+      if (!analyser || analyser.context !== this.audioContext) {
+        // Only log once per element
+        if (!this._analyserContextMismatchLogged) {
+          this._analyserContextMismatchLogged = new Set();
+        }
+        if (!this._analyserContextMismatchLogged.has(elementId)) {
+          console.warn(`⚠️ Analyser for ${elementId} context mismatch or missing`);
+          this._analyserContextMismatchLogged.add(elementId);
+        }
+        return;
+      }
+
       // Get time domain data for VU meter (actual audio level)
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       analyser.getByteTimeDomainData(dataArray);
@@ -7390,9 +7534,15 @@ class SoundManager {
 
       level = Math.max(0, Math.min(100, level));
 
-      // Only log when there's actual audio activity (above -60dB)
+      // Debug: Check if we're getting any non-zero data
+      const hasAnySignal = dataArray.some(val => val !== 128); // 128 is silence in Uint8Array
+      
+      // Only log when there's actual audio activity (above -60dB) or occasionally for debugging
       if (db > -60) {
-        console.log(`🎚️ ${elementId} VU level: ${level.toFixed(1)}% (db=${db.toFixed(1)})`);
+        console.log(`🎚️ ${elementId} VU level: ${level.toFixed(1)}% (db=${db.toFixed(1)}, rms=${rms.toFixed(4)})`);
+      } else if (!hasAnySignal && Math.random() < 0.01) {
+        // Log 1% of silent frames for debugging
+        console.log(`🎚️ ${elementId} VU: No signal detected (rms=${rms.toFixed(6)}, sample=${dataArray[0]})`);
       }
 
       // Update VU meter bar height
