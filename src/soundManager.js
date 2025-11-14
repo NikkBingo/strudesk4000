@@ -848,18 +848,48 @@ class SoundManager {
                 }
               } else {
                 // For stack() patterns evaluated on d0, element slots aren't active
-                // So we need to route through master chain which includes visualizer analyser
-                // Check if this is a stack pattern (multiple tracked elements)
+                // Try to route through element gain nodes first if we can identify the element
+                // Otherwise fall back to master chain
                 const isStackPattern = soundManagerInstance.masterActive && soundManagerInstance.trackedPatterns.size > 1;
                 
-                if (isStackPattern && masterPanNode) {
-                  // Route through master chain for stack() patterns
-                  // This ensures audio flows: source -> masterPan -> masterGain -> visualizerAnalyser -> destination
-                  if (!soundManagerInstance._stackMasterRoutingLogged) {
-                    console.log(`🎚️ Stack() pattern: Routing ${this.constructor.name} through master chain (${soundManagerInstance.trackedPatterns.size} elements)`);
-                    soundManagerInstance._stackMasterRoutingLogged = true;
+                if (isStackPattern) {
+                  // For stack patterns, try to route through element gain nodes in round-robin fashion
+                  // This ensures each pattern in the stack routes through its corresponding element
+                  // We use a simple round-robin based on connection order
+                  if (!soundManagerInstance._stackConnectionCount) {
+                    soundManagerInstance._stackConnectionCount = new Map();
                   }
-                  return this.__originalConnect.call(this, masterPanNode, outputIndex, inputIndex);
+                  
+                  // Get tracked element IDs in order
+                  const trackedElementIds = Array.from(soundManagerInstance.trackedPatterns.keys());
+                  
+                  // Count connections per element (round-robin)
+                  let connectionCount = soundManagerInstance._stackConnectionCount.get('total') || 0;
+                  const elementIndex = connectionCount % trackedElementIds.length;
+                  const elementId = trackedElementIds[elementIndex];
+                  soundManagerInstance._stackConnectionCount.set('total', connectionCount + 1);
+                  
+                  // Try to route through this element's gain node
+                  const elementNodes = soundManagerInstance.getElementAudioNodes(elementId);
+                  if (elementNodes && elementNodes.gainNode) {
+                    if (!soundManagerInstance._stackElementRoutingLogged) {
+                      soundManagerInstance._stackElementRoutingLogged = new Set();
+                    }
+                    if (!soundManagerInstance._stackElementRoutingLogged.has(elementId)) {
+                      console.log(`🎚️ Stack() pattern: Routing ${elementId} audio through element gain node (round-robin, ${trackedElementIds.length} elements)`);
+                      soundManagerInstance._stackElementRoutingLogged.add(elementId);
+                    }
+                    return this.__originalConnect.call(this, elementNodes.gainNode, outputIndex, inputIndex);
+                  }
+                  
+                  // Fallback: route through master chain if element routing fails
+                  if (masterPanNode) {
+                    if (!soundManagerInstance._stackMasterRoutingLogged) {
+                      console.log(`🎚️ Stack() pattern: Routing through master chain (fallback, ${trackedElementIds.length} elements)`);
+                      soundManagerInstance._stackMasterRoutingLogged = true;
+                    }
+                    return this.__originalConnect.call(this, masterPanNode, outputIndex, inputIndex);
+                  }
                 }
                 
                 // Log why no element was found (only occasionally to avoid spam)
@@ -5624,6 +5654,7 @@ class SoundManager {
         
         // Strip extra wrapping parentheses (e.g., (((pattern))) -> pattern)
         // This prevents double/triple wrapping when adding modifiers
+        // Only strip if pattern is fully wrapped with no method chaining after
         while (patternCode.startsWith('(') && patternCode.endsWith(')')) {
           // Check if the outer parentheses are balanced and wrap the entire pattern
           let depth = 0;
@@ -5684,10 +5715,15 @@ class SoundManager {
         if (trackData.gain !== 1) {
           // Wrap the pattern before adding .gain() if not already wrapped
           const basePattern = patternCode.trim();
-          const isAlreadyWrapped = basePattern.startsWith('(') && basePattern.endsWith(')');
+          // Check if pattern is wrapped: starts with ( and ends with ) or ))
+          // We check if it ends with one or more closing parens
+          const isAlreadyWrapped = basePattern.startsWith('(') && /\)+$/.test(basePattern);
+          
           if (isAlreadyWrapped) {
+            // Pattern is wrapped, append .gain() directly
             patternCode = `${basePattern}.gain(${trackData.gain.toFixed(2)})`;
           } else {
+            // Pattern is not wrapped, wrap it before adding .gain()
             patternCode = `(${basePattern}).gain(${trackData.gain.toFixed(2)})`;
           }
         }
@@ -6342,6 +6378,11 @@ class SoundManager {
       this._stackMasterRoutingLogged = false;
       this._masterRoutingLogged = false;
       this._gainConnectDebugged = false;
+      this._stackElementRoutingLogged = new Set();
+      // Reset stack connection count for round-robin routing
+      if (this._stackConnectionCount) {
+        this._stackConnectionCount.set('total', 0);
+      }
       
       // Determine which slot to evaluate on
       // For single-element masters, evaluate on the element's slot so routing can find it

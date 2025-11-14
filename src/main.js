@@ -3452,6 +3452,10 @@ class InteractiveSoundApp {
     // Clean up extra whitespace and newlines
     patternForEval = patternForEval.replace(/\n\s*\n/g, '\n').trim();
     
+    // Fix corrupted patterns: ).(gain( -> ).gain( and ).(pan( -> ).pan(
+    // This handles cases where gain/pan got incorrectly wrapped in parentheses
+    patternForEval = patternForEval.replace(/\)\s*\.\s*\((gain|pan)\s*\(/g, ').$1(');
+    
     // Fix patterns with modifiers that need wrapping before .gain() or .pan()
     // Pattern like s("bd").bank("RolandTR808").gain(0.80) needs to be
     // (s("bd").bank("RolandTR808")).gain(0.80)
