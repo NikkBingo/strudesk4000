@@ -2367,6 +2367,9 @@ class SoundManager {
             const evalResult = await window.strudel.evaluate(assignmentCode);
             
             // Clear current evaluating slot after audio routing
+            // Set currentEvaluatingSlot BEFORE evaluation so routing can find the element
+            this.currentEvaluatingSlot = patternSlot;
+            
             // Since sounds are preloaded, we only need minimal delay
             const clearDelay = this.soundsPreloaded ? 500 : 1000;
             setTimeout(() => {
@@ -2505,6 +2508,9 @@ class SoundManager {
         }
         
         console.log(`Strudel pattern started for ${elementId}`);
+        
+        // Clear currentEvaluatingSlot after evaluation completes
+        this.currentEvaluatingSlot = null;
         
         // Get the pattern slot for this element
         const patternSlot = this.strudelPatternSlots.get(elementId);
@@ -3768,6 +3774,33 @@ class SoundManager {
     if (!pattern || typeof pattern !== 'string') {
       return pattern;
     }
+    
+    // Check if pattern is in note names format - if so, don't convert, preserve as-is
+    // Note names have letter notes (a-g) followed by optional accidental and octave
+    const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(pattern);
+    // Numeric notes are pure numbers/spaces (e.g., n("0 2 4")), NOT note names with octaves
+    const hasNumericNotes = /\b(n|note)\s*\(\s*["'][\d\s\-]+["']/.test(pattern) && 
+                            !/\b(note|n)\s*\(\s*["'][a-gA-G]/.test(pattern);
+    
+    // If pattern uses note names, preserve it - don't convert to semitones
+    if (hasNoteNames && !hasNumericNotes) {
+      console.log(`📝 convertPatternForScale: Pattern uses note names, preserving format`);
+      return pattern;
+    }
+    
+    // Only convert if pattern doesn't have note names (or is mixed/unclear)
+    return convertNoteCallsToScaleDegrees(pattern);
+  }
+
+  /**
+   * Force convert note names to semitones (for explicit user conversion)
+   * This bypasses the preservation logic in convertPatternForScale
+   */
+  convertNoteNamesToSemitones(pattern) {
+    if (!pattern || typeof pattern !== 'string') {
+      return pattern;
+    }
+    // Always convert, regardless of format
     return convertNoteCallsToScaleDegrees(pattern);
   }
 
@@ -4065,7 +4098,10 @@ class SoundManager {
     
     // Detect patterns with note names (with or without octaves) or chord names
     // Examples: note("c3 d3 e3"), note("c d e f"), note("Cmaj7 Am Dm"), note("c# d e")
-    const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-g][#b]?/.test(modifiedPattern);
+    // Note names have letter notes (a-g) followed by optional accidental and octave
+    const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(modifiedPattern) ||
+                         (/\b(note|n)\s*\(\s*["'][a-gA-G][#b]/.test(modifiedPattern) && 
+                          !/\b(note|n)\s*\(\s*["'][\d\s\-]+["']/.test(modifiedPattern));
     
     // Detect chord names (patterns containing chord notation like maj, min, m, 7, etc.)
     // Examples: "Cmaj7", "Am", "Dm7", "F#maj", "Bb7"
@@ -5324,15 +5360,14 @@ class SoundManager {
       const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(normalizedPattern);
       const hasNumericNotes = /\b(n|note)\s*\(\s*["'][\d\s]+["']/.test(normalizedPattern);
       
-      // Only convert to semitones if pattern uses note names but not numeric notes
-      // If pattern is already in note names, keep it as note names
-      const preparedPattern = (hasNoteNames && !hasNumericNotes) 
-        ? normalizedPattern  // Keep note names as-is
-        : this.convertPatternForScale(normalizedPattern);  // Convert note names to semitones if needed
+      // Preserve the original format: store rawPattern as-is (what user wrote)
+      // Store pattern as the same format (no conversion) - master will preserve each track's format
+      // If pattern uses note names, keep as note names; if semitones, keep as semitones
+      const preparedPattern = normalizedPattern;  // Always preserve the original format
       
       this.trackedPatterns.set(elementId, {
-        rawPattern: normalizedPattern,
-        pattern: preparedPattern,
+        rawPattern: normalizedPattern,  // Original pattern as written
+        pattern: preparedPattern,  // Same as rawPattern - preserve format
         gain: gain || 0.8,
         pan: pan || 0,
         muted: false,
@@ -5455,8 +5490,32 @@ class SoundManager {
           continue;
         }
 
-      const convertedPattern = this.convertPatternForScale(sourcePattern) || sourcePattern;
-      trackData.pattern = convertedPattern;
+        // Preserve the format: if pattern uses note names, keep note names; if semitones, keep semitones
+        // Check if pattern is in note names format (e.g., note("C4 E4 G4"))
+        // Note names have letter notes (a-g) followed by optional accidental and octave
+        const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(sourcePattern);
+        // Numeric notes are pure numbers/spaces (e.g., n("0 2 4")), NOT note names with octaves
+        // Match patterns that start with digits/spaces only (no letters a-g)
+        const hasNumericNotes = /\b(n|note)\s*\(\s*["'][\d\s\-]+["']/.test(sourcePattern) && 
+                                 !/\b(note|n)\s*\(\s*["'][a-gA-G]/.test(sourcePattern);
+        
+        // Preserve the format: if pattern uses note names, keep note names; if semitones, keep semitones
+        let convertedPattern = sourcePattern;
+        if (hasNoteNames && !hasNumericNotes) {
+          // Pattern is in note names format - keep it as note names, don't convert
+          convertedPattern = sourcePattern;
+          console.log(`  📝 Preserving note names format for ${elementId}: ${sourcePattern.substring(0, 50)}...`);
+        } else if (hasNumericNotes && !hasNoteNames) {
+          // Pattern is in semitones format - keep it as semitones
+          convertedPattern = sourcePattern;
+          console.log(`  📝 Preserving semitones format for ${elementId}: ${sourcePattern.substring(0, 50)}...`);
+        } else {
+          // Unclear format - preserve as-is, don't convert
+          convertedPattern = sourcePattern;
+          console.log(`  📝 Preserving pattern format as-is for ${elementId}: ${sourcePattern.substring(0, 50)}...`);
+        }
+        
+        trackData.pattern = convertedPattern;
         
         // Build pattern with gain and pan modifiers
         let patternCode = (convertedPattern || '').trim();
