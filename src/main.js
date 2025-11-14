@@ -507,7 +507,7 @@ const NUMERIC_TAG_PARAMS = {
   'lpq': { min: 0, max: 20, step: 0.1, default: 0, unit: '' },
   'hpq': { min: 0, max: 20, step: 0.1, default: 0, unit: '' },
   'bpq': { min: 0, max: 20, step: 0.1, default: 0, unit: '' },
-  'bpg': { min: 0, max: 20, step: 0.1, default: 0, unit: '' },
+  'bpg': { min: -20, max: 20, step: 0.1, default: 0, unit: 'dB' },
   // Envelope
   'attack': { min: 0, max: 2, step: 0.01, default: 0.01, unit: 's' },
   'decay': { min: 0, max: 2, step: 0.01, default: 0.1, unit: 's' },
@@ -1819,18 +1819,11 @@ class InteractiveSoundApp {
         console.warn('⚠️ Could not update master highlight data:', error);
       });
 
-      // If a visualizer is selected and master is active, re-apply it
-      // Use a flag to prevent infinite loops
-      if (this.selectedVisualizer && this.selectedVisualizer !== 'punchcard' && soundManager.masterActive && !this._applyingVisualizer) {
-        console.log(`🎨 Re-applying visualizer "${this.selectedVisualizer}" after master pattern update`);
-        this._applyingVisualizer = true;
-        try {
-          this.prepareCanvasForExternalVisualizer();
-          await this.applyVisualizerToMaster();
-        } finally {
-          this._applyingVisualizer = false;
-        }
-      }
+      // Don't re-apply visualizer when master pattern is updated from save
+      // Visualizer will be applied when user presses play button
+      // Only re-apply if master is actively playing (not when updating from save)
+      // But since updateMasterPattern stops playback, we should not re-apply here
+      // Visualizer will be applied when play button is pressed
       
       this.refreshMasterPunchcard('master-update').catch(err => {
         console.warn('⚠️ Could not refresh punchcard after master update:', err);
@@ -1840,6 +1833,32 @@ class InteractiveSoundApp {
     // Set up callback for when master state changes (playing/stopped)
     soundManager.onMasterStateChange((isPlaying, elementIds) => {
       console.log(`🎚️ Master state changed: ${isPlaying ? 'playing' : 'stopped'}, elements: ${elementIds.join(', ')}`);
+      
+      // Sync UI button state with soundManager state
+      this.masterActive = isPlaying;
+      const playMasterBtn = document.getElementById('play-master-btn');
+      const masterActiveDot = document.querySelector('.master-active-dot');
+      
+      if (playMasterBtn) {
+        if (isPlaying) {
+          playMasterBtn.textContent = '⏸';
+          playMasterBtn.title = 'Pause Master';
+          playMasterBtn.classList.add('active');
+        } else {
+          playMasterBtn.textContent = '▶';
+          playMasterBtn.title = 'Play Master';
+          playMasterBtn.classList.remove('active');
+        }
+      }
+      
+      if (masterActiveDot) {
+        if (isPlaying) {
+          masterActiveDot.classList.add('active');
+        } else {
+          masterActiveDot.classList.remove('active');
+        }
+      }
+      
       // Update all tracked element circles and status dots
       elementIds.forEach(elementId => {
         this.updateStatusDots(elementId, true, isPlaying);
@@ -2107,6 +2126,8 @@ class InteractiveSoundApp {
           
           if (result.success) {
             this.masterActive = false;
+            // Ensure soundManager.masterActive is also false
+            soundManager.masterActive = false;
             playMasterBtn.textContent = '▶';
             playMasterBtn.title = 'Play Master';
             playMasterBtn.classList.remove('active');
@@ -2121,7 +2142,10 @@ class InteractiveSoundApp {
           // Use CodeMirror editor value if available, otherwise fall back to textarea
           const currentCode = getStrudelEditorValue('master-pattern').trim();
           if (currentCode && currentCode !== soundManager.getMasterPatternCode()) {
-            await soundManager.setMasterPatternCode(currentCode);
+            // Update the pattern code directly without calling setMasterPatternCode
+            // to avoid it stopping playback (we're about to start playback anyway)
+            soundManager.masterPattern = soundManager.formatMasterPatternWithTempoComment(currentCode);
+            console.log(`📝 Updated master pattern code directly before playing`);
           }
           
           if (this.selectedVisualizer && this.selectedVisualizer !== 'punchcard') {
@@ -2376,9 +2400,30 @@ class InteractiveSoundApp {
     
     // Get the current master pattern without any visualizers
     let basePattern = soundManager.getMasterPatternCode();
+    
+    // If master pattern is empty, check if there are tracked patterns
+    // If so, rebuild the master pattern from tracked patterns first
     if (!basePattern || basePattern.trim() === '') {
-      console.warn('⚠️ No master pattern to apply visualizer to, using silence');
-      basePattern = 'silence';
+      if (soundManager.trackedPatterns && soundManager.trackedPatterns.size > 0) {
+        console.log(`🔄 Master pattern is empty but ${soundManager.trackedPatterns.size} tracked pattern(s) found - rebuilding master pattern`);
+        soundManager.updateMasterPattern(new Set(), new Set());
+        basePattern = soundManager.getMasterPatternCode();
+      }
+      
+      // If still empty, try reading from editor
+      if (!basePattern || basePattern.trim() === '') {
+        const editorPattern = getStrudelEditorValue('master-pattern').trim();
+        if (editorPattern && editorPattern !== '') {
+          console.log(`📝 Reading master pattern from editor`);
+          basePattern = editorPattern;
+        }
+      }
+      
+      // Only use silence as last resort
+      if (!basePattern || basePattern.trim() === '') {
+        console.warn('⚠️ No master pattern to apply visualizer to, using silence');
+        basePattern = 'silence';
+      }
     }
     
     // Strip JavaScript comments (// and /* */)
@@ -3410,33 +3455,25 @@ class InteractiveSoundApp {
     // Fix patterns with modifiers that need wrapping before .gain() or .pan()
     // Pattern like s("bd").bank("RolandTR808").gain(0.80) needs to be
     // (s("bd").bank("RolandTR808")).gain(0.80)
-    // Simple approach: find method chains ending with .gain( or .pan( and wrap them
-    // Match: identifier or function call, followed by method calls, then .gain( or .pan(
-    // This regex matches patterns like: s("bd").bank("RolandTR808").gain(0.80)
-    patternForEval = patternForEval.replace(
-      /([a-zA-Z_$][a-zA-Z0-9_$]*\s*\([^()]*\)(?:\s*\.\s*[a-zA-Z_$][a-zA-Z0-9_$]*\s*\([^()]*\))*)\s*\.\s*(gain|pan)\s*\(/g,
-      (match, patternPart, modifier) => {
-        const trimmed = patternPart.trim();
-        // Check if already wrapped in parentheses
-        if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
-          // Verify it's properly balanced (simple check)
-          let depth = 0;
-          for (let i = 0; i < trimmed.length; i++) {
-            if (trimmed[i] === '(') depth++;
-            else if (trimmed[i] === ')') depth--;
-            if (depth === 0 && i < trimmed.length - 1) {
-              // Not fully wrapped, need to wrap
-              return `(${patternPart}).${modifier}(`;
-            }
+    // BUT: Skip this entire step if the pattern already has ').gain(' or ').pan('
+    // This indicates it's already properly wrapped (pattern).gain(...) or (pattern).pan(...)
+    const hasWrappedGainPan = /\)\s*\.\s*(gain|pan)\s*\(/.test(patternForEval);
+    
+    if (!hasWrappedGainPan) {
+      // Only apply wrapping fix if pattern doesn't already have wrapped gain/pan
+      patternForEval = patternForEval.replace(
+        /([a-zA-Z_$][a-zA-Z0-9_$]*\s*\([^()]*\)(?:\s*\.\s*[a-zA-Z_$][a-zA-Z0-9_$]*\s*\([^()]*\))*)\s*\.\s*(gain|pan)\s*\(/g,
+        (match, patternPart, modifier) => {
+          // Check if patternPart itself starts with '(' (shouldn't happen with this regex, but safety check)
+          const trimmed = patternPart.trim();
+          if (trimmed.startsWith('(')) {
+            return match; // Already wrapped, don't modify
           }
-          if (depth === 0) {
-            return match; // Already properly wrapped
-          }
+          // Wrap in parentheses
+          return `(${patternPart}).${modifier}(`;
         }
-        // Wrap in parentheses
-        return `(${patternPart}).${modifier}(`;
-      }
-    );
+      );
+    }
     
     console.log('🔍 PUNCHCARD EVALUATION - After removing comments and fixing modifiers:');
     console.log('   Pattern:', patternForEval);
@@ -4435,20 +4472,22 @@ class InteractiveSoundApp {
     const filtersContent = element.querySelector('.filters-content');
     if (!filtersContent) return;
     
+    // Clear any existing content (remove old hardcoded HTML)
+    filtersContent.innerHTML = '';
+    
     // Define filter types
     const filterTypes = [
       { key: 'hpf', label: 'HPF', params: [
         { key: 'hpf', label: 'Frequency', unit: 'Hz' },
-        { key: 'hpq', label: 'Resonance', unit: '' }
+        { key: 'hpq', label: 'HPQ', unit: '' }
       ]},
       { key: 'lpf', label: 'LPF', params: [
         { key: 'lpf', label: 'Frequency', unit: 'Hz' },
-        { key: 'lpq', label: 'Resonance', unit: '' }
+        { key: 'lpq', label: 'LPQ', unit: '' }
       ]},
       { key: 'bpf', label: 'BPF', params: [
         { key: 'bpf', label: 'Frequency', unit: 'Hz' },
-        { key: 'bpq', label: 'Resonance', unit: '' },
-        { key: 'bpg', label: 'Gain', unit: '' }
+        { key: 'bpq', label: 'Q', unit: '' }
       ]}
     ];
     
@@ -4496,12 +4535,21 @@ class InteractiveSoundApp {
             const paramConfig = NUMERIC_TAG_PARAMS[param.key];
             if (!paramConfig) return;
             
+            // Format default value display
+            let defaultDisplay = paramConfig.default.toString();
+            if (param.key === 'bpg' && param.unit === 'dB') {
+              const sign = paramConfig.default >= 0 ? '+' : '';
+              defaultDisplay = `${sign}${paramConfig.default.toFixed(1)} dB`;
+            } else if (param.unit) {
+              defaultDisplay = `${paramConfig.default}${param.unit ? ' ' + param.unit : ''}`;
+            }
+            
             const sliderRow = document.createElement('div');
             sliderRow.className = 'slider-row';
             sliderRow.innerHTML = `
               <div class="slider-label-row">
                 <label>${param.label}</label>
-                <span class="slider-value">${paramConfig.default}${param.unit ? ' ' + param.unit : ''}</span>
+                <span class="slider-value">${defaultDisplay}</span>
               </div>
               <input type="range" class="filter-slider" data-filter-type="${filterType.key}" data-param-key="${param.key}" 
                      min="${paramConfig.min}" max="${paramConfig.max}" step="${paramConfig.step}" 
@@ -4519,8 +4567,12 @@ class InteractiveSoundApp {
                 if (display) {
                   if (param.key.includes('f')) {
                     display.textContent = Math.round(value) + ' Hz';
+                  } else if (param.key === 'bpg' && param.unit === 'dB') {
+                    // Show dB with +/- sign
+                    const sign = value >= 0 ? '+' : '';
+                    display.textContent = `${sign}${value.toFixed(1)} dB`;
                   } else {
-                    display.textContent = value.toFixed(1);
+                    display.textContent = value.toFixed(1) + (param.unit ? ' ' + param.unit : '');
                   }
                 }
                 await this.updateElementFilters(elementId);
@@ -4538,6 +4590,9 @@ class InteractiveSoundApp {
   setupEffectsDropdowns(element, elementId) {
     const effectsContent = element.querySelector('.effects-content');
     if (!effectsContent) return;
+    
+    // Clear any existing content (remove old hardcoded HTML)
+    effectsContent.innerHTML = '';
     
     // Define available effects with their sub-parameters
     const availableEffects = [
@@ -4560,14 +4615,18 @@ class InteractiveSoundApp {
         key: 'phaser', 
         label: 'Phaser',
         params: [
-          { key: 'phaserdepth', label: 'Phaser Depth' }
+          { key: 'phaserdepth', label: 'Depth' },
+          { key: 'phasercenter', label: 'Center' },
+          { key: 'phasersweep', label: 'Sweep' }
         ]
       },
       { 
         key: 'tremolo', 
         label: 'Tremolo',
         params: [
-          { key: 'tremolodepth', label: 'Tremolo Depth' }
+          { key: 'tremolodepth', label: 'Depth' },
+          { key: 'tremoloskew', label: 'Skew' },
+          { key: 'tremolophase', label: 'Phase' }
         ]
       }
     ];
@@ -4657,6 +4716,9 @@ class InteractiveSoundApp {
   setupSynthesisDropdowns(element, elementId) {
     const synthesisContent = element.querySelector('.synthesis-content');
     if (!synthesisContent) return;
+    
+    // Clear any existing content (remove old hardcoded HTML)
+    synthesisContent.innerHTML = '';
     
     // Create ADSR sliders container - always visible
     const container = document.createElement('div');
@@ -4843,11 +4905,26 @@ class InteractiveSoundApp {
     if (effects.roomsize !== undefined) {
       modifiers.push(`.room(${effects.roomsize.toFixed(2)})`);
     }
+    // Phaser effect - apply all parameters
     if (effects.phaserdepth !== undefined) {
       modifiers.push(`.phaser(${effects.phaserdepth.toFixed(2)})`);
     }
+    if (effects.phasercenter !== undefined) {
+      modifiers.push(`.phasercenter(${effects.phasercenter.toFixed(2)})`);
+    }
+    if (effects.phasersweep !== undefined) {
+      modifiers.push(`.phasersweep(${effects.phasersweep.toFixed(2)})`);
+    }
+    
+    // Tremolo effect - apply all parameters
     if (effects.tremolodepth !== undefined) {
       modifiers.push(`.tremolo(${effects.tremolodepth.toFixed(2)})`);
+    }
+    if (effects.tremoloskew !== undefined) {
+      modifiers.push(`.tremoloskew(${effects.tremoloskew.toFixed(2)})`);
+    }
+    if (effects.tremolophase !== undefined) {
+      modifiers.push(`.tremolophase(${effects.tremolophase.toFixed(2)})`);
     }
     
     // Add filters
@@ -4860,17 +4937,15 @@ class InteractiveSoundApp {
     if (filters.bpf !== undefined) {
       modifiers.push(`.bpf(${Math.round(filters.bpf)})`);
     }
+    if (filters.bpq !== undefined && filters.bpq > 0) {
+      modifiers.push(`.bpq(${filters.bpq.toFixed(1)})`);
+    }
+    
     if (filters.lpq !== undefined && filters.lpq > 0) {
       modifiers.push(`.lpq(${filters.lpq.toFixed(1)})`);
     }
     if (filters.hpq !== undefined && filters.hpq > 0) {
       modifiers.push(`.hpq(${filters.hpq.toFixed(1)})`);
-    }
-    if (filters.bpq !== undefined && filters.bpq > 0) {
-      modifiers.push(`.bpq(${filters.bpq.toFixed(1)})`);
-    }
-    if (filters.bpg !== undefined && filters.bpg !== 0) {
-      modifiers.push(`.bpg(${filters.bpg.toFixed(1)})`);
     }
     
     // Add synthesis (ADSR envelope) - only if values differ from defaults
@@ -7869,10 +7944,8 @@ class InteractiveSoundApp {
         
         // Update key/scale visibility based on toggle state
         updateKeyScaleVisibility();
-        // When toggle changes, reapply scale to update pattern format (if semitones mode)
-        if (!useNoteNames) {
-          applyKeyScaleToPattern();
-        }
+        // Don't call applyKeyScaleToPattern() here to prevent feedback loop
+        // The pattern conversion above handles the format change
       });
       keepNotesCheckbox.dataset.listenerAttached = 'true';
     }
@@ -8104,14 +8177,52 @@ class InteractiveSoundApp {
                 console.log(`🎹 BANK CHANGE: Extracted notes: ${notes}`);
               }
               
-              // Always use note().s() format
-              strudelPattern = `note("${notes}").s("${canonicalBankValue}")`;
-              console.log(`🎹 BANK CHANGE: Created note("${notes}").s("${canonicalBankValue}")`);
+              // Check if pattern has a .scale() modifier - preserve it
+              const scaleMatch = strudelPattern.match(/\.\s*scale\s*\(\s*['"]([^'"]+)['"]\s*\)/i);
+              const scaleModifier = scaleMatch ? `.scale('${scaleMatch[1]}')` : '';
+              
+              // Always use note().s() format, preserving scale if present
+              strudelPattern = `note("${notes}")${scaleModifier}.s("${canonicalBankValue}")`;
+              console.log(`🎹 BANK CHANGE: Created note("${notes}")${scaleModifier}.s("${canonicalBankValue}")`);
             } else {
-              // Create default pattern when empty
-              const defaultNotes = 'c3 d3 e3 f3';
-              strudelPattern = `note("${defaultNotes}").s("${canonicalBankValue}")`;
-              console.log(`🎹 BANK CHANGE: Created default pattern with ${canonicalBankValue}`);
+              // Create default pattern when empty - check toggle state for format
+              const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+              const useNoteNames = keepNotesCheckbox && keepNotesCheckbox.checked;
+              
+              // Get key/scale from modal dropdowns
+              const modalKeySelect = document.getElementById('modal-key-select');
+              const modalScaleSelect = document.getElementById('modal-scale-select');
+              const keyValue = modalKeySelect ? (modalKeySelect.value || 'E') : 'E';
+              const scaleValue = modalScaleSelect ? (modalScaleSelect.value || 'blues') : 'blues';
+              
+              if (useNoteNames) {
+                // Use note names format: note("E4 G4 A4 Bb4 B4 D4").s("synthname")
+                const noteNamesPattern = this.getAllScaleNotesAsNoteNames(keyValue, scaleValue);
+                if (noteNamesPattern) {
+                  // Extract just the note names part (remove n() wrapper)
+                  const noteMatch = noteNamesPattern.match(/(?:note|n)\s*\(\s*["']([^"']+)["']\s*\)/);
+                  const notes = noteMatch ? noteMatch[1] : 'E4 G4 A4 Bb4 B4 D4';
+                  strudelPattern = `note("${notes}").s("${canonicalBankValue}")`;
+                } else {
+                  // Fallback to E blues scale notes
+                  strudelPattern = `note("E4 G4 A4 Bb4 B4 D4").s("${canonicalBankValue}")`;
+                }
+                console.log(`🎹 BANK CHANGE: Created default note names pattern with ${canonicalBankValue}`);
+              } else {
+                // Use semitones format: n("0 1 2 3 4 5").scale('e:blues').s("synthname")
+                const semitonesPattern = this.getAllScaleNotesAsPattern(keyValue, scaleValue);
+                if (semitonesPattern) {
+                  // Extract just the numbers part (remove n() wrapper)
+                  const numMatch = semitonesPattern.match(/(?:note|n)\s*\(\s*["']([^"']+)["']\s*\)/);
+                  const numbers = numMatch ? numMatch[1] : '0 1 2 3 4 5';
+                  const scaleStr = `${keyValue.toLowerCase()}:${scaleValue}`;
+                  strudelPattern = `n("${numbers}").scale('${scaleStr}').s("${canonicalBankValue}")`;
+                } else {
+                  // Fallback to E blues scale semitones
+                  strudelPattern = `n("0 1 2 3 4 5").scale('e:blues').s("${canonicalBankValue}")`;
+                }
+                console.log(`🎹 BANK CHANGE: Created default semitones pattern with ${canonicalBankValue}`);
+              }
             }
             
             console.log(`🎹 BANK CHANGE: Setting textarea to: ${strudelPattern}`);
@@ -8217,6 +8328,22 @@ class InteractiveSoundApp {
                 }
               } else {
                 console.warn(`⚠️ Element not found: ${elementId}`);
+              }
+              
+              // Stop any currently playing sound BEFORE saving config to prevent auto-playback
+              if (this.activeElements.has(elementId)) {
+                console.log(`🛑 Stopping sound for ${elementId} (bank selected, not auto-playing)`);
+                soundManager.stopSound(elementId);
+                this.activeElements.delete(elementId);
+                // Update UI to reflect stopped state
+                const element = document.querySelector(`[data-sound-id="${elementId}"]`);
+                if (element) {
+                  const elementCircle = element.querySelector('.element-circle');
+                  if (elementCircle) {
+                    elementCircle.classList.remove('playing');
+                  }
+                  this.updateStatusDots(elementId, true, false);
+                }
               }
               
               // Save title immediately when bank is selected
@@ -8449,27 +8576,7 @@ class InteractiveSoundApp {
           }
         }
         
-        // Save config with updated bank and pattern
-        const keepNotesCheckboxForSave = document.getElementById('modal-keep-notes-as-written');
-        const keepNotesAsWrittenForSave = keepNotesCheckboxForSave ? keepNotesCheckboxForSave.checked : false;
-        
-        this.saveElementConfig(elementId, {
-          title: currentTitle || bankDisplayName,
-          pattern: finalPattern,
-          bank: bankValue || undefined,
-          keepNotesAsWritten: keepNotesAsWrittenForSave
-        });
-        console.log(`💾 Saved config with bank: ${bankValue}`);
-        
-        // Invalidate and pre-evaluate pattern cache for instant triggering
-        soundManager.invalidatePatternCache(elementId);
-        if (finalPattern) {
-          await soundManager.preEvaluatePattern(elementId, finalPattern);
-          console.log(`📦 Pre-evaluated pattern for ${elementId}`);
-        }
-        
-        // Do not auto-play when bank is selected - user can manually preview if needed
-        // Stop any currently playing sound and remove from active elements to prevent looping
+        // Stop any currently playing sound FIRST before saving config to prevent auto-playback
         if (this.activeElements.has(elementId)) {
           console.log(`🛑 Stopping sound for ${elementId} (bank changed, not auto-playing)`);
           soundManager.stopSound(elementId);
@@ -8494,6 +8601,27 @@ class InteractiveSoundApp {
             loopButton.classList.remove('active');
             soundManager.stopSound(elementId);
           }
+        }
+        
+        // Save config with updated bank and pattern AFTER stopping playback
+        const keepNotesCheckboxForSave = document.getElementById('modal-keep-notes-as-written');
+        const keepNotesAsWrittenForSave = keepNotesCheckboxForSave ? keepNotesCheckboxForSave.checked : false;
+        
+        this.saveElementConfig(elementId, {
+          title: currentTitle || bankDisplayName,
+          pattern: finalPattern,
+          bank: bankValue || undefined,
+          keepNotesAsWritten: keepNotesAsWrittenForSave
+        });
+        console.log(`💾 Saved config with bank: ${bankValue}`);
+        
+        // Invalidate and pre-evaluate pattern cache AFTER stopping playback and saving config
+        // This ensures the pattern is cached but doesn't start playing
+        soundManager.invalidatePatternCache(elementId);
+        if (finalPattern) {
+          // Pre-evaluate sets pattern to silence, so it won't start playback
+          await soundManager.preEvaluatePattern(elementId, finalPattern);
+          console.log(`📦 Pre-evaluated pattern for ${elementId} (silent, ready for manual trigger)`);
         }
 
         // When switching to a drum bank, disable pattern editor to show drum grid
