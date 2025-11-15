@@ -398,7 +398,7 @@ class SoundManager {
     this.elementPanNodes = new Map(); // elementId -> stereopannerNode
     this.elementGainValues = new Map(); // elementId -> gain value (0-1)
     this.elementPanValues = new Map(); // elementId -> pan value (-1 to 1)
-    this.masterAnalyser = null; // Fallback analyser on master bus
+    // REMOVED: masterAnalyser - visualizer uses its own analyser connected in parallel
     this.currentEvaluatingSlot = null; // Track which pattern slot is currently being evaluated
     
     // Initialize audio context (requires user interaction)
@@ -423,6 +423,8 @@ class SoundManager {
     this.strudelPatternSlots = new Map(); // elementId -> slotName (e.g., 'd1', 'd2')
     this.patternSlotToElementId = new Map(); // slotName -> elementId (reverse map for routing)
     this.nextPatternSlot = 1; // Start with d1
+    this.previewSlotName = 'd16';
+    this.reservedSlots = new Set([this.previewSlotName]);
     
     // Track which banks are successfully loaded
     this.loadedBanks = new Set(); // Set of bank names that are successfully loaded
@@ -472,16 +474,36 @@ class SoundManager {
    * Get the pattern slot for an element (assigns one if not already assigned)
    */
   getPatternSlot(elementId) {
+    if (elementId === 'modal-preview') {
+      const slotName = this.previewSlotName;
+      const existingOwner = this.patternSlotToElementId.get(slotName);
+      if (existingOwner && existingOwner !== elementId) {
+        console.log(`⚠️ Preview slot ${slotName} previously mapped to ${existingOwner}, reassigning...`);
+        this.strudelPatternSlots.delete(existingOwner);
+        this.patternSlotToElementId.delete(slotName);
+        this.getPatternSlot(existingOwner);
+      }
+      this.strudelPatternSlots.set(elementId, slotName);
+      this.patternSlotToElementId.set(slotName, elementId);
+      return slotName;
+    }
+
     if (!this.strudelPatternSlots.has(elementId)) {
-      const slotName = `d${this.nextPatternSlot}`;
+      let slotNumber = this.nextPatternSlot;
+      let slotName = `d${slotNumber}`;
+      while (this.reservedSlots.has(slotName)) {
+        slotNumber++;
+        if (slotNumber > 16) slotNumber = 1;
+        slotName = `d${slotNumber}`;
+      }
+
       this.strudelPatternSlots.set(elementId, slotName);
       this.patternSlotToElementId.set(slotName, elementId); // Create reverse map
       console.log(`🎵 Assigned ${elementId} to pattern slot ${slotName}`);
-      this.nextPatternSlot++;
-      // Wrap around after d16 (Strudel typically supports d1-d16)
-      if (this.nextPatternSlot > 16) {
-        this.nextPatternSlot = 1;
-      }
+
+      slotNumber++;
+      if (slotNumber > 16) slotNumber = 1;
+      this.nextPatternSlot = slotNumber;
     }
     const slot = this.strudelPatternSlots.get(elementId);
     console.log(`🎵 ${elementId} using slot ${slot}`);
@@ -666,18 +688,16 @@ class SoundManager {
         // Store the real destination BEFORE overriding
         this._realDestination = this.audioContext.destination;
         
-        // Insert analyser between master pan and gain for fallback metering
-        this.masterAnalyser = this.audioContext.createAnalyser();
-        this.masterAnalyser.fftSize = 256;
-        this.masterAnalyser.smoothingTimeConstant = 0.8;
+        // REMOVED: masterAnalyser - no longer needed, visualizer uses its own analyser
+        // Simplified chain: element gain -> element pan -> master pan -> master gain -> destination
+        // Visualizer analyser connects in parallel to master gain
 
-        // Connect: masterPan -> masterAnalyser -> masterGain -> REAL destination
-        this.masterPanNode.connect(this.masterAnalyser);
-        this.masterAnalyser.connect(this.masterGainNode);
+        // Connect: masterPan -> masterGain -> REAL destination
+        this.masterPanNode.connect(this.masterGainNode);
         // CRITICAL: Connect masterGainNode to destination - this is the final output
         // Store this connection so we can verify it later
         this.masterGainNode.connect(this._realDestination);
-        console.log(`🎚️ ✅ INITIAL: Connected masterGainNode -> destination (gain=${this.masterGainNode.gain.value.toFixed(3)})`);
+        console.log(`🎚️ ✅ INITIAL: Connected masterPan -> masterGain -> destination (gain=${this.masterGainNode.gain.value.toFixed(3)})`);
         
         // Set master values (use stored masterVolume, not this.volume)
         this.masterGainNode.gain.value = this.masterVolume;
@@ -784,8 +804,8 @@ class SoundManager {
               let elementId = null;
               
               // PRIORITY 1: Check trackedPatterns first (for master pattern routing)
-              // This is the most reliable way to route master pattern audio
-              if (soundManagerInstance.trackedPatterns.size > 0) {
+              // CRITICAL: Only use element routing when masterActive is true
+              if (soundManagerInstance.masterActive && soundManagerInstance.trackedPatterns.size > 0) {
                 const trackedElementIds = Array.from(soundManagerInstance.trackedPatterns.keys());
                 
                 if (trackedElementIds.length === 1) {
@@ -830,7 +850,7 @@ class SoundManager {
               }
               
               // PRIORITY 2: Check currentEvaluatingSlot (for individual element playback)
-              if (!elementId && soundManagerInstance.currentEvaluatingSlot) {
+              if (soundManagerInstance.masterActive && !elementId && soundManagerInstance.currentEvaluatingSlot) {
                 elementId = soundManagerInstance.patternSlotToElementId.get(soundManagerInstance.currentEvaluatingSlot);
                 if (elementId) {
                   console.log(`🎚️ Found element from currentEvaluatingSlot: ${elementId} (slot: ${soundManagerInstance.currentEvaluatingSlot})`);
@@ -860,6 +880,18 @@ class SoundManager {
                 const elementNodes = soundManagerInstance.getElementAudioNodes(elementId);
                 if (elementNodes && elementNodes.gainNode) {
                   const panNode = elementNodes.panNode;
+                
+                // If this source was previously routed through master fallback, disconnect that connection
+                if (this.__punchcardMasterRouted && this.__punchcardMasterConnectionNode && typeof this.disconnect === 'function') {
+                  try {
+                    this.disconnect(this.__punchcardMasterConnectionNode);
+                    console.log(`🎚️ Disconnected ${this.constructor.name} from master fallback before routing through element chain`);
+                  } catch (e) {
+                    // Ignore if already disconnected
+                  }
+                  this.__punchcardMasterRouted = false;
+                  this.__punchcardMasterConnectionNode = null;
+                }
                   
                   // CRITICAL: Ensure panNode is connected to master chain
                   // This is needed because element nodes might be created before master nodes exist
@@ -870,40 +902,65 @@ class SoundManager {
                     
                     if (needsReconnect) {
                       try {
-                        // Disconnect any existing connections from panNode
-                        // This ensures we connect to the correct master node (prefer masterPanNode)
-                        try {
-                          panNode.disconnect();
-                        } catch (e) {
-                          // May not be connected, that's fine - continue
+                        // CRITICAL: Track which elements have already had their panNode connected
+                        // This prevents repeated disconnections that break the audio chain
+                        if (!soundManagerInstance._panNodeConnectedToMaster) {
+                          soundManagerInstance._panNodeConnectedToMaster = new Set();
                         }
                         
-                        // Connect to master chain (prefer masterPanNode, fallback to masterGainNode)
-                        let connected = false;
-                        if (soundManagerInstance.masterPanNode) {
-                          panNode.connect(soundManagerInstance.masterPanNode);
-                          connected = true;
-                          if (!soundManagerInstance._panNodeConnectedLogged) {
-                            soundManagerInstance._panNodeConnectedLogged = new Set();
+                        // Only connect if we haven't already connected this element's panNode
+                        // Web Audio API will throw if already connected, so we catch that
+                        const connectionKey = `${elementId}-${soundManagerInstance.masterPanNode ? 'pan' : 'gain'}`;
+                        if (!soundManagerInstance._panNodeConnectedToMaster.has(connectionKey)) {
+                          // Connect to master chain (prefer masterPanNode, fallback to masterGainNode)
+                          let connected = false;
+                          if (soundManagerInstance.masterPanNode) {
+                            try {
+                              panNode.connect(soundManagerInstance.masterPanNode);
+                              connected = true;
+                              soundManagerInstance._panNodeConnectedToMaster.add(connectionKey);
+                              if (!soundManagerInstance._panNodeConnectedLogged) {
+                                soundManagerInstance._panNodeConnectedLogged = new Set();
+                              }
+                              if (!soundManagerInstance._panNodeConnectedLogged.has(elementId)) {
+                                console.log(`🎚️ ✅ Connected ${elementId} panNode -> masterPanNode`);
+                                soundManagerInstance._panNodeConnectedLogged.add(elementId);
+                              }
+                            } catch (e) {
+                              // Already connected, that's fine - mark as connected
+                              if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+                                soundManagerInstance._panNodeConnectedToMaster.add(connectionKey);
+                                connected = true;
+                              } else {
+                                throw e; // Re-throw if it's a different error
+                              }
+                            }
+                          } else if (soundManagerInstance.masterGainNode) {
+                            try {
+                              panNode.connect(soundManagerInstance.masterGainNode);
+                              connected = true;
+                              soundManagerInstance._panNodeConnectedToMaster.add(connectionKey);
+                              if (!soundManagerInstance._panNodeConnectedLogged) {
+                                soundManagerInstance._panNodeConnectedLogged = new Set();
+                              }
+                              if (!soundManagerInstance._panNodeConnectedLogged.has(elementId)) {
+                                console.log(`🎚️ ✅ Connected ${elementId} panNode -> masterGainNode (fallback)`);
+                                soundManagerInstance._panNodeConnectedLogged.add(elementId);
+                              }
+                            } catch (e) {
+                              // Already connected, that's fine - mark as connected
+                              if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+                                soundManagerInstance._panNodeConnectedToMaster.add(connectionKey);
+                                connected = true;
+                              } else {
+                                throw e; // Re-throw if it's a different error
+                              }
+                            }
                           }
-                          if (!soundManagerInstance._panNodeConnectedLogged.has(elementId)) {
-                            console.log(`🎚️ ✅ Connected ${elementId} panNode -> masterPanNode`);
-                            soundManagerInstance._panNodeConnectedLogged.add(elementId);
+                          
+                          if (!connected) {
+                            console.error(`❌ ${elementId} panNode: Master nodes exist but connection failed!`);
                           }
-                        } else if (soundManagerInstance.masterGainNode) {
-                          panNode.connect(soundManagerInstance.masterGainNode);
-                          connected = true;
-                          if (!soundManagerInstance._panNodeConnectedLogged) {
-                            soundManagerInstance._panNodeConnectedLogged = new Set();
-                          }
-                          if (!soundManagerInstance._panNodeConnectedLogged.has(elementId)) {
-                            console.log(`🎚️ ✅ Connected ${elementId} panNode -> masterGainNode (fallback)`);
-                            soundManagerInstance._panNodeConnectedLogged.add(elementId);
-                          }
-                        }
-                        
-                        if (!connected) {
-                          console.error(`❌ ${elementId} panNode: Master nodes exist but connection failed!`);
                         }
                       } catch (e) {
                         // Connection failed, log error
@@ -1047,6 +1104,9 @@ class SoundManager {
                     soundManagerInstance._connectionSuccessLogged.add(elementId);
                   }
                   
+                  if (this.__punchcardElementRouted !== true) {
+                    this.__punchcardElementRouted = true;
+                  }
                   return connectResult;
                 } else {
                   // ElementId was set but elementNodes or gainNode is missing
@@ -1085,20 +1145,38 @@ class SoundManager {
                     const panNode = elementNodes.panNode;
                     
                     // CRITICAL: Ensure panNode is connected to master chain
+                    // Use tracking Set to avoid repeated disconnections
                     if (panNode) {
                       try {
-                        // Disconnect any existing connections
-                        try {
-                          panNode.disconnect();
-                        } catch (e) {
-                          // May not be connected, that's fine
+                        if (!soundManagerInstance._panNodeConnectedToMaster) {
+                          soundManagerInstance._panNodeConnectedToMaster = new Set();
                         }
                         
-                        // Connect to master chain
-                        if (soundManagerInstance.masterPanNode) {
-                          panNode.connect(soundManagerInstance.masterPanNode);
-                        } else if (soundManagerInstance.masterGainNode) {
-                          panNode.connect(soundManagerInstance.masterGainNode);
+                        const connectionKey = `${elementId}-${soundManagerInstance.masterPanNode ? 'pan' : 'gain'}`;
+                        if (!soundManagerInstance._panNodeConnectedToMaster.has(connectionKey)) {
+                          if (soundManagerInstance.masterPanNode) {
+                            try {
+                              panNode.connect(soundManagerInstance.masterPanNode);
+                              soundManagerInstance._panNodeConnectedToMaster.add(connectionKey);
+                            } catch (e) {
+                              if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+                                soundManagerInstance._panNodeConnectedToMaster.add(connectionKey);
+                              } else {
+                                throw e;
+                              }
+                            }
+                          } else if (soundManagerInstance.masterGainNode) {
+                            try {
+                              panNode.connect(soundManagerInstance.masterGainNode);
+                              soundManagerInstance._panNodeConnectedToMaster.add(connectionKey);
+                            } catch (e) {
+                              if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+                                soundManagerInstance._panNodeConnectedToMaster.add(connectionKey);
+                              } else {
+                                throw e;
+                              }
+                            }
+                          }
                         }
                       } catch (e) {
                         console.warn(`⚠️ Stack pattern: Failed to connect ${elementId} panNode:`, e.message);
@@ -1135,9 +1213,10 @@ class SoundManager {
               }
               
               // Fallback: route through master chain if no element found
-              // CRITICAL: For single-element masters, we MUST route through element chain, not master chain directly
+              // CRITICAL: Only route when masterActive is true to prevent auto-playback
+              // For single-element masters, we MUST route through element chain, not master chain directly
               // If we route directly to masterPanNode, we bypass element gain/pan controls
-              if (soundManagerInstance.trackedPatterns.size === 1 && !elementId) {
+              if (soundManagerInstance.masterActive && soundManagerInstance.trackedPatterns.size === 1 && !elementId) {
                 // Single element but couldn't find elementId - try harder to find it
                 const trackedElementIds = Array.from(soundManagerInstance.trackedPatterns.keys());
                 console.log(`🎚️ 🔍 FALLBACK CHECK: trackedPatterns.size=${soundManagerInstance.trackedPatterns.size}, elementId=${elementId}, trackedElementIds=${trackedElementIds.join(', ')}`);
@@ -1164,7 +1243,12 @@ class SoundManager {
                   // Ensure panNode is connected to master chain
                   if (panNode && masterPanNode) {
                     try {
-                      panNode.disconnect();
+                      // CRITICAL: Only disconnect specific connection, not all connections
+                      try {
+                        panNode.disconnect(masterPanNode);
+                      } catch (e) {
+                        // Not connected to masterPanNode, that's fine
+                      }
                       panNode.connect(masterPanNode);
                     } catch (e) {
                       // May already be connected
@@ -1184,10 +1268,16 @@ class SoundManager {
                 console.log(`🎚️ 🔍 FALLBACK ROUTING SKIP: elementId is null, will route through master chain`);
               }
               
-              // Final fallback: route through master chain if element routing still not available
-              // This handles cases where Strudel connects during initialization (trackedPatterns.size === 0)
-              const masterNode = masterPanNode || masterGainNode;
+              // Final fallback: only allow routing through master chain when no element routing is possible
+              // Limit this to cases where there are no tracked patterns yet (e.g., initialization) or master is inactive
+              const allowMasterFallback = (soundManagerInstance.trackedPatterns.size === 0) || !soundManagerInstance.masterActive;
+              const masterNode = allowMasterFallback ? (masterPanNode || masterGainNode) : null;
               if (masterNode) {
+                // Skip fallback if this source is already routed through an element chain
+                if (this.__punchcardElementRouted) {
+                  console.log(`🎚️ Skipping master fallback for ${this.constructor.name} (already routed through element chain)`);
+                  return this.__originalConnect.call(this, destination, outputIndex, inputIndex);
+                }
                 // Only log once per node type - initialize Set if needed
                 if (!soundManagerInstance._masterRoutingLogged) {
                   soundManagerInstance._masterRoutingLogged = new Set();
@@ -1199,23 +1289,18 @@ class SoundManager {
                   console.log(`🎚️ ⚠️ FALLBACK: masterGainNode.gain=${masterGainNode?.gain?.value?.toFixed(3) || 'N/A'}, muted=${soundManagerInstance.masterMuted}, connected to destination=${!!soundManagerInstance._realDestination}`);
                   
                   // CRITICAL: Verify and ensure the entire master chain is connected
-                  // Chain should be: source -> masterPanNode -> masterAnalyser -> masterGainNode -> destination
-                  if (masterPanNode && soundManagerInstance.masterAnalyser) {
+                  // Chain should be: source -> masterPanNode -> masterGainNode -> destination
+                  if (masterPanNode && masterGainNode) {
                     try {
-                      // Ensure masterPanNode -> masterAnalyser connection
-                      masterPanNode.connect(soundManagerInstance.masterAnalyser);
-                      console.log(`🎚️ ✅ FALLBACK: Verified masterPanNode -> masterAnalyser connection`);
+                      // Ensure masterPanNode -> masterGainNode connection
+                      masterPanNode.connect(masterGainNode);
+                      console.log(`🎚️ ✅ FALLBACK: Verified masterPanNode -> masterGainNode connection`);
                     } catch (e) {
-                      console.log(`🎚️ ✅ FALLBACK: masterPanNode -> masterAnalyser already connected (${e.message})`);
-                    }
-                  }
-                  if (soundManagerInstance.masterAnalyser && masterGainNode) {
-                    try {
-                      // Ensure masterAnalyser -> masterGainNode connection
-                      soundManagerInstance.masterAnalyser.connect(masterGainNode);
-                      console.log(`🎚️ ✅ FALLBACK: Verified masterAnalyser -> masterGainNode connection`);
-                    } catch (e) {
-                      console.log(`🎚️ ✅ FALLBACK: masterAnalyser -> masterGainNode already connected (${e.message})`);
+                      if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+                        console.log(`🎚️ ✅ FALLBACK: masterPanNode -> masterGainNode already connected`);
+                      } else {
+                        console.warn(`⚠️ FALLBACK: Could not connect masterPanNode -> masterGainNode: ${e.message}`);
+                      }
                     }
                   }
                   // CRITICAL: Ensure masterGainNode is connected to destination when routing through master chain
@@ -1228,7 +1313,10 @@ class SoundManager {
                     }
                   }
                 }
-                return this.__originalConnect.call(this, masterNode, outputIndex, inputIndex);
+                const fallbackResult = this.__originalConnect.call(this, masterNode, outputIndex, inputIndex);
+                this.__punchcardMasterRouted = true;
+                this.__punchcardMasterConnectionNode = masterNode;
+                return fallbackResult;
               }
               
               // Last resort: allow connection to destination if master nodes don't exist
@@ -1536,6 +1624,45 @@ class SoundManager {
   }
 
   /**
+   * Dispose (disconnect and delete) per-element audio nodes.
+   * Useful for temporary elements like modal previews so they don't keep routing audio.
+   */
+  disposeElementAudioNodes(elementId) {
+    if (!elementId) {
+      return;
+    }
+
+    const gainNode = this.elementGainNodes.get(elementId);
+    const panNode = this.elementPanNodes.get(elementId);
+
+    if (gainNode) {
+      try {
+        gainNode.disconnect();
+      } catch (e) {
+        // Ignore if already disconnected
+      }
+      this.elementGainNodes.delete(elementId);
+    }
+
+    if (panNode) {
+      try {
+        panNode.disconnect();
+      } catch (e) {
+        // Ignore if already disconnected
+      }
+      this.elementPanNodes.delete(elementId);
+    }
+
+    this.elementGainValues.delete(elementId);
+    this.elementPanValues.delete(elementId);
+
+    if (this._panNodeConnectedToMaster) {
+      this._panNodeConnectedToMaster.delete(`${elementId}-pan`);
+      this._panNodeConnectedToMaster.delete(`${elementId}-gain`);
+    }
+  }
+
+  /**
    * Check if a pattern contains note() function
    * @param {string} pattern - Pattern string to check
    * @returns {boolean} - True if pattern contains note()
@@ -1754,6 +1881,32 @@ class SoundManager {
     // Pre-evaluate the pattern in the slot (but keep it silent initially)
     // This is just for caching - the pattern will be evaluated when user triggers playback
     try {
+      // CRITICAL: Ensure scheduler is NOT running when setting to silence
+      // If scheduler is running, even silence might create audio nodes
+      if (window.strudel && window.strudel.scheduler && window.strudel.scheduler.started) {
+        console.log(`⏸️ Stopping scheduler before setting ${patternSlot} to silence (preventing auto-playback)`);
+        try {
+          if (typeof window.strudel.scheduler.stop === 'function') {
+            window.strudel.scheduler.stop();
+          }
+        } catch (stopError) {
+          console.warn(`⚠️ Could not stop scheduler:`, stopError);
+        }
+      }
+      
+      // CRITICAL: Ensure scheduler is stopped BEFORE setting to silence
+      // Even setting to silence can trigger audio if scheduler is running
+      if (window.strudel && window.strudel.scheduler && window.strudel.scheduler.started) {
+        console.log(`⏸️ Stopping scheduler before setting ${patternSlot} to silence (preEvaluatePattern)`);
+        try {
+          if (typeof window.strudel.scheduler.stop === 'function') {
+            window.strudel.scheduler.stop();
+          }
+        } catch (stopError) {
+          console.warn(`⚠️ Could not stop scheduler:`, stopError);
+        }
+      }
+      
       // Ensure pattern slot is set to silence to prevent auto-playback
       const assignmentCode = `${patternSlot} = silence`;
       await window.strudel.evaluate(assignmentCode);
@@ -2480,6 +2633,13 @@ class SoundManager {
     // If loop is active, we already returned above, so this is safe
     this.stopSound(elementId);
 
+    // CRITICAL: Ensure scheduler is running before playing pattern
+    // This ensures Strudel can schedule the pattern properly
+    if (window.strudel && window.strudel.scheduler && !window.strudel.scheduler.started) {
+      console.log(`▶️ Starting scheduler for ${elementId} playback...`);
+      await window.strudel.scheduler.start();
+    }
+
     console.log(`Playing Strudel pattern for ${elementId}:`, pattern);
     
     // Try to use Strudel from CDN
@@ -2781,6 +2941,14 @@ class SoundManager {
           console.log(`   Assignment: ${assignmentCode}`);
           
           try {
+            // CRITICAL: Ensure scheduler is running before evaluating pattern
+            // This ensures Strudel can schedule the pattern properly
+            // Only start scheduler when explicitly playing (not when pre-evaluating or saving)
+            if (window.strudel && window.strudel.scheduler && !window.strudel.scheduler.started) {
+              console.log(`▶️ Starting scheduler for ${elementId} pattern evaluation...`);
+              await window.strudel.scheduler.start();
+            }
+            
             // Try direct assignment first - this should work if initStrudel created the slots
             // Note: Strudel's evaluate may return undefined for assignments, which is normal
             const evalResult = await window.strudel.evaluate(assignmentCode);
@@ -3216,7 +3384,12 @@ class SoundManager {
                     const panNode = elementNodes.panNode;
                     if (panNode && this.masterPanNode) {
                       try {
-                        panNode.disconnect();
+                        // CRITICAL: Only disconnect specific connection, not all connections
+                        try {
+                          panNode.disconnect(this.masterPanNode);
+                        } catch (e) {
+                          // Not connected to masterPanNode, that's fine
+                        }
                         panNode.connect(this.masterPanNode);
                       } catch (e) {
                         // May already be connected
@@ -3370,23 +3543,18 @@ class SoundManager {
         console.log('✅ Pattern slot initialization complete');
         globalThis.__strudelPatternsInitialized = true;
         
-        // NOW we can safely start the scheduler (pattern slots are initialized)
+        // CRITICAL: Don't auto-start scheduler - only start when user explicitly plays
+        // Auto-starting causes patterns to play when evaluated, even when not requested
+        // Scheduler will be started when preview or play button is pressed
         if (replInstance.scheduler) {
-          console.log('▶️ Starting scheduler now that pattern slots are initialized...');
-          try {
-            if (typeof replInstance.scheduler.start === 'function') {
-              replInstance.scheduler.start();
-              console.log('✅ REPL scheduler started');
-            }
-            if (typeof replInstance.scheduler.setActive === 'function') {
-              replInstance.scheduler.setActive(true);
-              console.log('✅ REPL scheduler set to active');
-            }
-            
-            // Connect scheduler output to master channel
-            setTimeout(() => {
-              const scheduler = replInstance.scheduler;
-              if (scheduler.webaudio || scheduler._webaudio) {
+          console.log('⏸️ Scheduler NOT auto-started - will start when user presses play/preview');
+          // Don't start scheduler here - let it start only when explicitly requested
+          // This prevents auto-playback when patterns are evaluated during save/select
+          
+          // Connect scheduler output to master channel (but don't start scheduler yet)
+          setTimeout(() => {
+            const scheduler = replInstance.scheduler;
+            if (scheduler.webaudio || scheduler._webaudio) {
                 const webaudio = scheduler.webaudio || scheduler._webaudio;
                 if (webaudio.output || webaudio.outputNode) {
                   const node = webaudio.output || webaudio.outputNode;
@@ -3400,9 +3568,6 @@ class SoundManager {
                 }
               }
             }, 500);
-          } catch (schedError) {
-            console.warn('⚠️ Could not start scheduler:', schedError);
-          }
         }
       } else if (globalThis.__strudelPatternsInitialized) {
         console.log('✅ Pattern slots already initialized');
@@ -3939,6 +4104,7 @@ class SoundManager {
 
   stopSound(elementId) {
     const activeSound = this.activeSounds.get(elementId);
+    const isPreviewElement = typeof elementId === 'string' && elementId.toLowerCase().includes('preview');
     
     // Also clear the Strudel pattern slot by setting it to silence
     if (window.strudel && window.strudel.evaluate) {
@@ -3992,6 +4158,17 @@ class SoundManager {
       }
       
       this.activeSounds.delete(elementId);
+    }
+
+    if (isPreviewElement) {
+      const previewSlot = this.strudelPatternSlots.get(elementId);
+      if (previewSlot) {
+        this.patternSlotToElementId.delete(previewSlot);
+        this.strudelPatternSlots.delete(elementId);
+        console.log(`🧹 Cleared preview slot mapping (${previewSlot}) for ${elementId}`);
+      }
+      this.disposeElementAudioNodes(elementId);
+      console.log(`🧹 Disposed preview audio nodes for ${elementId}`);
     }
   }
 
@@ -4296,12 +4473,8 @@ class SoundManager {
       return pattern;
     }
     
-    // Check if pattern is in note names format - if so, don't convert, preserve as-is
-    // Note names have letter notes (a-g) followed by optional accidental and octave
-    const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(pattern);
-    // Numeric notes are pure numbers/spaces (e.g., n("0 2 4")), NOT note names with octaves
-    const hasNumericNotes = /\b(n|note)\s*\(\s*["'][\d\s\-]+["']/.test(pattern) && 
-                            !/\b(note|n)\s*\(\s*["'][a-gA-G]/.test(pattern);
+    const hasNoteNames = this.patternHasNoteNames(pattern);
+    const hasNumericNotes = this.patternHasNumericNotePattern(pattern);
     
     // If pattern uses note names, preserve it - don't convert to semitones
     if (hasNoteNames && !hasNumericNotes) {
@@ -4323,6 +4496,40 @@ class SoundManager {
     }
     // Always convert, regardless of format
     return convertNoteCallsToScaleDegrees(pattern);
+  }
+
+  patternHasNoteNames(pattern) {
+    if (!pattern || typeof pattern !== 'string') return false;
+    const noteCallRegex = /\b(note|n)\s*\(\s*["']([^"']+)["']/gi;
+    let match;
+    while ((match = noteCallRegex.exec(pattern)) !== null) {
+      const content = match[2];
+      if (/[a-gA-G][#b]?\d/.test(content) || /[a-gA-G][#b]?\s/.test(content)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  patternHasNumericNotePattern(pattern) {
+    if (!pattern || typeof pattern !== 'string') return false;
+    const noteCallRegex = /\b(note|n)\s*\(\s*["']([^"']+)["']/gi;
+    let match;
+    let found = false;
+    while ((match = noteCallRegex.exec(pattern)) !== null) {
+      found = true;
+      let content = match[2]
+        .replace(/[<>\[\]\{\}\|,]/g, ' ')
+        .trim();
+      if (!content) continue;
+      if (/[a-gA-G]/.test(content)) {
+        return false;
+      }
+      if (!/^[\d\s~\-\/]+$/.test(content)) {
+        return false;
+      }
+    }
+    return found;
   }
 
   applyMasterMixModifiers(pattern, options = {}) {
@@ -4620,9 +4827,7 @@ class SoundManager {
     // Detect patterns with note names (with or without octaves) or chord names
     // Examples: note("c3 d3 e3"), note("c d e f"), note("Cmaj7 Am Dm"), note("c# d e")
     // Note names have letter notes (a-g) followed by optional accidental and octave
-    const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(modifiedPattern) ||
-                         (/\b(note|n)\s*\(\s*["'][a-gA-G][#b]/.test(modifiedPattern) && 
-                          !/\b(note|n)\s*\(\s*["'][\d\s\-]+["']/.test(modifiedPattern));
+    const hasNoteNames = this.patternHasNoteNames(modifiedPattern);
     
     // Detect chord names (patterns containing chord notation like maj, min, m, 7, etc.)
     // Examples: "Cmaj7", "Am", "Dm7", "F#maj", "Bb7"
@@ -4638,9 +4843,8 @@ class SoundManager {
     const hasLetterNotes = /\b(note|n)\s*\(\s*["'][^"']*[a-g][#b]?\s/.test(modifiedPattern);
     
     const hasExplicitNotes = hasNoteNames || hasChordNames || hasLetterNotes || hasChordModifier;
-    // Patterns with .chord() modifier should not be treated as numeric patterns for scale application
-    // Even if they use numeric note values like n("0 1 2 3").chord("<C Am F G>")
-    const isNumericPattern = hasNoteFunction && !hasExplicitNotes && !hasChordModifier;
+    const numericNotePattern = this.patternHasNumericNotePattern(modifiedPattern);
+    const isNumericPattern = hasNoteFunction && !hasExplicitNotes && !hasChordModifier && numericNotePattern;
 
     // Use per-element key/scale if provided, otherwise fall back to global settings
     const keyToUse = elementKey !== null ? elementKey : (this.currentKey && this.currentKey.trim() !== '' ? this.currentKey.trim() : '');
@@ -5870,8 +6074,8 @@ class SoundManager {
       const normalizedPattern = (pattern || '').replace(/[""]/g, '"').replace(/['']/g, "'");
       
       // Check if pattern is in note names format (e.g., note("C4 E4 G4"))
-      const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(normalizedPattern);
-      const hasNumericNotes = /\b(n|note)\s*\(\s*["'][\d\s]+["']/.test(normalizedPattern);
+      const hasNoteNames = this.patternHasNoteNames(normalizedPattern);
+      const hasNumericNotes = this.patternHasNumericNotePattern(normalizedPattern);
       
       // Preserve the original format: store rawPattern as-is (what user wrote)
       // Store pattern as the same format (no conversion) - master will preserve each track's format
@@ -6014,11 +6218,8 @@ class SoundManager {
         // Preserve the format: if pattern uses note names, keep note names; if semitones, keep semitones
         // Check if pattern is in note names format (e.g., note("C4 E4 G4"))
         // Note names have letter notes (a-g) followed by optional accidental and octave
-        const hasNoteNames = /\b(note|n)\s*\(\s*["'][a-gA-G][#b]?\d/.test(sourcePattern);
-        // Numeric notes are pure numbers/spaces (e.g., n("0 2 4")), NOT note names with octaves
-        // Match patterns that start with digits/spaces only (no letters a-g)
-        const hasNumericNotes = /\b(n|note)\s*\(\s*["'][\d\s\-]+["']/.test(sourcePattern) && 
-                                 !/\b(note|n)\s*\(\s*["'][a-gA-G]/.test(sourcePattern);
+        const hasNoteNames = this.patternHasNoteNames(sourcePattern);
+        const hasNumericNotes = this.patternHasNumericNotePattern(sourcePattern);
         
         // Preserve the format: if pattern uses note names, keep note names; if semitones, keep semitones
         let convertedPattern = sourcePattern;
@@ -6304,12 +6505,31 @@ class SoundManager {
       console.log(`🎛️ Applied global settings to master pattern (Key: ${this.currentKey || 'none'}, Scale: ${this.currentScale || (this.currentKey ? 'derived' : 'none')}, Time Sig: ${this.currentTimeSignature || 'none'}, Volume: ${this.formatNumberForPattern(this.masterVolume, 4)}, Pan: ${this.formatNumberForPattern(this.masterPan, 4)}, Tempo: ${this.currentTempo || 120} BPM)`);
       
       
+      // CRITICAL: Stop scheduler and set masterActive=false when updating master pattern
+      // This prevents auto-playback when patterns are updated (e.g., during save)
+      const wasSchedulerRunning = window.strudel && window.strudel.scheduler && window.strudel.scheduler.started;
+      if (wasSchedulerRunning) {
+        console.log(`⏸️ Stopping scheduler during updateMasterPattern to prevent auto-playback`);
+        try {
+          if (typeof window.strudel.scheduler.stop === 'function') {
+            window.strudel.scheduler.stop();
+          }
+        } catch (stopError) {
+          console.warn(`⚠️ Could not stop scheduler:`, stopError);
+        }
+      }
+      
       // Don't auto-play when pattern is updated - wait for user to press play button
       // If master is currently playing, stop it (user needs to press play again to restart)
       if (this.masterActive) {
         console.log(`🔄 Master pattern updated while playing - stopping playback (user must press play to restart)`);
         this.stopMasterPattern();
         this.masterActive = false;
+      } else {
+        // CRITICAL: Ensure masterActive is false even if it wasn't already playing
+        // This prevents audio from playing when updateMasterPattern is called during save
+        this.masterActive = false;
+        console.log(`⏸️ Set masterActive=false during updateMasterPattern (preventing auto-playback)`);
       }
       
       // Notify UI that master pattern has been updated
@@ -6544,6 +6764,13 @@ class SoundManager {
     try {
       console.log(`▶️ Playing master pattern...`);
       
+      // CRITICAL: Set masterActive BEFORE evaluation so audio routing can find elements
+      // Always set to true when playMasterPattern is called (this function is only called from play button)
+      // The audio routing interception will block connections when masterActive=false, but when
+      // playMasterPattern is explicitly called, we want to play, so set masterActive=true
+      this.masterActive = true;
+      console.log(`🎚️ masterActive set to TRUE before pattern evaluation`);
+      
       // Ensure audio context is initialized
       if (!this.audioContext || this.audioContext.state === 'suspended') {
         await this.initialize();
@@ -6561,6 +6788,7 @@ class SoundManager {
       // Check if we have a valid pattern
       if (!this.masterPattern || this.masterPattern.trim() === '') {
         console.log(`⚠️ No master pattern to play`);
+        this.masterActive = false; // Reset if no pattern
         return { success: false, error: 'No pattern to play' };
       }
       
@@ -6770,6 +6998,7 @@ class SoundManager {
       this._nodeTypeConnectLogged = new Set();
       this._stackMasterRoutingLogged = false;
       this._masterRoutingLogged = false;
+      this._panNodeConnectedToMaster = new Set(); // Reset panNode connection tracking
       this._gainConnectDebugged = false;
       this._stackElementRoutingLogged = new Set();
       this._chainVerificationLogged = new Set();
@@ -6861,6 +7090,16 @@ class SoundManager {
             }
           }
           
+        // CRITICAL: Start scheduler BEFORE pattern evaluation
+        // Strudel needs the scheduler running to play audio
+        // This must happen before evaluation so audio can start immediately
+        if (window.strudel && window.strudel.scheduler && !window.strudel.scheduler.started) {
+          console.log(`▶️ Starting Strudel scheduler BEFORE pattern evaluation...`);
+          await window.strudel.scheduler.start();
+        } else if (window.strudel && window.strudel.scheduler && window.strudel.scheduler.started) {
+          console.log(`✅ Strudel scheduler already running`);
+        }
+        
         const code = `${evaluationSlot} = ${patternToEval}`;
         console.log(`🎼 Evaluating master pattern:`);
         console.log(`   Full code: ${code}`);
@@ -7008,7 +7247,13 @@ class SoundManager {
                 const panNode = elementNodes.panNode;
                 if (panNode && this.masterPanNode) {
                   try {
-                    panNode.disconnect();
+                    // CRITICAL: Only disconnect specific connection, not all connections
+                    // Disconnecting all connections breaks the audio chain
+                    try {
+                      panNode.disconnect(this.masterPanNode);
+                    } catch (e) {
+                      // Not connected to masterPanNode, that's fine - will connect below
+                    }
                     panNode.connect(this.masterPanNode);
                     console.log(`🎚️ ✅ POST-EVALUATION: Verified ${elementId} panNode -> masterPanNode`);
                   } catch (e) {
@@ -7019,17 +7264,18 @@ class SoundManager {
             }
             
             // CRITICAL: Ensure masterGainNode is connected to destination
+            // Don't disconnect - just try to connect (will silently succeed if already connected)
             if (this.masterGainNode && this._realDestination) {
               try {
-                this.masterGainNode.disconnect(this._realDestination);
+                // Try to connect - will throw if already connected, which is fine
                 this.masterGainNode.connect(this._realDestination);
                 console.log(`🎚️ ✅ POST-EVALUATION: Verified masterGainNode -> destination (gain=${this.masterGainNode.gain.value.toFixed(3)}, muted=${this.masterMuted})`);
               } catch (e) {
-                try {
-                  this.masterGainNode.connect(this._realDestination);
-                  console.log(`🎚️ ✅ POST-EVALUATION: Ensured masterGainNode -> destination`);
-                } catch (e2) {
-                  console.warn(`⚠️ POST-EVALUATION: Could not verify masterGainNode -> destination: ${e2.message}`);
+                // Already connected - that's fine, just verify it's still connected
+                if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+                  console.log(`🎚️ ✅ POST-EVALUATION: masterGainNode -> destination already connected (gain=${this.masterGainNode.gain.value.toFixed(3)}, muted=${this.masterMuted})`);
+                } else {
+                  console.warn(`⚠️ POST-EVALUATION: Could not verify masterGainNode -> destination: ${e.message}`);
                 }
               }
             }
@@ -7048,11 +7294,8 @@ class SoundManager {
           }
         }, this.soundsPreloaded ? 100 : 500);
         
-        // Start scheduler if not running
-        if (window.strudel.scheduler && !window.strudel.scheduler.started) {
-          console.log(`▶️ Starting Strudel scheduler...`);
-          await window.strudel.scheduler.start();
-        }
+        // Scheduler is already started before pattern evaluation (see above)
+        // This ensures audio can play immediately when pattern is evaluated
         
         // CRITICAL: Verify audio chain connections after evaluation
         if (this.trackedPatterns.size === 1) {
@@ -7060,19 +7303,17 @@ class SoundManager {
           const elementNodes = this.getElementAudioNodes(elementId);
           
           console.log(`🔍 AUDIO CHAIN VERIFICATION for ${elementId}:`);
-          console.log(`   📊 AUDIO ROUTING CHAIN (no VU meters):`);
+          console.log(`   📊 AUDIO ROUTING CHAIN (simplified, no masterAnalyser):`);
           console.log(`      1. Strudel output -> elementGainNode (gain=${elementNodes?.gainNode?.gain?.value?.toFixed(3) || 'N/A'})`);
           console.log(`      2. elementGainNode -> elementPanNode (pan=${elementNodes?.panNode?.pan?.value?.toFixed(3) || 'N/A'})`);
           console.log(`      3. elementPanNode -> masterPanNode`);
-          console.log(`      4. masterPanNode -> masterAnalyser (for visualizer)`);
-          console.log(`      5. masterAnalyser -> masterGainNode (gain=${this.masterGainNode?.gain?.value?.toFixed(3) || 'N/A'}, muted=${this.masterMuted})`);
-          console.log(`      6. masterGainNode -> destination (audio output)`);
-          console.log(`      7. masterGainNode -> visualizerAnalyser (parallel, for visualization)`);
-          console.log(`   ✅ NO VU METER ANALYSERS IN CHAIN (all removed)`);
+          console.log(`      4. masterPanNode -> masterGainNode (gain=${this.masterGainNode?.gain?.value?.toFixed(3) || 'N/A'}, muted=${this.masterMuted})`);
+          console.log(`      5. masterGainNode -> destination (audio output)`);
+          console.log(`      6. masterGainNode -> visualizerAnalyser (parallel, for visualization)`);
+          console.log(`   ✅ SIMPLIFIED CHAIN: element gain -> element pan -> master pan -> master gain -> destination`);
           console.log(`   elementGainNode: ${elementNodes?.gainNode ? 'EXISTS' : 'MISSING'} (gain=${elementNodes?.gainNode?.gain?.value?.toFixed(3) || 'N/A'})`);
           console.log(`   elementPanNode: ${elementNodes?.panNode ? 'EXISTS' : 'MISSING'} (pan=${elementNodes?.panNode?.pan?.value?.toFixed(3) || 'N/A'})`);
           console.log(`   masterPanNode: ${this.masterPanNode ? 'EXISTS' : 'MISSING'}`);
-          console.log(`   masterAnalyser: ${this.masterAnalyser ? 'EXISTS' : 'MISSING'}`);
           console.log(`   masterGainNode: ${this.masterGainNode ? 'EXISTS' : 'MISSING'} (gain=${this.masterGainNode?.gain?.value?.toFixed(3) || 'N/A'}, muted=${this.masterMuted})`);
           console.log(`   visualizerAnalyser: ${this.visualizerAnalyser ? 'EXISTS' : 'MISSING'}`);
           console.log(`   destination: ${this._realDestination ? 'EXISTS' : 'MISSING'}`);
@@ -7091,7 +7332,7 @@ class SoundManager {
                   // Check if outputNode is connected to elementGainNode
                   // We can't directly check, but we can verify the chain is set up
                   if (elementNodes?.gainNode) {
-                    console.log(`   ✅ Chain should be: Strudel output -> elementGain -> elementPan -> masterPan -> masterAnalyser -> masterGain -> destination`);
+                    console.log(`   ✅ Chain should be: Strudel output -> elementGain -> elementPan -> masterPan -> masterGain -> destination`);
                   }
                 } else {
                   console.warn(`   ⚠️ Strudel outputNode: NOT FOUND`);
@@ -7105,20 +7346,23 @@ class SoundManager {
           }
           
           // CRITICAL: Verify the entire master chain is connected
-          // Chain should be: masterPan -> masterAnalyser -> masterGainNode -> destination
+          // Chain should be: masterPan -> masterGainNode -> destination
           console.log(`   🔍 VERIFYING MASTER CHAIN:`);
           console.log(`      masterPanNode: ${this.masterPanNode ? 'EXISTS' : 'MISSING'}`);
-          console.log(`      masterAnalyser: ${this.masterAnalyser ? 'EXISTS' : 'MISSING'}`);
           console.log(`      masterGainNode: ${this.masterGainNode ? 'EXISTS' : 'MISSING'} (gain=${this.masterGainNode?.gain?.value?.toFixed(3) || 'N/A'})`);
           console.log(`      destination: ${this._realDestination ? 'EXISTS' : 'MISSING'}`);
           
-          // Verify masterAnalyser -> masterGainNode connection
-          if (this.masterAnalyser && this.masterGainNode) {
+          // Verify masterPan -> masterGainNode connection
+          if (this.masterPanNode && this.masterGainNode) {
             try {
-              this.masterAnalyser.connect(this.masterGainNode);
-              console.log(`   ✅ VERIFIED: masterAnalyser -> masterGainNode`);
+              this.masterPanNode.connect(this.masterGainNode);
+              console.log(`   ✅ VERIFIED: masterPanNode -> masterGainNode`);
             } catch (e) {
-              console.log(`   ✅ VERIFIED: masterAnalyser -> masterGainNode (already connected)`);
+              if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+                console.log(`   ✅ VERIFIED: masterPanNode -> masterGainNode (already connected)`);
+              } else {
+                console.warn(`   ⚠️ Could not verify masterPanNode -> masterGainNode: ${e.message}`);
+              }
             }
           }
           
@@ -7134,13 +7378,16 @@ class SoundManager {
               if (e.message && e.message.includes('already connected') || e.message.includes('InvalidStateError')) {
                 console.log(`   ✅ VERIFIED: masterGainNode -> destination (already connected)`);
               } else {
-                // Try disconnecting and reconnecting if there's a different error
+                // Try connecting if there's a different error (might not be connected)
                 try {
-                  this.masterGainNode.disconnect(this._realDestination);
                   this.masterGainNode.connect(this._realDestination);
                   console.log(`   ✅ RECONNECTED: masterGainNode -> destination`);
                 } catch (e2) {
-                  console.error(`   ❌ FAILED: Could not connect masterGainNode -> destination: ${e2.message}`);
+                  if (e2.message.includes('already connected') || e2.message.includes('already been connected')) {
+                    console.log(`   ✅ VERIFIED: masterGainNode -> destination (already connected)`);
+                  } else {
+                    console.error(`   ❌ FAILED: Could not connect masterGainNode -> destination: ${e2.message}`);
+                  }
                 }
               }
             }
@@ -7161,37 +7408,34 @@ class SoundManager {
           }
         }
         console.log(`   masterPanNode: ${this.masterPanNode ? 'EXISTS' : 'MISSING'}`);
-        console.log(`   masterAnalyser: ${this.masterAnalyser ? 'EXISTS' : 'MISSING'}`);
         console.log(`   masterGainNode: ${this.masterGainNode ? 'EXISTS' : 'MISSING'} (gain=${this.masterGainNode?.gain?.value?.toFixed(3) || 'N/A'}, muted=${this.masterMuted})`);
+        console.log(`   visualizerAnalyser: ${this.visualizerAnalyser ? 'EXISTS' : 'MISSING'}`);
         console.log(`   destination: ${this._realDestination ? 'EXISTS' : 'MISSING'}`);
         
-        // CRITICAL: Ensure masterAnalyser -> masterGainNode -> destination chain is intact
-        if (this.masterAnalyser && this.masterGainNode) {
+        // CRITICAL: Ensure masterPan -> masterGainNode -> destination chain is intact
+        // Don't disconnect - just try to connect (will silently succeed if already connected)
+        if (this.masterPanNode && this.masterGainNode) {
           try {
-            // Disconnect and reconnect to ensure it's connected
-            try {
-              this.masterAnalyser.disconnect(this.masterGainNode);
-            } catch (e) {
-              // May not be connected, that's fine
-            }
-            this.masterAnalyser.connect(this.masterGainNode);
-            console.log(`   ✅ VERIFIED: masterAnalyser -> masterGainNode (reconnected)`);
+            this.masterPanNode.connect(this.masterGainNode);
+            console.log(`   ✅ VERIFIED: masterPanNode -> masterGainNode (reconnected)`);
           } catch (e) {
-            console.log(`   ✅ VERIFIED: masterAnalyser -> masterGainNode (already connected)`);
+            if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+              console.log(`   ✅ VERIFIED: masterPanNode -> masterGainNode (already connected)`);
+            } else {
+              console.warn(`   ⚠️ Could not verify masterPanNode -> masterGainNode: ${e.message}`);
+            }
           }
         }
         if (this.masterGainNode && this._realDestination) {
           try {
-            // Disconnect and reconnect to ensure it's connected
-            try {
-              this.masterGainNode.disconnect(this._realDestination);
-            } catch (e) {
-              // May not be connected, that's fine
-            }
             this.masterGainNode.connect(this._realDestination);
             console.log(`   ✅ VERIFIED: masterGainNode -> destination (reconnected, gain=${this.masterGainNode.gain.value.toFixed(3)})`);
           } catch (e) {
-            console.log(`   ✅ VERIFIED: masterGainNode -> destination (already connected, gain=${this.masterGainNode.gain.value.toFixed(3)})`);
+            if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+              console.log(`   ✅ VERIFIED: masterGainNode -> destination (already connected, gain=${this.masterGainNode.gain.value.toFixed(3)})`);
+            } else {
+              console.warn(`   ⚠️ Could not verify masterGainNode -> destination: ${e.message}`);
+            }
           }
         }
         
@@ -7409,6 +7653,14 @@ class SoundManager {
         this.masterPattern = this.formatMasterPatternWithTempoComment(code);
       } else {
         this.masterPattern = '';
+      }
+
+      if (this.appInstance && typeof this.appInstance.syncElementsFromMasterPattern === 'function') {
+        try {
+          this.appInstance.syncElementsFromMasterPattern(this.masterPattern);
+        } catch (syncError) {
+          console.warn('⚠️ Failed to sync elements from master pattern:', syncError);
+        }
       }
       
       // Don't auto-play when setting pattern code - user must press play button
