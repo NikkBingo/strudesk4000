@@ -8896,11 +8896,6 @@ class InteractiveSoundApp {
           <div class="status-dot loaded-dot" title="Sound Loaded"></div>
           <div class="status-dot playing-dot" title="Playing"></div>
         </div>
-        <div class="vu-meter-container">
-          <div class="vu-meter">
-            <div class="vu-bar"></div>
-          </div>
-        </div>
         <div class="master-status-indicator" title="Pattern saved to Master">M</div>
         <div class="element-title">Element ${newElementNumber}</div>
         <div class="element-indicator"></div>
