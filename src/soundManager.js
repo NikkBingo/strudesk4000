@@ -61,6 +61,7 @@ function replaceSynthAliasesInPattern(pattern) {
 }
 
 const SCALE_NAME_TONAL_MAP = {
+  // Legacy/simple names
   major: 'major',
   minor: 'minor',
   harmonicMinor: 'harmonic minor',
@@ -72,7 +73,58 @@ const SCALE_NAME_TONAL_MAP = {
   locrian: 'locrian',
   blues: 'blues',
   pentatonicMajor: 'major pentatonic',
-  pentatonicMinor: 'minor pentatonic'
+  pentatonicMinor: 'minor pentatonic',
+
+  // Diatonic (Major) modes
+  ionian: 'major',
+  aeolian: 'minor',
+
+  // Melodic Minor modes
+  'melodic minor': 'melodic minor',
+  'dorian b2': 'dorian b2',
+  'lydian augmented': 'lydian augmented',
+  'lydian dominant': 'lydian dominant',
+  'mixolydian b6': 'mixolydian b6',
+  'locrian #2': 'locrian #2',
+  altered: 'altered',
+
+  // Harmonic Minor modes
+  'harmonic minor': 'harmonic minor',
+  'locrian #6': 'locrian #6',
+  'ionian #5': 'ionian #5',
+  'dorian #4': 'dorian #4',
+  'phrygian dominant': 'phrygian dominant',
+  'lydian #2': 'lydian #2',
+  ultralocrian: 'ultralocrian',
+
+  // Harmonic Major modes
+  'harmonic major': 'harmonic major',
+  'dorian b5': 'dorian b5',
+  'phrygian b4': 'phrygian b4',
+  'lydian b3': 'lydian b3',
+  'mixolydian b2': 'mixolydian b2',
+  'lydian augmented #2': 'lydian augmented #2',
+  'locrian bb7': 'locrian bb7',
+
+  // Pentatonic modes (Major)
+  'major pentatonic': 'major pentatonic',
+  'suspended pentatonic': 'suspended pentatonic',
+  'man gong': 'man gong',
+  ritusen: 'ritusen',
+  'minor pentatonic mode 5': 'minor pentatonic',
+
+  // Pentatonic modes (Minor)
+  'minor pentatonic': 'minor pentatonic',
+  'blues minor pentatonic': 'minor pentatonic', // no b5 → same as minor pentatonic
+  'major pentatonic mode 3': 'major pentatonic',
+  egyptian: 'egyptian',
+  'minor pentatonic mode 5': 'minor pentatonic',
+
+  // Other systems
+  'whole tone': 'whole tone',
+  'half-whole diminished': 'dominant diminished', // half-whole
+  'whole-half diminished': 'diminished', // whole-half
+  'minor blues': 'blues'
 };
 
 function normalizeKeyRoot(key) {
@@ -1881,32 +1933,6 @@ class SoundManager {
     // Pre-evaluate the pattern in the slot (but keep it silent initially)
     // This is just for caching - the pattern will be evaluated when user triggers playback
     try {
-      // CRITICAL: Ensure scheduler is NOT running when setting to silence
-      // If scheduler is running, even silence might create audio nodes
-      if (window.strudel && window.strudel.scheduler && window.strudel.scheduler.started) {
-        console.log(`⏸️ Stopping scheduler before setting ${patternSlot} to silence (preventing auto-playback)`);
-        try {
-          if (typeof window.strudel.scheduler.stop === 'function') {
-            window.strudel.scheduler.stop();
-          }
-        } catch (stopError) {
-          console.warn(`⚠️ Could not stop scheduler:`, stopError);
-        }
-      }
-      
-      // CRITICAL: Ensure scheduler is stopped BEFORE setting to silence
-      // Even setting to silence can trigger audio if scheduler is running
-      if (window.strudel && window.strudel.scheduler && window.strudel.scheduler.started) {
-        console.log(`⏸️ Stopping scheduler before setting ${patternSlot} to silence (preEvaluatePattern)`);
-        try {
-          if (typeof window.strudel.scheduler.stop === 'function') {
-            window.strudel.scheduler.stop();
-          }
-        } catch (stopError) {
-          console.warn(`⚠️ Could not stop scheduler:`, stopError);
-        }
-      }
-      
       // Ensure pattern slot is set to silence to prevent auto-playback
       const assignmentCode = `${patternSlot} = silence`;
       await window.strudel.evaluate(assignmentCode);
@@ -6505,32 +6531,8 @@ class SoundManager {
       console.log(`🎛️ Applied global settings to master pattern (Key: ${this.currentKey || 'none'}, Scale: ${this.currentScale || (this.currentKey ? 'derived' : 'none')}, Time Sig: ${this.currentTimeSignature || 'none'}, Volume: ${this.formatNumberForPattern(this.masterVolume, 4)}, Pan: ${this.formatNumberForPattern(this.masterPan, 4)}, Tempo: ${this.currentTempo || 120} BPM)`);
       
       
-      // CRITICAL: Stop scheduler and set masterActive=false when updating master pattern
-      // This prevents auto-playback when patterns are updated (e.g., during save)
-      const wasSchedulerRunning = window.strudel && window.strudel.scheduler && window.strudel.scheduler.started;
-      if (wasSchedulerRunning) {
-        console.log(`⏸️ Stopping scheduler during updateMasterPattern to prevent auto-playback`);
-        try {
-          if (typeof window.strudel.scheduler.stop === 'function') {
-            window.strudel.scheduler.stop();
-          }
-        } catch (stopError) {
-          console.warn(`⚠️ Could not stop scheduler:`, stopError);
-        }
-      }
-      
-      // Don't auto-play when pattern is updated - wait for user to press play button
-      // If master is currently playing, stop it (user needs to press play again to restart)
-      if (this.masterActive) {
-        console.log(`🔄 Master pattern updated while playing - stopping playback (user must press play to restart)`);
-        this.stopMasterPattern();
-        this.masterActive = false;
-      } else {
-        // CRITICAL: Ensure masterActive is false even if it wasn't already playing
-        // This prevents audio from playing when updateMasterPattern is called during save
-        this.masterActive = false;
-        console.log(`⏸️ Set masterActive=false during updateMasterPattern (preventing auto-playback)`);
-      }
+      // Preserve current transport state; do NOT stop scheduler or playback here.
+      // Live updates should be seamless. If master isn't active, remain idle; if active, keep playing.
       
       // Notify UI that master pattern has been updated
       if (this.onMasterPatternUpdateCallback) {
@@ -6770,6 +6772,10 @@ class SoundManager {
       // playMasterPattern is explicitly called, we want to play, so set masterActive=true
       this.masterActive = true;
       console.log(`🎚️ masterActive set to TRUE before pattern evaluation`);
+      // Restore master gain to user volume on play
+      if (this.masterGainNode) {
+        this.masterGainNode.gain.setValueAtTime(this.masterVolume, this.audioContext?.currentTime || 0);
+      }
       
       // Ensure audio context is initialized
       if (!this.audioContext || this.audioContext.state === 'suspended') {
@@ -7584,6 +7590,10 @@ class SoundManager {
         
         this.masterPlaybackStartTime = null;
         this.masterActive = false;
+        // Mute master output when stopped to avoid any DC/idle noise on interfaces
+        if (this.masterGainNode) {
+          this.masterGainNode.gain.setValueAtTime(0, this.audioContext?.currentTime || 0);
+        }
         
         // Clear audio chain check interval
         if (this._audioChainCheckInterval) {
@@ -7663,12 +7673,15 @@ class SoundManager {
         }
       }
       
-      // Don't auto-play when setting pattern code - user must press play button
-      // If master is active, just stop it (user must press play to restart)
+      // Preserve transport: if master is playing, re-evaluate seamlessly without stopping.
+      // If master is stopped, do nothing (user will press Play).
       if (this.masterActive) {
-        console.log(`🔄 Master pattern code updated while playing - stopping playback (user must press play to restart)`);
-        await this.stopMasterPattern();
-        this.masterActive = false;
+        console.log(`🔄 Master is active - re-evaluating with updated pattern (no stop).`);
+        try {
+          await this.playMasterPattern();
+        } catch (e) {
+          console.warn(`⚠️ Could not re-evaluate master after code update:`, e.message);
+        }
       }
       
       return { success: true };
