@@ -4822,8 +4822,16 @@ class InteractiveSoundApp {
     
     console.log(`🎛️ Effects updated for ${elementId}:`, this.elementEffects[elementId]);
     
-    // Apply effects to the pattern (works for both master and individual playback)
-    await this.applyEffectsAndFiltersToPattern(elementId);
+    // Debounce apply to avoid rapid re-evaluation clicks while dragging
+    this._effectsApplyTimers = this._effectsApplyTimers || new Map();
+    if (this._effectsApplyTimers.has(elementId)) {
+      clearTimeout(this._effectsApplyTimers.get(elementId));
+    }
+    const timer = setTimeout(() => {
+      this.applyEffectsAndFiltersToPattern(elementId);
+      this._effectsApplyTimers.delete(elementId);
+    }, 150);
+    this._effectsApplyTimers.set(elementId, timer);
   }
   
   /**
@@ -4862,8 +4870,16 @@ class InteractiveSoundApp {
     
     console.log(`🔊 Filters updated for ${elementId}:`, this.elementFilters[elementId]);
     
-    // Apply filters to the pattern (works for both master and individual playback)
-    await this.applyEffectsAndFiltersToPattern(elementId);
+    // Debounce apply to avoid rapid re-evaluation clicks while dragging
+    this._filtersApplyTimers = this._filtersApplyTimers || new Map();
+    if (this._filtersApplyTimers.has(elementId)) {
+      clearTimeout(this._filtersApplyTimers.get(elementId));
+    }
+    const timer = setTimeout(() => {
+      this.applyEffectsAndFiltersToPattern(elementId);
+      this._filtersApplyTimers.delete(elementId);
+    }, 150);
+    this._filtersApplyTimers.set(elementId, timer);
   }
   
   /**
@@ -4898,8 +4914,16 @@ class InteractiveSoundApp {
     
     console.log(`🎹 Synthesis updated for ${elementId}:`, this.elementSynthesis[elementId]);
     
-    // Apply synthesis to the pattern (works for both master and individual playback)
-      await this.applyEffectsAndFiltersToPattern(elementId);
+    // Debounce apply to avoid rapid re-evaluation clicks while dragging
+    this._synthApplyTimers = this._synthApplyTimers || new Map();
+    if (this._synthApplyTimers.has(elementId)) {
+      clearTimeout(this._synthApplyTimers.get(elementId));
+    }
+    const timer = setTimeout(() => {
+      this.applyEffectsAndFiltersToPattern(elementId);
+      this._synthApplyTimers.delete(elementId);
+    }, 150);
+    this._synthApplyTimers.set(elementId, timer);
   }
   
   /**
@@ -5006,26 +5030,18 @@ class InteractiveSoundApp {
     // Check if element is tracked in master
     const isInMaster = soundManager.trackedPatterns && soundManager.trackedPatterns.has(elementId);
     
+    // Do not auto-restart playback while adjusting sliders.
+    // Update stored pattern and master display only; playback changes apply on next manual play.
     if (isInMaster) {
-      // Update the pattern in place for master
-      await soundManager.updatePatternInPlace(elementId, finalPattern);
+      // Update the tracked pattern without forcing scheduler start
+      await soundManager.updatePatternInPlace(elementId, finalPattern, /*preventAutoPlay*/ true);
       this.updateMasterPatternDisplay();
     } else {
-      // For individual playback, check if element is currently playing
+      // If currently playing, avoid stop/restart; changes will reflect on next trigger
       const isPlaying = soundManager.isPlaying(elementId);
-      
-      if (isPlaying) {
-        // Stop and restart with new effects
-        console.log(`   Restarting ${elementId} with updated effects...`);
-        await soundManager.stopSound(elementId);
-        
-        // Ensure Strudel is loaded before playing with effects
-        if (!soundManager.strudelLoaded) {
-          console.log(`   Waiting for Strudel to load before applying effects...`);
-          await soundManager.loadStrudelFromCDN();
-        }
-        
-        await soundManager.playStrudelPattern(elementId, finalPattern);
+      if (!isPlaying) {
+        // Not playing: don't auto-start. Just cache new pattern.
+        await soundManager.cachePatternForElement(elementId, finalPattern);
       }
     }
   }
@@ -5429,10 +5445,56 @@ class InteractiveSoundApp {
   convertNumericPatternToNoteNames(pattern, key, scale) {
     if (!pattern || !scale) return pattern;
     
+    // Helpers for enharmonic normalization
+    const isFlatKey = (k) => typeof k === 'string' && /[b]/i.test(k);
+    
+    const DOUBLE_ACCIDENTAL_MAP = new Map([
+      // Double flats
+      ['Abb', 'G'], ['Bbb', 'A'], ['Cbb', 'Bb'], ['Dbb', 'C'], ['Ebb', 'D'], ['Fbb', 'Eb'], ['Gbb', 'F'],
+      // Double sharps (rare in output, but normalize anyway)
+      ['A##', 'B'], ['B##', 'C#'], ['C##', 'D'], ['D##', 'E'], ['E##', 'F#'], ['F##', 'G'], ['G##', 'A'],
+      // Single flats to naturals where musically typical
+      ['Fb', 'E'], ['Cb', 'B'],
+      // Single sharps to naturals where musically typical
+      ['E#', 'F'], ['B#', 'C']
+    ]);
+    
+    const SHARP_TO_FLAT = new Map([
+      ['A#', 'Bb'], ['C#', 'Db'], ['D#', 'Eb'], ['F#', 'Gb'], ['G#', 'Ab']
+    ]);
+    
+    function normalizeSpelling(noteWithOctave, preferFlats) {
+      // Split into pitch class and octave, e.g., "Ebb4" -> "Ebb", "4"
+      const m = noteWithOctave.match(/^([A-Ga-g])([#b]{0,2})(-?\d+)?$/);
+      if (!m) return noteWithOctave;
+      const letter = m[1].toUpperCase();
+      const acc = m[2] || '';
+      const oct = m[3] || '';
+      const pc = `${letter}${acc}`;
+      
+      // Resolve double accidentals and special single-accidental naturals
+      if (DOUBLE_ACCIDENTAL_MAP.has(pc)) {
+        const replacement = DOUBLE_ACCIDENTAL_MAP.get(pc);
+        return `${replacement}${oct}`;
+      }
+      
+      // Prefer flats for flat keys where possible
+      if (preferFlats && acc === '#') {
+        const sf = SHARP_TO_FLAT.get(`${letter}#`);
+        if (sf) {
+          return `${sf}${oct}`;
+        }
+      }
+      
+      return `${letter}${acc}${oct}`;
+    }
+    
     // Map scale names to Tonal.js scale names
     const SCALE_NAME_TONAL_MAP = {
+      // Legacy/simple names
       major: 'major',
       minor: 'minor',
+      chromatic: 'chromatic',
       harmonicMinor: 'harmonic minor',
       melodicMinor: 'melodic minor',
       dorian: 'dorian',
@@ -5442,7 +5504,58 @@ class InteractiveSoundApp {
       locrian: 'locrian',
       blues: 'blues',
       pentatonicMajor: 'major pentatonic',
-      pentatonicMinor: 'minor pentatonic'
+      pentatonicMinor: 'minor pentatonic',
+
+      // Diatonic (Major) modes
+      ionian: 'major',
+      aeolian: 'minor',
+
+      // Melodic Minor modes
+      'melodic minor': 'melodic minor',
+      'dorian b2': 'dorian b2',
+      'lydian augmented': 'lydian augmented',
+      'lydian dominant': 'lydian dominant',
+      'mixolydian b6': 'mixolydian b6',
+      'locrian #2': 'locrian #2',
+      altered: 'altered',
+
+      // Harmonic Minor modes
+      'harmonic minor': 'harmonic minor',
+      'locrian #6': 'locrian #6',
+      'ionian #5': 'ionian #5',
+      'dorian #4': 'dorian #4',
+      'phrygian dominant': 'phrygian dominant',
+      'lydian #2': 'lydian #2',
+      ultralocrian: 'ultralocrian',
+
+      // Harmonic Major modes
+      'harmonic major': 'harmonic major',
+      'dorian b5': 'dorian b5',
+      'phrygian b4': 'phrygian b4',
+      'lydian b3': 'lydian b3',
+      'mixolydian b2': 'mixolydian b2',
+      'lydian augmented #2': 'lydian augmented #2',
+      'locrian bb7': 'locrian bb7',
+
+      // Pentatonic modes (Major)
+      'major pentatonic': 'major pentatonic',
+      'suspended pentatonic': 'suspended pentatonic',
+      'man gong': 'man gong',
+      ritusen: 'ritusen',
+      'minor pentatonic mode 5': 'minor pentatonic',
+
+      // Pentatonic modes (Minor)
+      'minor pentatonic': 'minor pentatonic',
+      'blues minor pentatonic': 'minor pentatonic',
+      'major pentatonic mode 3': 'major pentatonic',
+      egyptian: 'egyptian',
+      'minor pentatonic mode 5': 'minor pentatonic',
+
+      // Other systems
+      'whole tone': 'whole tone',
+      'half-whole diminished': 'dominant diminished',
+      'whole-half diminished': 'diminished',
+      'minor blues': 'blues'
     };
     
     const tonalScaleName = SCALE_NAME_TONAL_MAP[scale] || scale;
@@ -5467,7 +5580,8 @@ class InteractiveSoundApp {
       return pattern;
     }
     
-    const scaleNotes = scaleObj.notes;
+    const preferFlats = isFlatKey(rootNote);
+    const scaleNotes = scaleObj.notes.map(n => normalizeSpelling(`${n}`, preferFlats).replace(/-?\d+$/, '')); // strip any octave if present
     console.log(`🎼 Scale "${scaleName}" notes:`, scaleNotes);
     
     // Extract numeric pattern from n("0 2 4 5") or note("0 2 4 5")
@@ -5508,7 +5622,7 @@ class InteractiveSoundApp {
             // Add octave (default to octave 4, adjust based on offset)
             const baseOctave = 4;
             const finalOctave = baseOctave + octaveOffset;
-            noteNames.push(`${noteName}${finalOctave}`);
+            noteNames.push(normalizeSpelling(`${noteName}${finalOctave}`, preferFlats));
           } else {
             // Not a number, preserve as-is
             noteNames.push(part.value);
@@ -5527,10 +5641,12 @@ class InteractiveSoundApp {
   getAllScaleNotesAsPattern(key, scale) {
     if (!scale) return '';
     
-    // Map scale names to Tonal.js scale names
+    // Map scale names to Tonal.js scale names (extended)
     const SCALE_NAME_TONAL_MAP = {
+      // Legacy/simple
       major: 'major',
       minor: 'minor',
+      chromatic: 'chromatic',
       harmonicMinor: 'harmonic minor',
       melodicMinor: 'melodic minor',
       dorian: 'dorian',
@@ -5540,7 +5656,47 @@ class InteractiveSoundApp {
       locrian: 'locrian',
       blues: 'blues',
       pentatonicMajor: 'major pentatonic',
-      pentatonicMinor: 'minor pentatonic'
+      pentatonicMinor: 'minor pentatonic',
+      // Diatonic modes
+      ionian: 'major',
+      aeolian: 'minor',
+      // Melodic minor modes
+      'dorian b2': 'dorian b2',
+      'lydian augmented': 'lydian augmented',
+      'lydian dominant': 'lydian dominant',
+      'mixolydian b6': 'mixolydian b6',
+      'locrian #2': 'locrian #2',
+      altered: 'altered',
+      // Harmonic minor modes
+      'harmonic minor': 'harmonic minor',
+      'locrian #6': 'locrian #6',
+      'ionian #5': 'ionian #5',
+      'dorian #4': 'dorian #4',
+      'phrygian dominant': 'phrygian dominant',
+      'lydian #2': 'lydian #2',
+      ultralocrian: 'ultralocrian',
+      // Harmonic major modes
+      'harmonic major': 'harmonic major',
+      'dorian b5': 'dorian b5',
+      'phrygian b4': 'phrygian b4',
+      'lydian b3': 'lydian b3',
+      'mixolydian b2': 'mixolydian b2',
+      'lydian augmented #2': 'lydian augmented #2',
+      'locrian bb7': 'locrian bb7',
+      // Pentatonic modes
+      'major pentatonic': 'major pentatonic',
+      'minor pentatonic': 'minor pentatonic',
+      'suspended pentatonic': 'suspended pentatonic',
+      'man gong': 'man gong',
+      ritusen: 'ritusen',
+      'major pentatonic mode 3': 'major pentatonic',
+      'minor pentatonic mode 5': 'minor pentatonic',
+      'blues minor pentatonic': 'minor pentatonic',
+      // Other systems
+      'whole tone': 'whole tone',
+      'half-whole diminished': 'dominant diminished',
+      'whole-half diminished': 'diminished',
+      'minor blues': 'blues'
     };
     
     const tonalScaleName = SCALE_NAME_TONAL_MAP[scale] || scale;
@@ -6101,47 +6257,8 @@ class InteractiveSoundApp {
       // Show/hide synthesis section based on whether it's a synth pattern
       this.updateSynthesisSectionVisibility(elementId, config.pattern);
       
-      // CRITICAL: Stop ALL playback and set masterActive=false BEFORE any pattern operations
-      // This prevents audio from playing when Save is clicked
+      // Do NOT stop master or scheduler on save; allow seamless live updates
       const wasMasterActive = soundManager.masterActive;
-      const wasSchedulerRunning = window.strudel && window.strudel.scheduler && window.strudel.scheduler.started;
-      
-      // Stop master pattern if playing
-      if (wasMasterActive) {
-        console.log(`⏸️ Stopping master pattern during save to prevent auto-playback`);
-        try {
-          soundManager.stopMasterPattern();
-        } catch (stopError) {
-          console.warn(`⚠️ Could not stop master pattern:`, stopError);
-        }
-      }
-      
-      // Stop scheduler
-      if (wasSchedulerRunning) {
-        console.log(`⏸️ Stopping scheduler during save to prevent auto-playback`);
-        try {
-          if (typeof window.strudel.scheduler.stop === 'function') {
-            window.strudel.scheduler.stop();
-          }
-        } catch (stopError) {
-          console.warn(`⚠️ Could not stop scheduler:`, stopError);
-        }
-      }
-      
-      // Stop this element's pattern if playing
-      if (this.activeElements.has(elementId)) {
-        console.log(`⏸️ Stopping ${elementId} pattern during save to prevent auto-playback`);
-        try {
-          soundManager.stopSound(elementId);
-          this.activeElements.delete(elementId);
-        } catch (stopError) {
-          console.warn(`⚠️ Could not stop element pattern:`, stopError);
-        }
-      }
-      
-      // CRITICAL: Set masterActive=false to prevent audio routing
-      soundManager.masterActive = false;
-      console.log(`⏸️ Set masterActive=false during save to prevent auto-playback`);
       
       // Pre-evaluation should NOT start playback - it should only cache the pattern
       if (config.pattern !== undefined) {
@@ -6171,14 +6288,30 @@ class InteractiveSoundApp {
         const saveResult = soundManager.saveElementToMaster(elementId, config.pattern, gain, pan);
         
         if (saveResult.success) {
-          // Update master pattern with current solo/mute states
-          // CRITICAL: masterActive is already false, so this won't trigger playback
+          // Update master pattern with current solo/mute states without changing playback
           soundManager.updateMasterPattern(this.soloedElements, this.mutedElements);
           
-          // CRITICAL: Keep masterActive=false after save - don't restore it
-          // This ensures audio won't play until user explicitly clicks Play button
-          // The scheduler will be started by playMasterPattern when Play is clicked
-          console.log(`⏸️ Keeping masterActive=false after save - audio will only play when Play button is clicked`);
+          // Enforce transport: do not start playback on save if it was stopped
+          if (!wasMasterActive && soundManager.masterActive) {
+            if (typeof soundManager.stopMasterPattern === 'function') {
+              try {
+                // Call without awaiting since this function isn't async
+                soundManager.stopMasterPattern();
+              } catch (e) {
+                console.warn('⚠️ Could not stop master after save:', e);
+              }
+            }
+            soundManager.masterActive = false;
+          }
+          
+          // Additional guard: if master was stopped before save, ensure scheduler is not running
+          if (!wasMasterActive && window.strudel && window.strudel.scheduler && window.strudel.scheduler.started) {
+            try {
+              window.strudel.scheduler.stop();
+            } catch (e) {
+              console.warn('⚠️ Could not stop scheduler after save:', e);
+            }
+          }
           
           // Update master pattern display
           this.updateMasterPatternDisplay();
@@ -6858,14 +6991,87 @@ class InteractiveSoundApp {
     });
     updatePreviewButtonState();
 
+    // Open/Close modal helpers
+    const openModal = (elementId) => {
+      try {
+        if (!modal) return;
+        // Remember which element we're editing
+        this.currentEditingElementId = elementId;
+        // Update header title
+        const headerEl = document.getElementById('modal-element-id');
+        if (headerEl) headerEl.textContent = elementId || '';
+        // Load saved config
+        const saved = this.loadElementConfig ? this.loadElementConfig(elementId) : null;
+        // Populate bank
+        const bankValue = saved?.bank || '';
+        ensurePatternBankOptions(bankValue);
+        if (bankSelect) bankSelect.value = bankValue;
+        // Populate pattern editor (keep blank if no pattern saved)
+        const pattern = saved?.pattern || '';
+        setStrudelEditorValue('modal-pattern', pattern || '');
+        // Key/Scale dropdowns (do not force values; leave as current UI state if empty)
+        const modalKeySelect = document.getElementById('modal-key-select');
+        const modalScaleSelect = document.getElementById('modal-scale-select');
+        if (modalKeySelect && (saved?.key || saved?.key === '')) {
+          modalKeySelect.value = saved.key || '';
+        }
+        if (modalScaleSelect && (saved?.scale || saved?.scale === '')) {
+          modalScaleSelect.value = saved.scale || 'chromatic';
+        }
+        // Ensure UI reflects current state
+        updatePreviewButtonState();
+        updateKeyScaleVisibility();
+        refreshDrumGridForCurrentState();
+        // Show modal
+        modal.style.display = 'block';
+      } catch (e) {
+        console.warn('⚠️ Failed to open modal:', e);
+      }
+    };
+
+    const closeModal = () => {
+      try {
+        if (!modal) return;
+        // Hide modal
+        modal.style.display = 'none';
+        // Stop and remove preview track if present
+        const previewElementId = 'modal-preview';
+        if (soundManager && soundManager.trackedPatterns && soundManager.trackedPatterns.has(previewElementId)) {
+          if (typeof soundManager.removeElementFromMaster === 'function') {
+            soundManager.removeElementFromMaster(previewElementId);
+          } else {
+            soundManager.trackedPatterns.delete(previewElementId);
+            if (typeof soundManager.updateMasterPattern === 'function') soundManager.updateMasterPattern();
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ Failed to close modal:', e);
+      }
+    };
+
     if (previewButton && !previewButton.dataset.listenerAttached) {
+      let previewStartedMaster = false;
       previewButton.addEventListener('click', async () => {
         const previewElementId = 'modal-preview';
-        const isPreviewPlaying = soundManager.isPlaying(previewElementId);
+        const isPreviewPlaying = soundManager.trackedPatterns && soundManager.trackedPatterns.has(previewElementId);
         
         // Toggle: if playing, stop it
         if (isPreviewPlaying) {
-          soundManager.stopSound(previewElementId);
+          // Remove preview track from master
+          if (soundManager.removeElementFromMaster) {
+            soundManager.removeElementFromMaster(previewElementId);
+          } else if (soundManager.trackedPatterns) {
+            soundManager.trackedPatterns.delete(previewElementId);
+            if (soundManager.updateMasterPattern) soundManager.updateMasterPattern();
+          }
+          // If we started master for preview and there are no other tracks, stop master
+          try {
+            const remaining = soundManager.trackedPatterns ? soundManager.trackedPatterns.size : 0;
+            if (previewStartedMaster && remaining === 0 && soundManager.stopMasterPattern) {
+              await soundManager.stopMasterPattern();
+            }
+          } catch {}
+          previewStartedMaster = false;
           previewButton.textContent = '▶ Preview Pattern';
           previewButton.classList.remove('active');
           uiController.updateStatus('⏹ Preview stopped');
@@ -6959,9 +7165,24 @@ class InteractiveSoundApp {
         previewButton.classList.add('active');
 
         try {
-          // Use playStrudelPattern instead of previewPattern to match how elements play when clicked
-          // This ensures the preview uses the exact same processing and routing as actual elements
-          await soundManager.playStrudelPattern(previewElementId, patternValue);
+          // Route preview through master: add/update tracked pattern
+          const trackData = {
+            pattern: patternValue,
+            rawPattern: patternValue,
+            gain: soundManager.elementGainValues.get(previewElementId) ?? 0.5,
+            pan: soundManager.elementPanValues.get(previewElementId) ?? 0,
+            muted: false,
+            soloed: false
+          };
+          if (soundManager.trackedPatterns && typeof soundManager.trackedPatterns.set === 'function') {
+            soundManager.trackedPatterns.set(previewElementId, trackData);
+            if (soundManager.updateMasterPattern) soundManager.updateMasterPattern();
+          }
+          // Start master if not already playing
+          if ((!soundManager.isMasterActive || !soundManager.isMasterActive()) && soundManager.playMasterPattern) {
+            previewStartedMaster = true;
+            await soundManager.playMasterPattern();
+          }
           uiController.updateStatus('✅ Preview playing');
         } catch (error) {
           console.error('Preview failed:', error);
@@ -7534,232 +7755,7 @@ class InteractiveSoundApp {
       showDrumGrid(metrics, currentPattern);
     };
     
-    const closeModal = () => {
-      // Stop preview when closing modal
-      const previewElementId = 'modal-preview';
-      soundManager.stopSound(previewElementId);
-      
-      // Reset preview button state
-      if (previewButton) {
-        previewButton.textContent = '▶ Preview Pattern';
-        previewButton.classList.remove('active');
-      }
-      
-      modal.style.display = 'none';
-      this.currentEditingElementId = null;
-      setPatternEditorEnabled(true);
-      hideDrumGrid();
-    };
-
-    const openModal = (elementId) => {
-      // CRITICAL: Stop scheduler when modal opens to prevent auto-playback
-      // Patterns should only play when Play button is clicked, not when modal opens
-      if (window.strudel && window.strudel.scheduler && window.strudel.scheduler.started) {
-        console.log(`⏸️ Stopping scheduler when modal opens (preventing auto-playback)`);
-        try {
-          if (typeof window.strudel.scheduler.stop === 'function') {
-            window.strudel.scheduler.stop();
-          }
-        } catch (stopError) {
-          console.warn(`⚠️ Could not stop scheduler:`, stopError);
-        }
-      }
-      
-      // CRITICAL: Set masterActive=false when modal opens to prevent audio routing
-      if (soundManager.masterActive) {
-        console.log(`⏸️ Setting masterActive=false when modal opens (preventing auto-playback)`);
-        soundManager.masterActive = false;
-      }
-      
-      const elementConfig = soundConfig.getElementConfig(elementId);
-      const savedConfig = this.loadElementConfig(elementId);
-      
-      // Populate modal with current values
-      // Extract channel number from elementId (e.g., "element-1" -> "1")
-      const channelNumber = elementId.replace('element-', '');
-      // Get saved title or use channel number as fallback
-      const savedTitle = savedConfig?.title || '';
-      const fallbackTitle = (elementConfig?.description && elementConfig.description !== 'No sound assigned') 
-        ? elementConfig.description 
-        : '';
-      const initialTitle = savedTitle || fallbackTitle || `Channel ${channelNumber}`;
-      document.getElementById('modal-element-id').textContent = initialTitle;
-      document.getElementById('modal-title').value = savedTitle || fallbackTitle;
-      const rawPattern = savedConfig?.pattern || elementConfig?.pattern || '';
-      
-      // Ensure Strudel REPL editor is initialized for modal-pattern
-      // Initialize if not already done (but don't block modal opening if it fails)
-      try {
-        const modalPatternTextarea = document.getElementById('modal-pattern');
-        if (modalPatternTextarea && !modalPatternTextarea.dataset.strudelReplInitialized) {
-          initStrudelReplEditors();
-        }
-      } catch (error) {
-        console.warn('⚠️ Could not initialize Strudel REPL editor for modal, continuing with textarea:', error);
-      }
-      // Convert Strudel pattern to drum display if it's a drum pattern
-      // Only set value if there's a user-added pattern (not auto-generated default), otherwise leave empty to show placeholder
-      const patternField = document.getElementById('modal-pattern');
-      const savedBankValue = savedConfig?.bank || '';
-      console.log('📦 openModal: savedBankValue=', savedBankValue);
-      ensurePatternBankOptions(savedBankValue);
-      if (bankSelect) {
-        bankSelect.value = savedBankValue;
-        console.log('📦 openModal: Set bankSelect.value to', savedBankValue, 'actual value:', bankSelect.value);
-      } else {
-        console.warn('⚠️ openModal: bankSelect not found');
-      }
-      
-      // Check if pattern is just an auto-generated default (not user-edited)
-      const isAutoGeneratedDefault = rawPattern && (
-        rawPattern.match(/^s\(["']bd["']\)\.bank\(["'][^"']+["']\)$/) || // s("bd").bank("bankname")
-        rawPattern.match(/^note\(["']c3["']\)\.s\(["'][^"']+["']\)$/) || // note("c3").s("waveform")
-        rawPattern.match(/^sound\(["']bd hh["']\)$/) // sound("bd hh") - old default
-      );
-      
-      if (rawPattern && rawPattern.trim() !== '' && !isAutoGeneratedDefault) {
-        // User has manually edited the pattern - show it and clear placeholder
-        // Always keep patterns in Strudel format - don't convert to display format
-        // Only show Strudel syntax (s("bd"), sound("bd hh"), note("c3"), etc.)
-        setStrudelEditorValue('modal-pattern', rawPattern);
-        if (patternField) patternField.placeholder = '';
-      } else {
-        // No user-added pattern or just auto-generated default - leave empty and show placeholder if bank is selected
-        setStrudelEditorValue('modal-pattern', '');
-        if (savedBankValue) {
-          patternField.placeholder = 'Drums and Percussion: s("bd sd rim cp hh oh cr rd ht mt lt sh cb tb perc misc fx"), Synths: note("c3 d3 [e3 f3]")';
-        } else {
-          patternField.placeholder = '';
-        }
-      }
-      
-      // Show/hide Key/Scale controls based on pattern type or selected bank
-      const keyScaleGroup = document.getElementById('modal-key-scale-group');
-      const modalKeySelect = document.getElementById('modal-key-select');
-      const modalScaleSelect = document.getElementById('modal-scale-select');
-      
-      // Check if pattern uses note() function (for synths, not drums)
-      const patternValue = rawPattern || '';
-      const hasNotePattern = containsNoteCall(patternValue);
-      
-      // Check if a sample-based synth bank is selected
-      // bankSelect is already defined at the top of setupModal() as modal-pattern-bank
-      const selectedBank = bankSelect ? bankSelect.value : '';
-      const isSampleSynth = selectedBank && SAMPLE_SYNTHS.includes(selectedBank.toLowerCase());
-      
-      if (keyScaleGroup && modalKeySelect && modalScaleSelect) {
-        if (hasNotePattern || isSampleSynth) {
-          keyScaleGroup.style.display = 'block';
-          // Load saved key/scale or use defaults
-          modalKeySelect.value = savedConfig?.key || '';
-          modalScaleSelect.value = savedConfig?.scale || '';
-          
-          // Apply key/scale immediately if pattern exists and values are set
-          // Use setTimeout to ensure the pattern editor is ready
-          setTimeout(() => {
-            if (patternValue && (savedConfig?.key || savedConfig?.scale)) {
-              // applyKeyScaleToPattern will be defined below, so we'll call it after it's defined
-              // For now, trigger a change event to apply it
-              if (savedConfig?.key) {
-                modalKeySelect.dispatchEvent(new Event('change'));
-              } else if (savedConfig?.scale) {
-                modalScaleSelect.dispatchEvent(new Event('change'));
-              }
-            }
-          }, 100);
-        } else {
-          keyScaleGroup.style.display = 'none';
-        }
-      }
-      
-      // Update checkbox visibility and state after pattern is set
-      setTimeout(() => {
-        updateNoteConversionCheckboxVisibility();
-        // Load saved checkbox state if available
-        const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
-        if (keepNotesCheckbox && savedConfig?.keepNotesAsWritten !== undefined) {
-          keepNotesCheckbox.checked = savedConfig.keepNotesAsWritten;
-        }
-      }, 100);
-
-      // Initialize time signature select in modal
-      const modalTimeSignatureSelect = document.getElementById('modal-time-signature-select');
-      if (modalTimeSignatureSelect) {
-        const currentTimeSig = this.currentTimeSignature || '4/4';
-        modalTimeSignatureSelect.value = currentTimeSig;
-      }
-      
-      // If a drum bank is selected, disable pattern editor to show drum grid
-      const isDrum = savedBankValue && DRUM_BANK_VALUES.has(savedBankValue);
-      console.log('📦 openModal: Checking if drum bank, savedBankValue=', savedBankValue, 'isDrum=', isDrum);
-      if (isDrum) {
-        console.log('📦 openModal: Drum bank detected, disabling pattern editor');
-        setPatternEditorEnabled(false);
-      } else {
-        console.log('📦 openModal: Not a drum bank or no bank, enabling pattern editor');
-        setPatternEditorEnabled(true);
-      }
-      
-      // Ensure Time Signature visibility is set correctly based on editor state
-      // applyPatternEditorState() is called by setPatternEditorEnabled(), which handles visibility
-      // But we ensure it's set correctly here as well
-      
-      document.getElementById('modal-sample-url').value = savedConfig?.sampleUrl || '';
-      const fileInputEl = document.getElementById('modal-sample-file');
-      if (fileInputEl) {
-        fileInputEl.value = '';
-      }
-      
-      // Show/hide sample URL and file input based on bank selection
-      const sampleUrlGroup = document.getElementById('modal-sample-url')?.closest('.form-group');
-      const sampleFileGroup = document.getElementById('modal-sample-file')?.closest('.form-group');
-      const patternBankGroup = document.getElementById('modal-pattern-bank')?.closest('.form-group');
-      const timeSignatureGroup = document.getElementById('modal-time-signature-select')?.closest('.form-group');
-      const hasBankSelected = savedBankValue && savedBankValue !== '';
-      const hasFileSelected = savedConfig?.fileName || (savedConfig?.sampleUrl && savedConfig.sampleUrl.startsWith('data:'));
-      
-      if (sampleUrlGroup) {
-        sampleUrlGroup.style.display = hasBankSelected ? 'none' : 'block';
-      }
-      if (sampleFileGroup) {
-        sampleFileGroup.style.display = hasBankSelected ? 'none' : 'block';
-      }
-      
-      // Hide Pattern Bank and Time Signature if file was previously selected
-      if (hasFileSelected) {
-        if (patternBankGroup) {
-          patternBankGroup.style.display = 'none';
-        }
-        if (timeSignatureGroup) {
-          timeSignatureGroup.style.display = 'none';
-        }
-        // Set title to filename if available
-        if (savedConfig?.fileName) {
-          const titleInput = document.getElementById('modal-title');
-          if (titleInput) {
-            const nameWithoutExt = savedConfig.fileName.replace(/\.[^/.]+$/, '');
-            titleInput.value = nameWithoutExt;
-          }
-        }
-      } else {
-        // Show Pattern Bank if no file was selected
-        // Time Signature visibility is controlled by editor state (step vs code editor)
-        if (patternBankGroup) {
-          patternBankGroup.style.display = 'block';
-        }
-        // Time Signature visibility is handled by applyPatternEditorState()
-      }
-      
-      this.currentEditingElementId = elementId;
-      
-      // Small delay to ensure DOM is ready before refreshing drum grid
-      setTimeout(() => {
-        console.log('📦 openModal: Calling refreshDrumGridForCurrentState, bankSelect.value=', bankSelect ? bankSelect.value : 'bankSelect not found');
-        refreshDrumGridForCurrentState();
-      }, 0);
-      
-      modal.style.display = 'flex';
-    };
+    /* Removed duplicate closeModal/openModal declarations to avoid redeclaration errors */
 
     // Close button
     const closeBtn = modal.querySelector('.modal-close');
@@ -7808,7 +7804,75 @@ class InteractiveSoundApp {
     const modalKeySelect = document.getElementById('modal-key-select');
     const modalScaleSelect = document.getElementById('modal-scale-select');
     
-    const applyKeyScaleToPattern = () => {
+    // Lightweight syntax validator for obvious issues (balanced quotes/parens)
+    const isLikelyValidPattern = (code) => {
+      if (typeof code !== 'string') return false;
+      let depth = 0;
+      let inStr = false;
+      let strCh = '';
+      for (let i = 0; i < code.length; i++) {
+        const c = code[i];
+        if (inStr) {
+          if (c === '\\') { i++; continue; }
+          if (c === strCh) { inStr = false; strCh = ''; }
+          continue;
+        }
+        if (c === '"' || c === "'") { inStr = true; strCh = c; continue; }
+        if (c === '(') depth++;
+        if (c === ')') depth--;
+        if (depth < 0) return false;
+      }
+      return !inStr && depth === 0;
+    };
+    
+    // Upsert .scale() and .s() modifiers; when pattern empty, use (silence) as neutral base
+    const upsertPatternModifiers = (pattern, nextKey, nextScale, nextBank) => {
+      const original = pattern || '';
+      let base = original.trim();
+      const hasAnyModifier = /\.\s*(s|sound|scale)\s*\(/i.test(base);
+      if (!base) {
+        base = '(silence)';
+      } else if (!base.startsWith('(') || !base.endsWith(')')) {
+        // Wrap when adding modifiers
+        if (!hasAnyModifier) {
+          base = `(${base})`;
+        }
+      }
+      
+      // Extract existing modifiers (so we can preserve when not overridden)
+      const scaleMatch = base.match(/\.\s*scale\s*\(\s*['"]([^'"]+)['"]\s*\)/i);
+      const existingScaleArg = scaleMatch ? scaleMatch[1] : null;
+      const soundMatch = base.match(/\.\s*(s|sound)\s*\(\s*["']([^"']+)["']\s*\)/i);
+      const existingSoundArg = soundMatch ? soundMatch[2] : null;
+      
+      // Remove existing .scale() and .s() (we'll re-add in canonical order: scale then s)
+      let updated = base
+        .replace(/\.\s*scale\s*\([^)]*\)/gi, '')
+        .replace(/\.\s*(s|sound)\s*\([^)]*\)/gi, '');
+      
+      // Add scale first if provided
+      const haveNewScale = (nextScale && nextScale.trim() !== '') || (nextKey && nextKey.trim() !== '');
+      if (haveNewScale) {
+        const keyPart = (nextKey && nextKey.trim() !== '') ? nextKey.trim().toLowerCase() : 'c';
+        const scalePart = (nextScale && nextScale.trim() !== '') ? nextScale.trim() : 'major';
+        updated = `${updated}.scale('${keyPart}:${scalePart}')`;
+      } else if (existingScaleArg) {
+        // Preserve prior scale if not overridden
+        updated = `${updated}.scale('${existingScaleArg}')`;
+      }
+      
+      // Then add sound/bank if provided
+      if (nextBank && nextBank.trim() !== '') {
+        updated = `${updated}.s("${nextBank.trim()}")`;
+      } else if (existingSoundArg) {
+        // Preserve prior sound if not overridden
+        updated = `${updated}.s("${existingSoundArg}")`;
+      }
+      
+      return updated;
+    };
+    
+    const applyKeyScaleToPattern = (forceNoteNames = false) => {
       const patternValue = getStrudelEditorValue('modal-pattern');
       const keyValue = modalKeySelect ? (modalKeySelect.value || null) : null;
       const scaleValue = modalScaleSelect ? (modalScaleSelect.value || null) : null;
@@ -7823,11 +7887,66 @@ class InteractiveSoundApp {
       
       // When selecting key/scale, update the existing pattern rather than replacing it
       const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
-      const useNoteNames = keepNotesCheckbox && keepNotesCheckbox.checked;
+      const useNoteNames = forceNoteNames || (keepNotesCheckbox && keepNotesCheckbox.checked);
       
-      // Fallback: if no scale selected but pattern has notes, convert them
-      if (!patternValue || !containsNoteCall(patternValue)) {
-        console.log(`⚠️ No pattern or no note call found, skipping key/scale application`);
+      // If no pattern or non-note pattern, render notes for selected scale instead of (silence)
+      if (!patternValue || patternValue.trim() === '' || !containsNoteCall(patternValue)) {
+        // Determine existing or selected bank to preserve
+        let existingBank = null;
+        if (patternValue && patternValue.trim() !== '') {
+          const m = patternValue.match(/\.\s*(s|sound)\s*\(\s*["']([^"']+)["']\s*\)/i);
+          if (m && m[2]) existingBank = m[2];
+        }
+        if (!existingBank) {
+          const bankSelectEl = document.getElementById('modal-pattern-bank');
+          if (bankSelectEl && bankSelectEl.value) {
+            existingBank = bankSelectEl.value.toLowerCase();
+          }
+        }
+        
+        const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+        const useNoteNamesLocal = forceNoteNames || (keepNotesCheckbox && keepNotesCheckbox.checked);
+        
+        let basePattern = '';
+        if (useNoteNamesLocal) {
+          // note("...") with scale notes
+          if (typeof this.getAllScaleNotesAsNoteNames === 'function') {
+            basePattern = this.getAllScaleNotesAsNoteNames(keyValue || 'C', scaleValue || 'chromatic') || '';
+          }
+          if (!basePattern) {
+            // Fallback: build from numeric degrees
+            const numeric = this.getAllScaleNotesAsPattern(keyValue || 'C', scaleValue || 'chromatic');
+            if (numeric) {
+              basePattern = this.convertNumericPatternToNoteNames(numeric, keyValue || 'C', scaleValue || 'chromatic');
+            }
+          }
+        } else {
+          // n("0 1 2 ...").scale('key:scale')
+          const numeric = this.getAllScaleNotesAsPattern(keyValue || 'C', scaleValue || 'chromatic');
+          if (numeric) {
+            const numMatch = numeric.match(/(?:note|n)\s*\(\s*["']([^"']+)["']\s*\)/);
+            const numbers = numMatch ? numMatch[1] : '0 1 2 3 4 5';
+            const scaleStr = `${(keyValue || 'C').toLowerCase()}:${scaleValue || 'chromatic'}`;
+            basePattern = `n("${numbers}").scale('${scaleStr}')`;
+          }
+        }
+        
+        if (!basePattern) {
+          console.warn('⚠️ Could not generate scale notes for empty/non-note pattern');
+          return;
+        }
+        
+        // Append existing/selected bank if present
+        if (existingBank) {
+          basePattern = `${basePattern}.s("${existingBank}")`;
+        }
+        
+        if (isLikelyValidPattern(basePattern)) {
+          setStrudelEditorValue('modal-pattern', basePattern);
+          console.log(`🎼 Inserted scale notes for empty/non-note pattern: ${basePattern}`);
+        } else {
+          console.warn('⚠️ Generated scale-notes pattern failed quick syntax check; not applying');
+        }
         return;
       }
       
@@ -7863,8 +7982,8 @@ class InteractiveSoundApp {
               console.log(`🎼 Converted numeric pattern to note names in ${scaleToPass}: ${convertedPattern.substring(0, 100)}...`);
             } else if (hasNoteNames) {
               // Pattern already has note names - convert them to the new scale
-              // First convert to numeric (semitone offsets), then back to note names in new scale
-              const numericPattern = soundManager.convertPatternForScale(patternValue);
+              // First force-convert to numeric (semitone offsets), then back to note names in new scale
+              const numericPattern = soundManager.convertNoteNamesToSemitones(patternValue);
               if (numericPattern && numericPattern !== patternValue) {
                 convertedPattern = this.convertNumericPatternToNoteNames(numericPattern, keyToPass, scaleToPass);
                 console.log(`🎼 Converted note names to ${scaleToPass} scale: ${convertedPattern.substring(0, 100)}...`);
@@ -7874,42 +7993,121 @@ class InteractiveSoundApp {
               }
             }
           } else {
-            // For semitones mode, preserve existing pattern - the .scale() modifier will apply the scale
-            // The numeric pattern stays the same, but .scale() modifier ensures it uses the new scale
-            convertedPattern = patternValue;
-            console.log(`🎼 Preserving semitone pattern - scale modifier will apply ${scaleToPass}`);
+            // For semitones mode, upsert .scale() directly on the pattern to ensure replacement
+            const upserted = upsertPatternModifiers(patternValue, keyToPass, scaleToPass, null);
+            if (isLikelyValidPattern(upserted)) {
+              convertedPattern = upserted;
+              // If the numeric part is a simple ascending chromatic sequence (0..11),
+              // shrink/expand it to match the selected scale length (e.g., pentatonic → 5 steps)
+              const numMatch = convertedPattern.match(/\b(n|note)\s*\(\s*["']([^"']+)["']\s*\)/i);
+              if (numMatch && numMatch[2]) {
+                const rawNums = numMatch[2].trim().split(/\s+/).map(x => parseInt(x, 10));
+                const isChromatic012 = rawNums.length === 12 && rawNums.every((v, i) => v === i);
+                const isSimpleAscendingFromZero = rawNums.length > 1 && rawNums.every((v, i) => v === i);
+                if (isChromatic012 || isSimpleAscendingFromZero) {
+                  const desired = this.getAllScaleNotesAsPattern(keyToPass || 'C', scaleToPass || 'chromatic');
+                  if (desired) {
+                    const desiredNumsMatch = desired.match(/\b(n|note)\s*\(\s*["']([^"']+)["']\s*\)/i);
+                    const desiredNums = desiredNumsMatch ? desiredNumsMatch[2] : null;
+                    if (desiredNums) {
+                      convertedPattern = convertedPattern.replace(/\b(n|note)\s*\(\s*["'][^"']+["']\s*\)/i, (m, func) => {
+                        return `${func}("${desiredNums}")`;
+                      });
+                      console.log(`🎼 Adjusted numeric degrees to new scale length: ${desiredNums}`);
+                    }
+                  }
+                }
+              }
+            } else {
+              // Fallback: preserve existing pattern and let applyGlobalSettingsToPattern handle it
+              convertedPattern = patternValue;
+            }
+            console.log(`🎼 Semitone mode: upserted scale=${scaleToPass} key=${keyToPass}`);
           }
         }
         
         // Only add .scale() modifier if using semitones (not note names)
-        const patternWithScale = useNoteNames 
+        let patternWithScale = useNoteNames 
           ? convertedPattern  // Don't add scale modifier for note names
-          : soundManager.applyGlobalSettingsToPattern(convertedPattern, false, false, keyToPass, scaleToPass);
+          : convertedPattern; // Already upserted .scale() above (or preserved)
         console.log(`🎼 applyKeyScaleToPattern: result="${patternWithScale ? patternWithScale.substring(0, 80) : 'null'}..."`);
         console.log(`🎼 Pattern comparison - original length: ${patternValue.length}, new length: ${patternWithScale ? patternWithScale.length : 0}, same: ${patternWithScale === patternValue}`);
+        
+        // Ensure numeric degree list matches selected scale length immediately after selection
+        if (!useNoteNames && patternWithScale && (keyToPass || scaleToPass)) {
+          try {
+            const scalePattern = this.getAllScaleNotesAsPattern(keyToPass || 'C', scaleToPass || 'chromatic');
+            const desiredNumsMatch = scalePattern && scalePattern.match(/\b(n|note)\s*\(\s*["']([^"']+)["']\s*\)/i);
+            const desiredNums = desiredNumsMatch ? desiredNumsMatch[2] : null;
+            const currentNumsMatch = patternWithScale.match(/\b(n|note)\s*\(\s*["']([^"']+)["']\s*\)/i);
+            if (desiredNums && currentNumsMatch && currentNumsMatch[2]) {
+              const currentTokens = currentNumsMatch[2].trim().split(/\s+/);
+              const allNumeric = currentTokens.every(t => /^-?\d+$/.test(t));
+              const ascendingFromZero = allNumeric && currentTokens.every((t, i) => parseInt(t, 10) === i);
+              if (ascendingFromZero) {
+                patternWithScale = patternWithScale.replace(/\b(n|note)\s*\(\s*["'][^"']+["']\s*\)/i, (m, func) => {
+                  return `${func}("${desiredNums}")`;
+                });
+                console.log(`🎼 Resized numeric degrees to match scale (${scaleToPass || 'chromatic'}): ${desiredNums}`);
+              }
+            }
+          } catch (e) {
+            console.warn('⚠️ Degree resize failed:', e);
+          }
+        }
         
         if (patternWithScale) {
           // Always update the editor, even if the pattern appears the same (to ensure scale is updated)
           setStrudelEditorValue('modal-pattern', patternWithScale);
+          // Sync and notify editor
+          if (keyToPass) { soundManager.currentKey = keyToPass; }
+          if (scaleToPass) { soundManager.currentScale = scaleToPass; }
+          const ta = document.getElementById('modal-pattern');
+          if (ta) {
+            try { ta.dispatchEvent(new Event('input', { bubbles: true })); } catch {}
+            try { ta.dispatchEvent(new Event('change', { bubbles: true })); } catch {}
+          }
           console.log(`✅ Applied key/scale to pattern immediately: ${patternWithScale.substring(0, 100)}...`);
         } else {
           console.log(`⚠️ Pattern unchanged - applyGlobalSettingsToPattern returned null or undefined`);
         }
       } else {
-        console.log(`⚠️ Cannot apply scale - hasChordModifier: ${hasChordModifier}, isNumericPattern: ${isNumericPattern}, hasNoteFunction: ${hasNoteFunction}, hasExplicitNotes: ${hasExplicitNotes}`);
+        // If we're in semitone mode but the pattern has note names, convert to semitones, upsert scale, and write back
+        if (!hasChordModifier && hasExplicitNotes && !useNoteNames) {
+          const numericPattern = soundManager.convertNoteNamesToSemitones(patternValue);
+          const keyToPass = keyValue && keyValue.trim() !== '' ? keyValue : null;
+          const scaleToPass = scaleValue && scaleValue.trim() !== '' ? scaleValue : null;
+          const upserted = upsertPatternModifiers(numericPattern || patternValue, keyToPass, scaleToPass, null);
+          if (isLikelyValidPattern(upserted)) {
+            setStrudelEditorValue('modal-pattern', upserted);
+            if (keyToPass) { soundManager.currentKey = keyToPass; }
+            if (scaleToPass) { soundManager.currentScale = scaleToPass; }
+            const ta = document.getElementById('modal-pattern');
+            if (ta) {
+              try { ta.dispatchEvent(new Event('input', { bubbles: true })); } catch {}
+              try { ta.dispatchEvent(new Event('change', { bubbles: true })); } catch {}
+            }
+            console.log(`✅ Converted note names to semitones and applied scale: ${upserted.substring(0, 100)}...`);
+          } else {
+            console.log(`⚠️ Conversion to semitones or upsert failed validation; leaving pattern unchanged`);
+          }
+        } else {
+          console.log(`⚠️ Cannot apply scale - hasChordModifier: ${hasChordModifier}, isNumericPattern: ${isNumericPattern}, hasNoteFunction: ${hasNoteFunction}, hasExplicitNotes: ${hasExplicitNotes}`);
+        }
       }
     };
     
     if (modalKeySelect && !modalKeySelect.dataset.listenerAttached) {
       modalKeySelect.addEventListener('change', () => {
-        applyKeyScaleToPattern();
+        applyKeyScaleToPattern(false);
       });
       modalKeySelect.dataset.listenerAttached = 'true';
     }
     
     if (modalScaleSelect && !modalScaleSelect.dataset.listenerAttached) {
       modalScaleSelect.addEventListener('change', () => {
-        applyKeyScaleToPattern();
+        // Respect the Semitones/Note names toggle (do not force note names)
+        applyKeyScaleToPattern(false);
       });
       modalScaleSelect.dataset.listenerAttached = 'true';
     }
@@ -8000,15 +8198,37 @@ class InteractiveSoundApp {
       } else {
         // Convert note names to semitones
         if (hasNoteNames && !hasNumericNotes) {
-          if (lastSemitonePattern) {
-            console.log('🔁 Restoring previous semitone pattern after note-name view');
-            const restored = lastSemitonePattern;
-            lastSemitonePattern = null;
-            return restored;
+          // Prefer generating degrees sized to the current scale length
+          const patternScale = extractScaleFromPattern(pattern);
+          let keyValue = null;
+          let scaleValue = null;
+          if (patternScale) {
+            keyValue = patternScale.key;
+            scaleValue = patternScale.scale;
+          } else {
+            const modalKeySelect = document.getElementById('modal-key-select');
+            const modalScaleSelect = document.getElementById('modal-scale-select');
+            keyValue = modalKeySelect ? (modalKeySelect.value || 'C') : 'C';
+            scaleValue = modalScaleSelect ? (modalScaleSelect.value || 'chromatic') : 'chromatic';
           }
-          // When no previous semitone snapshot is available, fall back to conversion
+          const numeric = appInstance.getAllScaleNotesAsPattern(keyValue || 'C', scaleValue || 'chromatic');
+          if (numeric) {
+            const numMatch = numeric.match(/(?:note|n)\s*\(\s*["']([^"']+)["']\s*\)/);
+            const numbers = numMatch ? numMatch[1] : null;
+            if (numbers) {
+              const scaleStr = patternScale
+                ? `${patternScale.key}:${patternScale.scale}`
+                : `${(keyValue || 'C').toLowerCase()}:${scaleValue || 'chromatic'}`;
+              const rebuilt = `n("${numbers}").scale('${scaleStr}')`;
+              console.log(`🔄 Converted note names to degrees sized to scale: ${rebuilt.substring(0, 80)}...`);
+              // Append any existing .s("...") after the note() call
+              const soundMatch = pattern.match(/\.\s*(s|sound)\s*\(\s*["'][^"']+["']\s*\)/i);
+              return soundMatch ? `${rebuilt}${soundMatch[0]}` : rebuilt;
+            }
+          }
+          // Fallback to strict semitone conversion if scale-based rebuild failed
           const converted = soundManager.convertNoteNamesToSemitones(pattern);
-          console.log(`🔄 Converting note names to semitones: ${pattern.substring(0, 50)}... → ${converted.substring(0, 50)}...`);
+          console.log(`🔄 Fallback: note names → semitones: ${pattern.substring(0, 50)}... → ${converted.substring(0, 50)}...`);
           return converted;
         }
         // Already in semitones or can't convert
@@ -8311,18 +8531,6 @@ class InteractiveSoundApp {
             patternTextarea.placeholder = '';
             console.log(`📝 Removed .bank() modifier for Default`);
           } else {
-            // CRITICAL: Stop scheduler before creating default pattern to prevent auto-playback
-            if (window.strudel && window.strudel.scheduler && window.strudel.scheduler.started) {
-              console.log(`⏸️ Stopping scheduler before creating default pattern (bank selected)`);
-              try {
-                if (typeof window.strudel.scheduler.stop === 'function') {
-                  window.strudel.scheduler.stop();
-                }
-              } catch (stopError) {
-                console.warn(`⚠️ Could not stop scheduler:`, stopError);
-              }
-            }
-            
             // If no pattern, create a basic one without .bank() using s() format
             strudelPattern = `s("bd")`;
             // Keep in Strudel format
@@ -8399,71 +8607,37 @@ class InteractiveSoundApp {
             strudelPattern = strudelPattern.replace(/\.sound\(["'][^"']*["']\)/g, '');
             strudelPattern = strudelPattern.replace(/\.+$/, '').trim();
             
-            // Simple approach: always use note().s() format for ALL sounds
+            // Update pattern to include synth sound
             if (strudelPattern && strudelPattern.trim() !== '') {
               console.log(`🎹 BANK CHANGE: Processing existing pattern: ${strudelPattern}`);
               
-              // Extract notes from existing pattern
-              let notes = 'c3 d3 e3 f3'; // default
-              const noteMatch = strudelPattern.match(/(?:note|n)\s*\(\s*["']([^"']+)["']\s*\)/);
-              if (noteMatch && noteMatch[1]) {
-                notes = noteMatch[1];
-                console.log(`🎹 BANK CHANGE: Extracted notes: ${notes}`);
-              }
-              
-              // Check if pattern has a .scale() modifier - preserve it
-              const scaleMatch = strudelPattern.match(/\.\s*scale\s*\(\s*['"]([^'"]+)['"]\s*\)/i);
-              const scaleModifier = scaleMatch ? `.scale('${scaleMatch[1]}')` : '';
-              
-              // Always use note().s() format, preserving scale if present
-              strudelPattern = `note("${notes}")${scaleModifier}.s("${canonicalBankValue}")`;
-              console.log(`🎹 BANK CHANGE: Created note("${notes}")${scaleModifier}.s("${canonicalBankValue}")`);
+              // Preserve existing notes as-is; just upsert .s("..."), preserving .scale() if present
+              strudelPattern = upsertPatternModifiers(strudelPattern, null, null, canonicalBankValue);
+              console.log(`🎹 BANK CHANGE: Upserted .s("${canonicalBankValue}") on existing pattern`);
             } else {
-              // Create default pattern when empty - check toggle state for format
-              const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
-              const useNoteNames = keepNotesCheckbox && keepNotesCheckbox.checked;
-              
-              // Get key/scale from modal dropdowns
-              const modalKeySelect = document.getElementById('modal-key-select');
-              const modalScaleSelect = document.getElementById('modal-scale-select');
-              const keyValue = modalKeySelect ? (modalKeySelect.value || 'E') : 'E';
-              const scaleValue = modalScaleSelect ? (modalScaleSelect.value || 'blues') : 'blues';
-              
-              if (useNoteNames) {
-                // Use note names format: note("E4 G4 A4 Bb4 B4 D4").s("synthname")
-                const noteNamesPattern = this.getAllScaleNotesAsNoteNames(keyValue, scaleValue);
-                if (noteNamesPattern) {
-                  // Extract just the note names part (remove n() wrapper)
-                  const noteMatch = noteNamesPattern.match(/(?:note|n)\s*\(\s*["']([^"']+)["']\s*\)/);
-                  const notes = noteMatch ? noteMatch[1] : 'E4 G4 A4 Bb4 B4 D4';
-                  strudelPattern = `note("${notes}").s("${canonicalBankValue}")`;
-                } else {
-                  // Fallback to E blues scale notes
-                  strudelPattern = `note("E4 G4 A4 Bb4 B4 D4").s("${canonicalBankValue}")`;
-                }
-                console.log(`🎹 BANK CHANGE: Created default note names pattern with ${canonicalBankValue}`);
+              // If editor is empty, upsert .s("...") on (silence) so selection is reflected
+              const updated = upsertPatternModifiers('', null, null, canonicalBankValue);
+              if (isLikelyValidPattern(updated)) {
+                strudelPattern = updated;
+                console.log(`🎹 BANK CHANGE: Inserted synth on (silence): ${strudelPattern}`);
               } else {
-                // Use semitones format: n("0 1 2 3 4 5").scale('e:blues').s("synthname")
-                const semitonesPattern = this.getAllScaleNotesAsPattern(keyValue, scaleValue);
-                if (semitonesPattern) {
-                  // Extract just the numbers part (remove n() wrapper)
-                  const numMatch = semitonesPattern.match(/(?:note|n)\s*\(\s*["']([^"']+)["']\s*\)/);
-                  const numbers = numMatch ? numMatch[1] : '0 1 2 3 4 5';
-                  const scaleStr = `${keyValue.toLowerCase()}:${scaleValue}`;
-                  strudelPattern = `n("${numbers}").scale('${scaleStr}').s("${canonicalBankValue}")`;
-                } else {
-                  // Fallback to E blues scale semitones
-                  strudelPattern = `n("0 1 2 3 4 5").scale('e:blues').s("${canonicalBankValue}")`;
-                }
-                console.log(`🎹 BANK CHANGE: Created default semitones pattern with ${canonicalBankValue}`);
+                console.warn('⚠️ Generated synth pattern failed quick syntax check; leaving editor blank');
+                strudelPattern = '';
               }
             }
             
-            console.log(`🎹 BANK CHANGE: Setting textarea to: ${strudelPattern}`);
-            // Keep in Strudel format (don't convert to drum display)
-            setStrudelEditorValue('modal-pattern', strudelPattern);
-            // Clear placeholder when pattern is set
-            patternTextarea.placeholder = '';
+            if (strudelPattern && strudelPattern.trim() !== '') {
+              console.log(`🎹 BANK CHANGE: Setting textarea to: ${strudelPattern}`);
+              // Keep in Strudel format (don't convert to drum display)
+              setStrudelEditorValue('modal-pattern', strudelPattern);
+              // Clear placeholder when pattern is set
+              patternTextarea.placeholder = '';
+            } else {
+              // Keep editor blank and show helpful placeholder
+              if (patternTextarea) {
+                patternTextarea.placeholder = 'Add a pattern, e.g., note("c3 e3 g3").s("piano") or n("0 2 4").scale("c:major")';
+              }
+            }
             
             // Update checkbox visibility after pattern update
             setTimeout(() => {
@@ -8580,18 +8754,6 @@ class InteractiveSoundApp {
                 }
               }
               
-              // CRITICAL: Stop scheduler before saving to prevent auto-playback
-              if (window.strudel && window.strudel.scheduler && window.strudel.scheduler.started) {
-                console.log(`⏸️ Stopping scheduler before saving config (bank selected)`);
-                try {
-                  if (typeof window.strudel.scheduler.stop === 'function') {
-                    window.strudel.scheduler.stop();
-                  }
-                } catch (stopError) {
-                  console.warn(`⚠️ Could not stop scheduler:`, stopError);
-                }
-              }
-              
               // CRITICAL: Don't save to master when bank is selected - only save title and bank
               // Saving to master triggers updateMasterPattern which can cause auto-playback
               // We'll save to master only when user explicitly clicks Save button
@@ -8698,10 +8860,11 @@ class InteractiveSoundApp {
                   // Keep them as-is, don't convert to lowercase
                   const strudelBankName = bankValue;
                   
-                  // If pattern is empty or auto-generated default, create a clean default
+                  // If pattern is empty or auto-generated default, DO NOT create a default drum pattern
+                  // Leave editor blank and let the drum grid drive pattern generation
                   if (!currentDisplay || currentDisplay === '' || isAutoDefault) {
-                    strudelPattern = `s("bd").bank("${strudelBankName}")`;
-                    console.log(`📝 Created default pattern with bank: ${strudelBankName} (from ${bankValue})`);
+                    strudelPattern = '';
+                    console.log(`📝 Skipped default drum pattern for bank: ${strudelBankName}`);
                   } else {
                     // Convert display format to Strudel format if needed
                     if (isDisplayFormat) {
@@ -8745,8 +8908,13 @@ class InteractiveSoundApp {
                   
                   // Keep pattern in Strudel format (don't convert to drum display)
                   setStrudelEditorValue('modal-pattern', strudelPattern);
-                  patternTextarea.placeholder = '';
-                  console.log(`   Pattern: ${strudelPattern.substring(0, 80)}...`);
+                  if (!strudelPattern) {
+                    // Show helpful placeholder when blank
+                    patternTextarea.placeholder = 'Use the drum grid to build a pattern, or type s("bd sd rim ...").bank("Bank")';
+                  } else {
+                    patternTextarea.placeholder = '';
+                    console.log(`   Pattern: ${strudelPattern.substring(0, 80)}...`);
+                  }
                 } else {
                   // Bank didn't load - don't use .bank(), use default samples instead
                   console.warn(`⚠️ Bank "${bankValue}" not loaded - using default samples (no .bank() modifier)`);
@@ -8787,18 +8955,6 @@ class InteractiveSoundApp {
                   patternTextarea.placeholder = '';
                   console.log(`📝 Updated pattern for GitHub bank (removed .bank()/.synth() if present)`);
                 } else {
-                  // CRITICAL: Stop scheduler before creating default pattern to prevent auto-playback
-                  if (window.strudel && window.strudel.scheduler && window.strudel.scheduler.started) {
-                    console.log(`⏸️ Stopping scheduler before creating default pattern (GitHub bank)`);
-                    try {
-                      if (typeof window.strudel.scheduler.stop === 'function') {
-                        window.strudel.scheduler.stop();
-                      }
-                    } catch (stopError) {
-                      console.warn(`⚠️ Could not stop scheduler:`, stopError);
-                    }
-                  }
-                  
                   // If no pattern and GitHub bank, create a basic one without .bank()
                   strudelPattern = `s("bd")`;
                   // Keep in Strudel format
@@ -8884,19 +9040,6 @@ class InteractiveSoundApp {
           keepNotesAsWritten: keepNotesAsWrittenForSave
         }, true); // skipMasterSave = true
         console.log(`💾 Saved config with bank: ${bankValue}`);
-        
-        // CRITICAL: Stop scheduler before pre-evaluating to prevent any audio playback
-        // Even setting to silence can create audio nodes if scheduler is running
-        if (window.strudel && window.strudel.scheduler && window.strudel.scheduler.started) {
-          console.log(`⏸️ Stopping scheduler before pre-evaluating pattern (bank selected)`);
-          try {
-            if (typeof window.strudel.scheduler.stop === 'function') {
-              window.strudel.scheduler.stop();
-            }
-          } catch (stopError) {
-            console.warn(`⚠️ Could not stop scheduler:`, stopError);
-          }
-        }
         
         // Invalidate and pre-evaluate pattern cache AFTER stopping playback and saving config
         // This ensures the pattern is cached but doesn't start playing
