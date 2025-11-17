@@ -1673,6 +1673,62 @@ header h1 {
   font-size: 0.9rem;
 }
 
+.scale-chord-suggestions {
+  display: none;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(100, 116, 139, 0.35);
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.scale-chord-suggestions__header {
+  margin-bottom: 8px;
+}
+
+.scale-chord-suggestions__characteristic {
+  margin-top: 4px;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.scale-chord-suggestions__lists {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.scale-chord-suggestions__column {
+  flex: 1 1 220px;
+}
+
+.scale-chord-suggestions__label {
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.scale-chord-suggestions ul {
+  list-style: disc;
+  margin: 0 0 0 18px;
+  padding-left: 4px;
+  color: #0f172a;
+  font-size: 0.92rem;
+}
+
+.scale-chord-suggestions li + li {
+  margin-top: 4px;
+}
+
+.scale-chord-suggestions[data-state='placeholder'] ul {
+  opacity: 0.7;
+  font-style: italic;
+}
+
 .pattern-help {
   margin-top: 6px;
   color: #666;
