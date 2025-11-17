@@ -5,6 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Strudesk 4000 – Strudel Pattern Mixer</title>
   <link rel="stylesheet" href="/src/styles.css">
+  <!-- Provide import maps so bare @strudel/* specifiers resolve when Strudel REPL dynamically imports modules -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@strudel/core": "https://unpkg.com/@strudel/core@1.2.5/dist/index.mjs",
+          "@strudel/draw": "https://unpkg.com/@strudel/draw@1.2.4/dist/index.mjs",
+          "@strudel/transpiler": "https://unpkg.com/@strudel/transpiler@1.2.5/dist/index.mjs",
+          "@strudel/web": "https://unpkg.com/@strudel/web@1.2.5/dist/index.mjs",
+          "@strudel/webaudio": "https://unpkg.com/@strudel/webaudio@1.2.5/dist/index.mjs",
+          "@strudel/tonal": "https://unpkg.com/@strudel/tonal@1.2.4/dist/index.mjs",
+          "fraction.js": "https://cdn.jsdelivr.net/npm/fraction.js@4.2.0/+esm"
+        }
+      }
+    </script>
   <!-- Strudel is loaded via Vite from local packages to avoid version conflicts -->
 </head>
 <body>
