@@ -1730,6 +1730,14 @@ class InteractiveSoundApp {
     this.masterPunchcardIsRendering = false;
     this.masterPunchcardPendingRefresh = false;
     this.masterPunchcardResizeTimer = null;
+    this.externalVisualizerCanvas = null;
+    this.externalVisualizerObserver = null;
+    this.externalVisualizerType = null;
+    this.scopeAnimationFrame = null;
+    this.spectrumAnimationFrame = null;
+    this.scopeDataArray = null;
+    this.spectrumDataArray = null;
+    this.activeVisualizerLoop = null;
 
     // Master editor highlighting
     this.masterHighlightData = null;
@@ -2383,26 +2391,11 @@ class InteractiveSoundApp {
     console.log(`🎨 Applying visualizer "${this.selectedVisualizer}" to master pattern`);
     
     // Clean up any existing visualizer observers and intervals
-    if (this.pianorollObserver) {
-      this.pianorollObserver.disconnect();
-      this.pianorollObserver = null;
-      console.log('🧹 Cleaned up previous pianoroll observer');
-    }
-    if (this.pianorollCheckInterval) {
-      clearInterval(this.pianorollCheckInterval);
-      this.pianorollCheckInterval = null;
-      console.log('🧹 Cleaned up previous pianoroll check interval');
-    }
-    if (this.scopeSpectrumObserver) {
-      this.scopeSpectrumObserver.disconnect();
-      this.scopeSpectrumObserver = null;
-      console.log('🧹 Cleaned up previous scope/spectrum observer');
-    }
-    if (this.scopeSpectrumCopyLoop) {
-      cancelAnimationFrame(this.scopeSpectrumCopyLoop);
-      this.scopeSpectrumCopyLoop = null;
-      console.log('🧹 Cleaned up previous scope/spectrum copy loop');
-    }
+    this.scopeSpectrumObserver = null;
+    this.scopeSpectrumCopyLoop = null;
+    this.teardownExternalVisualizerCanvas();
+    this.stopVisualizerAnimation();
+    this.externalVisualizerType = null;
     
     // Clean up any existing pianoroll canvases from previous sessions
     if (this.selectedVisualizer !== 'pianoroll') {
@@ -2567,107 +2560,16 @@ class InteractiveSoundApp {
       console.error(`❌ Canvas "${canvasId}" not found!`);
     }
     
-    // For scope/spectrum, ensure they use our canvas directly
-    // They look for a canvas with the analyser ID, so our canvas must have that ID
     if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
-      // Ensure our canvas has the correct ID (it should already, but double-check)
       if (canvasElement && canvasElement.id !== canvasId) {
         canvasElement.id = canvasId;
       }
-      
-      // Set up observer to copy content from canvases scope/spectrum create
-      // They might create their own canvases, so we'll copy the content to ours
-      let copyLoopId = null;
-      let lastCopyTime = 0;
-      
-      const copyVisualizerContent = () => {
-        // Find canvases created by scope/spectrum
-        const allCanvases = document.querySelectorAll('canvas');
-        let foundVisualizerCanvas = null;
-        
-        allCanvases.forEach(canvas => {
-          // Check if this is a canvas created by scope/spectrum
-          if (canvas !== canvasElement && canvas.width > 0 && canvas.height > 0) {
-            const style = window.getComputedStyle(canvas);
-            const rect = canvas.getBoundingClientRect();
-            
-            // Scope/spectrum might create canvases with our ID or without an ID
-            const isVisualizerCanvas = 
-              (canvas.id === canvasId) || // Same ID as ours
-              (rect.width > 100 && rect.height > 50) || // Reasonable size
-              (style.position === 'fixed' || style.position === 'absolute'); // Positioned
-            
-            if (isVisualizerCanvas && !foundVisualizerCanvas) {
-              foundVisualizerCanvas = canvas;
-            }
-          }
-        });
-        
-        // If we found a visualizer canvas, copy its content to ours
-        if (foundVisualizerCanvas) {
-          const targetCtx = canvasElement.getContext('2d');
-          const sourceCtx = foundVisualizerCanvas.getContext('2d');
-          
-          if (targetCtx && sourceCtx && foundVisualizerCanvas.width > 0 && foundVisualizerCanvas.height > 0) {
-            try {
-              // Copy the content
-              targetCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-              targetCtx.drawImage(foundVisualizerCanvas, 0, 0, canvasElement.width, canvasElement.height);
-              
-              // Only log occasionally to avoid spam
-              const now = Date.now();
-              if (now - lastCopyTime > 2000) {
-                console.log(`🎨 Copied ${this.selectedVisualizer} content to our canvas (${foundVisualizerCanvas.width}x${foundVisualizerCanvas.height})`);
-                lastCopyTime = now;
-              }
-            } catch (e) {
-              // Ignore copy errors
-            }
-          }
-          
-          // Hide the visualizer's canvas but keep it for copying
-          foundVisualizerCanvas.style.position = 'absolute';
-          foundVisualizerCanvas.style.left = '-9999px';
-          foundVisualizerCanvas.style.top = '-9999px';
-          foundVisualizerCanvas.style.opacity = '0';
-          foundVisualizerCanvas.style.pointerEvents = 'none';
-        }
-      };
-      
-      // Set up observer to watch for new canvases
-      const observer = new MutationObserver(() => {
-        copyVisualizerContent();
-      });
-      
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-      
-      // Store observer for cleanup
-      this.scopeSpectrumObserver = observer;
-      
-      // Set up animation loop to copy content continuously
-      const copyLoop = () => {
-        if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
-          copyVisualizerContent();
-          copyLoopId = requestAnimationFrame(copyLoop);
-        }
-      };
-      copyLoop();
-      
-      // Store copy loop ID for cleanup
-      this.scopeSpectrumCopyLoop = copyLoopId;
-      
-      // Also do an immediate check
-      setTimeout(() => {
-        copyVisualizerContent();
-      }, 200);
+      this.masterPunchcardCanvas.style.display = 'block';
     }
     
     // For visualizers that need canvas context, register with getDrawContext AFTER canvas is sized
     // This MUST be done BEFORE pattern evaluation so visualizers can find the canvas
-    if (this.selectedVisualizer === 'pianoroll' || this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
+    if (this.selectedVisualizer === 'pianoroll') {
       try {
         // Register canvas with Strudel's draw system
         // getDrawContext will find our existing canvas and return its context
@@ -2677,270 +2579,34 @@ class InteractiveSoundApp {
         window.__strudelVisualizerCtx = ctx;
         
         console.log(`✅ Registered canvas "${canvasId}" with getDrawContext for ${this.selectedVisualizer}`);
-        
-        // For scope/spectrum, also ensure the canvas is ready before pattern evaluation
-        if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
-          // Wait a bit to ensure canvas registration is complete
-          await new Promise(resolve => setTimeout(resolve, 50));
-        }
       } catch (error) {
         console.warn(`⚠️ Failed to register canvas with getDrawContext for ${this.selectedVisualizer}:`, error);
       }
     }
     
-    // Prepare ctx expression for visualizers that need it
-    // Use a simpler expression that directly references our stored context
-    const ctxExpression = "window.__strudelVisualizerCtx";
     const analyserId = canvasId; // Analyser ID matches canvas ID
     
     if (this.selectedVisualizer === 'scope') {
-      patternWithVisualizer = `${basePattern}.scope({ id: '${canvasId}' })`;
+      patternWithVisualizer = basePattern;
     } else if (this.selectedVisualizer === 'spectrum') {
-      patternWithVisualizer = `${basePattern}.spectrum({ id: '${canvasId}' })`;
+      patternWithVisualizer = basePattern;
     } else if (this.selectedVisualizer === 'pianoroll') {
-      // Pianoroll API: https://strudel.cc/learn/visualizers/#pianoroll
-      // Pianoroll creates its own canvas element, so we need to intercept it
-      // Set up a MutationObserver to catch pianoroll's canvas and move it to our container
-      const canvasElement = document.getElementById(canvasId);
-      const containerElement = document.getElementById('master-punchcard');
-      
-      if (canvasElement && containerElement) {
-        // Clear any existing pianoroll canvases from the page
-        const existingPianorollCanvases = document.querySelectorAll('canvas[data-pianoroll], canvas[data-processed="true"], .pianoroll-canvas');
-        existingPianorollCanvases.forEach(canvas => {
-          if (canvas.id !== canvasId && canvas !== canvasElement) {
-            canvas.remove();
-          }
-        });
-        
-        // Reset our canvas element
-        canvasElement.removeAttribute('data-processed');
-        canvasElement.style.display = 'block';
-        canvasElement.style.visibility = 'visible';
-        canvasElement.style.opacity = '1';
-        canvasElement.style.pointerEvents = 'auto';
-        
-        // Set up observer to catch pianoroll's canvas creation
-        // Pianoroll creates a canvas that covers the entire page, so we need to catch it
-        let intercepted = false; // Flag to prevent multiple interceptions
-        let checkInterval = null; // Interval for periodic checks
-        
-        const interceptPianorollCanvas = (canvas) => {
-          if (intercepted) return false;
-          if (!canvas || canvas.id === canvasId || canvas === canvasElement) {
-            return false;
-          }
-          
-          // Check if this is likely a pianoroll canvas
-          const style = window.getComputedStyle(canvas);
-          const rect = canvas.getBoundingClientRect();
-          const isFullPage = (rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.8) ||
-                            (style.position === 'absolute' || style.position === 'fixed') ||
-                            canvas.style.position === 'absolute' ||
-                            canvas.style.position === 'fixed';
-          
-          // Also check if it's a new canvas (recently added)
-          const isRecent = !canvas.hasAttribute('data-processed');
-          
-          // Check if it's positioned at top-left (common for pianoroll)
-          const isTopLeft = rect.top < 100 && rect.left < 100;
-          
-          if ((isFullPage || isRecent || isTopLeft) && !canvas.hasAttribute('data-processed')) {
-            console.log('🎹 Intercepted pianoroll canvas:', {
-              id: canvas.id,
-              width: rect.width,
-              height: rect.height,
-              position: style.position,
-              isFullPage,
-              isRecent,
-              isTopLeft
-            });
-            
-            intercepted = true; // Mark as intercepted
-            // Mark as processed
-            canvas.setAttribute('data-processed', 'true');
-            
-            // Clone the canvas content to our canvas
-            try {
-              const targetCtx = canvasElement.getContext('2d');
-              const sourceCtx = canvas.getContext('2d');
-              
-              if (targetCtx && sourceCtx) {
-                // Get source canvas dimensions
-                const sourceWidth = canvas.width;
-                const sourceHeight = canvas.height;
-                const pixelRatio = window.devicePixelRatio || 1;
-                
-                // Get container dimensions
-                const containerRect = containerElement.getBoundingClientRect();
-                const displayWidth = Math.max(containerRect.width || containerElement.offsetWidth || 320, 240);
-                const displayHeight = Math.max(containerRect.height || containerElement.offsetHeight || 200, 220);
-                
-                // Calculate scale: stretch to full width of our canvas
-                const scaleX = displayWidth / sourceWidth;
-                const scale = scaleX; // Always fill width; height may overflow (we'll center it)
-                
-                const scaledWidth = displayWidth;
-                const scaledHeight = sourceHeight * scale;
-                
-                // Set our canvas to container size with pixel ratio
-                canvasElement.width = displayWidth * pixelRatio;
-                canvasElement.height = displayHeight * pixelRatio;
-                canvasElement.style.width = `${displayWidth}px`;
-                canvasElement.style.height = `${displayHeight}px`;
-                
-                // Set up transform to scale down the notes
-                targetCtx.setTransform(1, 0, 0, 1, 0, 0);
-                targetCtx.scale(pixelRatio, pixelRatio);
-                
-                // Center both horizontally and vertically
-                const offsetX = 0; // full width, no horizontal offset
-                const offsetY = (displayHeight - scaledHeight) / 2;
-                
-                // Set up animation loop to copy with scaling
-                // This scales down the notes so all notes fit in the visible area
-                const copyLoop = () => {
-                  if (this.selectedVisualizer === 'pianoroll' && canvas.parentNode) {
-                    // Clear the canvas
-                    targetCtx.clearRect(0, 0, displayWidth, displayHeight);
-                    
-                    // Draw the source canvas scaled down to fit all notes
-                    targetCtx.drawImage(
-                      canvas,
-                      0, 0, sourceWidth, sourceHeight,  // Source: full canvas
-                      offsetX, offsetY, scaledWidth, scaledHeight  // Destination: scaled to fit
-                    );
-                    
-                    requestAnimationFrame(copyLoop);
-                  }
-                };
-                copyLoop();
-                
-                // Hide the original canvas immediately
-                canvas.style.display = 'none';
-                canvas.style.visibility = 'hidden';
-                canvas.style.opacity = '0';
-                canvas.style.pointerEvents = 'none';
-                canvas.style.position = 'fixed';
-                canvas.style.left = '-9999px';
-                canvas.style.top = '-9999px';
-                
-                console.log('✅ Pianoroll canvas intercepted and copied to our canvas');
-                
-                // Disconnect observer and clear interval after intercepting
-                if (observer) observer.disconnect();
-                if (checkInterval) {
-                  clearInterval(checkInterval);
-                  checkInterval = null;
-                }
-                return true;
-              }
-            } catch (error) {
-              console.warn('⚠️ Error copying pianoroll canvas:', error);
-              // Fallback: try to hide the canvas at least
-              try {
-                canvas.style.display = 'none';
-                canvas.style.visibility = 'hidden';
-                canvas.style.opacity = '0';
-                canvas.style.pointerEvents = 'none';
-                canvas.style.position = 'fixed';
-                canvas.style.left = '-9999px';
-                canvas.style.top = '-9999px';
-              } catch (hideError) {
-                console.warn('⚠️ Error hiding pianoroll canvas:', hideError);
-              }
-            }
-          }
-          return false;
-        };
-        
-        const observer = new MutationObserver((mutations) => {
-          if (intercepted) return;
-          
-          mutations.forEach((mutation) => {
-            mutation.addedNodes.forEach((node) => {
-              if (node.nodeType === 1) { // Element node
-                // Check if the added node is a canvas
-                if (node.tagName === 'CANVAS') {
-                  interceptPianorollCanvas(node);
-                }
-                // Also check all canvases in the document
-                const allCanvases = document.querySelectorAll('canvas');
-                allCanvases.forEach(canvas => {
-                  interceptPianorollCanvas(canvas);
-                });
-              }
-            });
-          });
-        });
-        
-        // Periodic check for pianoroll canvases (in case MutationObserver misses them)
-        // Also hide any pianoroll canvases that appear on the page
-        checkInterval = setInterval(() => {
-          if (intercepted) {
-            if (checkInterval) {
-              clearInterval(checkInterval);
-              checkInterval = null;
-            }
-            return;
-          }
-          
-          const allCanvases = document.querySelectorAll('canvas');
-          allCanvases.forEach(canvas => {
-            if (interceptPianorollCanvas(canvas)) {
-              intercepted = true;
-            } else {
-              // Even if not intercepted, hide any suspicious canvases
-              if (canvas.id !== canvasId && canvas !== canvasElement && !canvas.hasAttribute('data-processed')) {
-                const style = window.getComputedStyle(canvas);
-                const rect = canvas.getBoundingClientRect();
-                const isFullPage = (rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.8);
-                const isPositioned = (style.position === 'absolute' || style.position === 'fixed');
-                
-                if (isFullPage || isPositioned) {
-                  // Hide suspicious canvases that might be pianoroll
-                  canvas.style.display = 'none';
-                  canvas.style.visibility = 'hidden';
-                  canvas.style.opacity = '0';
-                  canvas.style.pointerEvents = 'none';
-                  canvas.style.position = 'fixed';
-                  canvas.style.left = '-9999px';
-                  canvas.style.top = '-9999px';
-                  canvas.setAttribute('data-processed', 'true');
-                }
-              }
-            }
-          });
-        }, 100); // Check every 100ms
-        
-        // Start observing the document body for new canvas elements
-        observer.observe(document.body, {
-          childList: true,
-          subtree: true
-        });
-        
-        // Store observer and interval so we can disconnect/clear them later
-        this.pianorollObserver = observer;
-        this.pianorollCheckInterval = checkInterval;
-        
-        // Ensure our canvas is visible
-        canvasElement.style.display = 'block';
-        
-        // Create pianoroll pattern - it will create its own canvas
-        patternWithVisualizer = `${basePattern}.pianoroll({ 
-          cycles: 4,
-          playhead: 0.5,
-          fill: true,
-          fillActive: true,
-          stroke: true,
-          strokeActive: true,
-          autorange: true,
-          colorizeInactive: true,
-          background: 'transparent'
-        })`;
-      } else {
-        patternWithVisualizer = `${basePattern}.pianoroll()`;
+      if (this.masterPunchcardCanvas) {
+        this.masterPunchcardCanvas.style.display = 'none';
       }
+      this.externalVisualizerType = 'pianoroll';
+      this.watchForExternalVisualizerCanvas('pianoroll');
+      patternWithVisualizer = `${basePattern}.pianoroll({ 
+        cycles: 4,
+        playhead: 0.5,
+        fill: true,
+        fillActive: true,
+        stroke: true,
+        strokeActive: true,
+        autorange: true,
+        colorizeInactive: true,
+        background: 'transparent'
+      })`;
     } else if (this.selectedVisualizer === 'barchart') {
       // barchart doesn't exist in Strudel - use spectrum as alternative (shows frequency bars)
       console.warn('⚠️ barchart visualizer not available in Strudel, using spectrum instead');
@@ -2958,40 +2624,29 @@ class InteractiveSoundApp {
     }
     
     // Verify visualizer is in the pattern
-    const hasVisualizer = patternWithVisualizer.includes(`.${this.selectedVisualizer}(`);
-    if (!hasVisualizer && this.selectedVisualizer !== 'punchcard') {
-      console.error(`❌ Visualizer "${this.selectedVisualizer}" not found in pattern! Pattern:`, patternWithVisualizer);
-    } else if (hasVisualizer) {
-      console.log(`✅ Visualizer "${this.selectedVisualizer}" found in pattern`);
-      
-      // For scope/spectrum, verify analyser and canvas are accessible
-      if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
-        const getAnalyserById = window.strudel?.getAnalyserById || globalThis.getAnalyserById;
-        if (getAnalyserById) {
-          try {
-            const analyser = getAnalyserById(canvasId);
-            if (analyser) {
-              console.log(`✅ Analyser "${canvasId}" accessible via getAnalyserById`);
-            } else {
-              console.warn(`⚠️ Analyser "${canvasId}" not accessible via getAnalyserById`);
-            }
-          } catch (e) {
-            console.warn(`⚠️ Could not get analyser:`, e);
-          }
-        }
-        
-        const canvas = document.getElementById(canvasId);
-        if (canvas) {
-          console.log(`✅ Canvas "${canvasId}" accessible via getElementById`);
-        } else {
-          console.warn(`⚠️ Canvas "${canvasId}" not accessible via getElementById`);
-        }
+    const usesInternalVisualizer = this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum';
+    const requiresPatternVisualizer = !usesInternalVisualizer && this.selectedVisualizer !== 'punchcard';
+    let hasVisualizer = true;
+    if (requiresPatternVisualizer) {
+      hasVisualizer = patternWithVisualizer.includes(`.${this.selectedVisualizer}(`);
+      if (!hasVisualizer) {
+        console.error(`❌ Visualizer "${this.selectedVisualizer}" not found in pattern! Pattern:`, patternWithVisualizer);
+      } else {
+        console.log(`✅ Visualizer "${this.selectedVisualizer}" found in pattern`);
       }
+    } else if (usesInternalVisualizer) {
+      console.log(`✅ Using internal analyser visualizer for ${this.selectedVisualizer}`);
     }
     
     // Update the master pattern and restart playback
     await soundManager.setMasterPatternCode(patternWithVisualizer);
     
+    if (this.selectedVisualizer === 'scope') {
+      this.startScopeVisualizerLoop();
+    } else if (this.selectedVisualizer === 'spectrum') {
+      this.startSpectrumVisualizerLoop();
+    }
+
     // Refresh the punchcard display
     this.refreshMasterPunchcard('visualizer-applied').catch(err => {
       console.warn('⚠️ Unable to refresh punchcard after applying visualizer:', err);
@@ -3013,6 +2668,24 @@ class InteractiveSoundApp {
 
   async refreshMasterPunchcard(reason = 'auto') {
     if (!this.masterPunchcardContainer) return;
+    const activeVisualizer = this.selectedVisualizer || 'punchcard';
+    if (activeVisualizer === 'scope') {
+      this.prepareCanvasForExternalVisualizer();
+      this.startScopeVisualizerLoop();
+      this.hideMasterPunchcardPlaceholder();
+      this.masterPunchcardIsRendering = false;
+      return;
+    }
+    if (activeVisualizer === 'spectrum') {
+      this.prepareCanvasForExternalVisualizer();
+      this.startSpectrumVisualizerLoop();
+      this.hideMasterPunchcardPlaceholder();
+      this.masterPunchcardIsRendering = false;
+      return;
+    }
+    if (activeVisualizer !== 'scope' && activeVisualizer !== 'spectrum') {
+      this.stopVisualizerAnimation();
+    }
     
     // Avoid overlapping renders; queue another refresh if needed
     if (this.masterPunchcardIsRendering) {
@@ -3033,6 +2706,15 @@ class InteractiveSoundApp {
     const useBarchart = !useSpiral && !useScope && !useSpectrum && !usePitchwheel && !usePianoroll && this.shouldUseBarchartVisualizer(patternCode);
     
     if (useScope || useSpectrum || useSpiral || usePitchwheel || usePianoroll || useBarchart) {
+      if ((this.selectedVisualizer || 'punchcard') === 'punchcard') {
+        if (useScope) {
+          this.watchForExternalVisualizerCanvas('scope');
+        } else if (useSpectrum) {
+          this.watchForExternalVisualizerCanvas('spectrum');
+        } else if (usePianoroll) {
+          this.watchForExternalVisualizerCanvas('pianoroll');
+        }
+      }
       // External visualizers (scope, spectrum, spiral) rely on Strudel rendering directly
       this.prepareCanvasForExternalVisualizer();
       this.hideMasterPunchcardPlaceholder();
@@ -3101,8 +2783,13 @@ class InteractiveSoundApp {
     console.log(`✅ Canvas "${canvasId}" is accessible via getElementById`);
     
     this.hideMasterPunchcardPlaceholder();
+    this.masterPunchcardCanvas.style.position = 'relative';
+    this.masterPunchcardCanvas.style.left = '0';
+    this.masterPunchcardCanvas.style.top = '0';
+    this.masterPunchcardCanvas.style.width = '100%';
+    this.masterPunchcardCanvas.style.height = '100%';
+    this.masterPunchcardCanvas.style.display = 'block';
     
-    // Get or create context using Strudel's getDrawContext
     let ctx;
     try {
       ctx = getDrawContext(canvasId, { contextType: '2d' });
@@ -3112,49 +2799,315 @@ class InteractiveSoundApp {
       ctx = this.masterPunchcardCanvas.getContext('2d');
     }
     
-    if (ctx) {
-      try {
-        window.__strudelVisualizerCtx = ctx;
-      } catch (error) {
-        console.warn('⚠️ Unable to cache visualizer context on window:', error);
-      }
-      const containerRect = this.masterPunchcardContainer.getBoundingClientRect();
-      const displayWidth = Math.max(containerRect.width || this.masterPunchcardContainer.offsetWidth || 320, 240);
-      const displayHeight = Math.max(containerRect.height || this.masterPunchcardContainer.offsetHeight || 200, 220);
-      const pixelRatio = window.devicePixelRatio || 1;
-
-      console.log(`🎨 Canvas dimensions: ${displayWidth}x${displayHeight}, pixelRatio: ${pixelRatio}`);
-
-      if (this.masterPunchcardCanvas.width !== displayWidth * pixelRatio || this.masterPunchcardCanvas.height !== displayHeight * pixelRatio) {
-        this.masterPunchcardCanvas.width = displayWidth * pixelRatio;
-        this.masterPunchcardCanvas.height = displayHeight * pixelRatio;
-        this.masterPunchcardCanvas.style.width = `${displayWidth}px`;
-        this.masterPunchcardCanvas.style.height = `${displayHeight}px`;
-      }
-      
-      // Make canvas visible
-      this.masterPunchcardCanvas.style.display = 'block';
-      this.masterPunchcardCanvas.style.opacity = '1';
-
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, this.masterPunchcardCanvas.width, this.masterPunchcardCanvas.height);
-      ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-      
-      // Store context in both places for Strudel to find
-      window.__strudelVisualizerCtx = ctx;
-      
-      // Also try to register with Strudel's draw system if available
-      if (window.strudel && window.strudel.controls) {
-        try {
-          window.strudel.controls.setCanvas(canvasId);
-          console.log(`✅ Registered canvas "${canvasId}" with Strudel controls`);
-        } catch (e) {
-          console.log(`ℹ️ Could not register with strudel.controls:`, e.message);
-        }
-      }
-      
-      console.log(`✅ Canvas prepared, context stored in window.__strudelVisualizerCtx`);
+    if (!ctx) {
+      return;
     }
+    
+    this.sizeCanvasToContainer(this.masterPunchcardCanvas, ctx);
+    window.__strudelVisualizerCtx = ctx;
+    
+    if (window.strudel && window.strudel.controls) {
+      try {
+        window.strudel.controls.setCanvas(canvasId);
+        console.log(`✅ Registered canvas "${canvasId}" with Strudel controls`);
+      } catch (e) {
+        console.log(`ℹ️ Could not register with strudel.controls:`, e.message);
+      }
+    }
+  }
+
+  sizeCanvasToContainer(canvas, context) {
+    if (!canvas || !this.masterPunchcardContainer) {
+      return;
+    }
+    const containerRect = this.masterPunchcardContainer.getBoundingClientRect();
+    const displayWidth = Math.max(containerRect.width || this.masterPunchcardContainer.offsetWidth || 320, 240);
+    const displayHeight = Math.max(containerRect.height || this.masterPunchcardContainer.offsetHeight || 200, 220);
+    const pixelRatio = window.devicePixelRatio || 1;
+    canvas.width = displayWidth * pixelRatio;
+    canvas.height = displayHeight * pixelRatio;
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.display = 'block';
+    canvas.style.opacity = '1';
+    if (context) {
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    }
+  }
+
+  ensureVisualizerAnalyser() {
+    if (!soundManager) {
+      return null;
+    }
+    if (!soundManager.visualizerAnalyser) {
+      if (typeof soundManager.setupVisualizerAnalyser === 'function') {
+        soundManager.setupVisualizerAnalyser();
+      }
+    }
+    return soundManager.visualizerAnalyser || null;
+  }
+
+  stopVisualizerAnimation() {
+    if (this.scopeAnimationFrame) {
+      cancelAnimationFrame(this.scopeAnimationFrame);
+      this.scopeAnimationFrame = null;
+    }
+    if (this.spectrumAnimationFrame) {
+      cancelAnimationFrame(this.spectrumAnimationFrame);
+      this.spectrumAnimationFrame = null;
+    }
+    this.activeVisualizerLoop = null;
+  }
+
+  drawVisualizerMessage(message) {
+    const canvas = this.masterPunchcardCanvas;
+    const ctx = this.getMasterPunchcardContext();
+    if (!canvas || !ctx) {
+      return;
+    }
+    this.sizeCanvasToContainer(canvas, ctx);
+    const pixelRatio = window.devicePixelRatio || 1;
+    const width = canvas.width / pixelRatio;
+    const height = canvas.height / pixelRatio;
+    ctx.fillStyle = 'rgba(5, 6, 10, 0.92)';
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '14px "Fira Sans", "Inter", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(message, width / 2, height / 2);
+  }
+
+  startScopeVisualizerLoop() {
+    if (this.activeVisualizerLoop === 'scope') {
+      return;
+    }
+    const canvas = this.masterPunchcardCanvas;
+    const ctx = this.getMasterPunchcardContext();
+    if (!canvas || !ctx) {
+      return;
+    }
+    const analyser = this.ensureVisualizerAnalyser();
+    if (!analyser) {
+      this.drawVisualizerMessage('Scope analyser unavailable');
+      return;
+    }
+    const bufferLength = analyser.fftSize || 2048;
+    if (!this.scopeDataArray || this.scopeDataArray.length !== bufferLength) {
+      this.scopeDataArray = new Uint8Array(bufferLength);
+    }
+    this.activeVisualizerLoop = 'scope';
+    const draw = () => {
+      if (this.selectedVisualizer !== 'scope') {
+        this.stopVisualizerAnimation();
+        return;
+      }
+      const context = this.getMasterPunchcardContext();
+      if (!context) {
+        this.stopVisualizerAnimation();
+        return;
+      }
+      this.hideMasterPunchcardPlaceholder();
+      this.masterPunchcardCanvas.style.display = 'block';
+      this.sizeCanvasToContainer(canvas, context);
+      analyser.getByteTimeDomainData(this.scopeDataArray);
+      const pixelRatio = window.devicePixelRatio || 1;
+      const width = canvas.width / pixelRatio;
+      const height = canvas.height / pixelRatio;
+      context.fillStyle = 'rgba(5, 6, 10, 0.92)';
+      context.fillRect(0, 0, width, height);
+      const mid = height / 2;
+      context.strokeStyle = '#38bdf8';
+      context.lineWidth = 2;
+      context.beginPath();
+      const sliceWidth = width / this.scopeDataArray.length;
+      let x = 0;
+      for (let i = 0; i < this.scopeDataArray.length; i++) {
+        const v = this.scopeDataArray[i] / 128.0;
+        const y = (v * height) / 2;
+        if (i === 0) {
+          context.moveTo(x, y);
+        } else {
+          context.lineTo(x, y);
+        }
+        x += sliceWidth;
+      }
+      context.lineTo(width, mid);
+      context.stroke();
+      context.strokeStyle = 'rgba(14, 165, 233, 0.4)';
+      context.beginPath();
+      context.moveTo(0, mid);
+      context.lineTo(width, mid);
+      context.stroke();
+      this.scopeAnimationFrame = requestAnimationFrame(draw);
+    };
+    draw();
+  }
+
+  startSpectrumVisualizerLoop() {
+    if (this.activeVisualizerLoop === 'spectrum') {
+      return;
+    }
+    const canvas = this.masterPunchcardCanvas;
+    const ctx = this.getMasterPunchcardContext();
+    if (!canvas || !ctx) {
+      return;
+    }
+    const analyser = this.ensureVisualizerAnalyser();
+    if (!analyser) {
+      this.drawVisualizerMessage('Spectrum analyser unavailable');
+      return;
+    }
+    const bufferLength = analyser.frequencyBinCount || 1024;
+    if (!this.spectrumDataArray || this.spectrumDataArray.length !== bufferLength) {
+      this.spectrumDataArray = new Uint8Array(bufferLength);
+    }
+    this.activeVisualizerLoop = 'spectrum';
+    const draw = () => {
+      if (this.selectedVisualizer !== 'spectrum') {
+        this.stopVisualizerAnimation();
+        return;
+      }
+      const context = this.getMasterPunchcardContext();
+      if (!context) {
+        this.stopVisualizerAnimation();
+        return;
+      }
+      this.hideMasterPunchcardPlaceholder();
+      this.masterPunchcardCanvas.style.display = 'block';
+      this.sizeCanvasToContainer(canvas, context);
+      analyser.getByteFrequencyData(this.spectrumDataArray);
+      const pixelRatio = window.devicePixelRatio || 1;
+      const width = canvas.width / pixelRatio;
+      const height = canvas.height / pixelRatio;
+      context.fillStyle = 'rgba(5, 6, 10, 0.92)';
+      context.fillRect(0, 0, width, height);
+      const barCount = Math.min(this.spectrumDataArray.length, Math.floor(width / 3));
+      const step = this.spectrumDataArray.length / barCount;
+      const barWidth = width / barCount;
+      for (let i = 0; i < barCount; i++) {
+        const dataIndex = Math.floor(i * step);
+        const value = this.spectrumDataArray[dataIndex] / 255;
+        const barHeight = Math.max(value * height, 2);
+        const x = i * barWidth;
+        const y = height - barHeight;
+        const gradient = context.createLinearGradient(x, y, x, height);
+        gradient.addColorStop(0, 'rgba(56, 189, 248, 0.95)');
+        gradient.addColorStop(1, 'rgba(14, 116, 144, 0.75)');
+        context.fillStyle = gradient;
+        context.fillRect(x + barWidth * 0.15, y, barWidth * 0.7, barHeight);
+      }
+      this.spectrumAnimationFrame = requestAnimationFrame(draw);
+    };
+    draw();
+  }
+
+  teardownExternalVisualizerCanvas() {
+    if (this.externalVisualizerObserver) {
+      this.externalVisualizerObserver.disconnect();
+      this.externalVisualizerObserver = null;
+    }
+    if (this.externalVisualizerCanvas && this.externalVisualizerCanvas.parentNode) {
+      this.externalVisualizerCanvas.remove();
+    }
+    this.externalVisualizerCanvas = null;
+    this.externalVisualizerType = null;
+    if (this.masterPunchcardCanvas) {
+      this.masterPunchcardCanvas.style.display = '';
+    }
+  }
+
+  attachExternalVisualizerCanvas(canvas) {
+    if (!canvas || !this.masterPunchcardContainer) {
+      return false;
+    }
+    this.masterPunchcardCanvas.style.display = 'none';
+    this.hideMasterPunchcardPlaceholder();
+    if (this.masterPunchcardContainer.style.position === '') {
+      this.masterPunchcardContainer.style.position = 'relative';
+    }
+    canvas.dataset.visualizerAttached = 'true';
+    canvas.style.position = 'relative';
+    canvas.style.left = '0';
+    canvas.style.top = '0';
+    canvas.style.pointerEvents = 'auto';
+    this.sizeCanvasToContainer(canvas, canvas.getContext('2d'));
+    this.masterPunchcardContainer.appendChild(canvas);
+    this.externalVisualizerCanvas = canvas;
+    return true;
+  }
+
+  watchForExternalVisualizerCanvas(type) {
+    const tryAttach = () => {
+      const candidate = this.findExternalVisualizerCanvasCandidate(type);
+      if (candidate) {
+        return this.attachExternalVisualizerCanvas(candidate);
+      }
+      return false;
+    };
+    if (tryAttach()) {
+      return;
+    }
+    this.externalVisualizerObserver = new MutationObserver(() => {
+      if (tryAttach() && this.externalVisualizerObserver) {
+        this.externalVisualizerObserver.disconnect();
+        this.externalVisualizerObserver = null;
+      }
+    });
+    this.externalVisualizerObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  findExternalVisualizerCanvasCandidate(type) {
+    const canvases = Array.from(document.querySelectorAll('canvas'));
+    for (const canvas of canvases) {
+      if (canvas === this.masterPunchcardCanvas) continue;
+      if (canvas.dataset.visualizerAttached === 'true') continue;
+      if (type === 'pianoroll' && this.isPianorollCanvas(canvas)) {
+        return canvas;
+      }
+      if (type === 'scope' && this.isScopeCanvas(canvas)) {
+        return canvas;
+      }
+      if (type === 'spectrum' && this.isSpectrumCanvas(canvas)) {
+        return canvas;
+      }
+    }
+    return null;
+  }
+
+  isPianorollCanvas(canvas) {
+    if (!canvas) return false;
+    if (canvas.dataset.pianoroll !== undefined) return true;
+    const className = canvas.className || '';
+    if (/pianoroll/i.test(className)) return true;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+    const coversViewport = rect.width > window.innerWidth * 0.6 && rect.height > window.innerHeight * 0.4;
+    return coversViewport;
+  }
+  isScopeCanvas(canvas) {
+    if (!canvas) return false;
+    const id = (canvas.id || '').toLowerCase();
+    const className = (canvas.className || '').toLowerCase();
+    if (id.includes('scope') || className.includes('scope')) return true;
+    if (canvas.dataset.scope !== undefined) return true;
+    const rect = canvas.getBoundingClientRect();
+    return rect.width > window.innerWidth * 0.5 && rect.height < 260;
+  }
+
+  isSpectrumCanvas(canvas) {
+    if (!canvas) return false;
+    const id = (canvas.id || '').toLowerCase();
+    const className = (canvas.className || '').toLowerCase();
+    if (id.includes('spectrum') || className.includes('spectrum')) return true;
+    if (canvas.dataset.spectrum !== undefined) return true;
+    const rect = canvas.getBoundingClientRect();
+    return rect.width > window.innerWidth * 0.5 && rect.height < 400;
   }
 
   hideMasterPunchcardPlaceholder() {

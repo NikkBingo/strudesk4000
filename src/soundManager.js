@@ -515,12 +515,15 @@ class SoundManager {
     this.masterPan = 0; // Master pan (-1 to 1)
     this.masterMuted = false; // Master mute state
     this.masterVolumeBeforeMute = 0.7; // Store volume before mute
+    this.visualizerAnalyser = null;
+    this.visualizerAnalyserTapGain = null;
+    this.visualizerAnalyserTapGainConnected = false;
     
     // Debug flags
     this.debugAudioRouting = false; // set true to see detailed routing logs
     this._logRoute = (...args) => { if (this.debugAudioRouting) console.log(...args); };
-    // Temporarily bypass custom routing to ensure audio while debugging
-    this._routingBypass = true;
+    // Route all Strudel AudioNodes through master chain by default
+    this._routingBypass = false;
     
     // Master pattern system
     this.masterPattern = ''; // Combined pattern code
@@ -6822,48 +6825,65 @@ class SoundManager {
       // Connect analyser to master gain node (after all processing)
       // This allows the analyser to tap the final audio signal
       if (this.masterGainNode && analyser) {
-        try {
-          // Disconnect if already connected to avoid errors
+        const destinationNode = this._realDestination || this.audioContext?.destination;
+        if (!destinationNode) {
+          console.warn(`⚠️ Cannot connect analyser - destination unavailable`);
+        } else {
           try {
-            this.masterGainNode.disconnect(analyser);
-          } catch (e) {
-            // Ignore if not connected
-          }
-          
-          // Connect analyser in parallel to master gain node
-          // masterGainNode can have multiple outputs, so this won't interfere with destination connection
-          this.masterGainNode.connect(analyser);
-          console.log(`✅ Connected visualizer analyser "${analyserId}" to master gain node`);
-          
-          // Verify the connection worked
-          const connections = this.masterGainNode.numberOfOutputs;
-          console.log(`🔍 Master gain node has ${connections} output(s)`);
-          
-          // Verify analyser is receiving data (check after a short delay to allow audio to flow)
-          setTimeout(() => {
-            try {
-              const dataArray = new Uint8Array(analyser.frequencyBinCount);
-              analyser.getByteFrequencyData(dataArray);
-              const hasData = dataArray.some(val => val > 0);
-              const maxValue = Math.max(...dataArray);
-              console.log(`🔍 Analyser data check: hasData=${hasData}, maxValue=${maxValue}, frequencyBinCount=${analyser.frequencyBinCount}`);
-              
-              // Also check if canvas exists and is accessible
-              const canvas = document.getElementById(analyserId);
-              if (canvas) {
-                console.log(`🔍 Canvas check: found canvas with ID "${analyserId}", width=${canvas.width}, height=${canvas.height}`);
-              } else {
-                console.warn(`⚠️ Canvas with ID "${analyserId}" not found!`);
-              }
-            } catch (e) {
-              console.warn(`⚠️ Could not check analyser data:`, e);
+            // Ensure we have a silent tap gain so analyser output is pulled without adding audible signal
+            if (!this.visualizerAnalyserTapGain && this.audioContext) {
+              this.visualizerAnalyserTapGain = this.audioContext.createGain();
+              this.visualizerAnalyserTapGain.gain.value = 0;
             }
-          }, 500);
-        } catch (connectError) {
-          // Check if it's already connected
-          if (connectError.message && connectError.message.includes('already connected')) {
-            console.log(`ℹ️ Analyser "${analyserId}" already connected`);
-          } else {
+            
+            if (this.visualizerAnalyserTapGain) {
+              try {
+                this.visualizerAnalyserTapGain.disconnect();
+              } catch (e) {
+                // ignore
+              }
+              this.visualizerAnalyserTapGain.connect(destinationNode);
+            }
+            
+            try {
+              analyser.disconnect();
+            } catch (e) {
+              // ignore
+            }
+            
+            try {
+              this.masterGainNode.disconnect(analyser);
+            } catch (e) {
+              // ignore
+            }
+            
+            this.masterGainNode.connect(analyser);
+            if (this.visualizerAnalyserTapGain) {
+              analyser.connect(this.visualizerAnalyserTapGain);
+            }
+            console.log(`✅ Connected visualizer analyser "${analyserId}" with silent tap to destination`);
+            
+            // Verify analyser is receiving data (check after a short delay to allow audio to flow)
+            setTimeout(() => {
+              try {
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                analyser.getByteFrequencyData(dataArray);
+                const hasData = dataArray.some(val => val > 0);
+                const maxValue = Math.max(...dataArray);
+                console.log(`🔍 Analyser data check: hasData=${hasData}, maxValue=${maxValue}, frequencyBinCount=${analyser.frequencyBinCount}`);
+                
+                // Also check if canvas exists and is accessible
+                const canvas = document.getElementById(analyserId);
+                if (canvas) {
+                  console.log(`🔍 Canvas check: found canvas with ID "${analyserId}", width=${canvas.width}, height=${canvas.height}`);
+                } else {
+                  console.warn(`⚠️ Canvas with ID "${analyserId}" not found!`);
+                }
+              } catch (e) {
+                console.warn(`⚠️ Could not check analyser data:`, e);
+              }
+            }, 500);
+          } catch (connectError) {
             console.warn(`⚠️ Failed to connect analyser "${analyserId}":`, connectError.message);
           }
         }
