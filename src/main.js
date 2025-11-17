@@ -7263,6 +7263,9 @@ class InteractiveSoundApp {
         
         updatePreviewButtonState();
         updateNoteConversionCheckboxVisibility();
+        if (cleaned && containsNumericNotePattern(cleaned)) {
+          lastCanonicalNumericPattern = cleaned;
+        }
         semitoneSnapshotLocked = false;
         syncLastSemitonePattern(getStrudelEditorValue('modal-pattern'), true);
         
@@ -8128,7 +8131,7 @@ class InteractiveSoundApp {
         if (patternWithScale) {
           if (!useNoteNames && containsNumericNotePattern(patternWithScale)) {
             patternWithScale = normalizeNumericPatternForScale(patternWithScale, keyToPass, scaleToPass);
-            lastSemitonePattern = patternWithScale;
+            lastCanonicalNumericPattern = patternWithScale;
           }
           semitoneSnapshotLocked = false;
           syncLastSemitonePattern(patternWithScale, true);
@@ -8218,6 +8221,8 @@ class InteractiveSoundApp {
     // Remember last semitone pattern when toggling to note names so we can restore it verbatim
     let lastSemitonePattern = null;
     let semitoneSnapshotLocked = false;
+    let lastCanonicalNumericPattern = null;
+    let lastNoteNamesSnapshot = null;
 
     const buildScaleModifier = (keyValue, scaleValue) => {
       const hasKey = keyValue && keyValue.trim() !== '';
@@ -8273,8 +8278,11 @@ class InteractiveSoundApp {
       if (!pattern || !containsNumericNotePattern(pattern)) {
         return pattern;
       }
-      const keySafe = (keyValue && keyValue.trim()) || 'C';
-      const scaleSafe = (scaleValue && scaleValue.trim()) || 'chromatic';
+      const patternScale = (!keyValue || !keyValue.trim() || !scaleValue || !scaleValue.trim())
+        ? extractScaleFromPattern(pattern)
+        : null;
+      const keySafe = (keyValue && keyValue.trim()) || patternScale?.key || 'C';
+      const scaleSafe = (scaleValue && scaleValue.trim()) || patternScale?.scale || 'chromatic';
       const noteVersion = this.convertNumericPatternToNoteNames(pattern, keySafe, scaleSafe);
       if (!noteVersion) {
         return pattern;
@@ -8314,7 +8322,7 @@ class InteractiveSoundApp {
     };
     
     // Function to convert pattern between semitones and note names
-    const convertPatternFormat = (pattern, toNoteNames) => {
+    const convertPatternFormat = (pattern, toNoteNames, skipSnapshot = false) => {
       if (!pattern || !containsNoteCall(pattern)) return pattern;
       
       const hasNoteNames = (soundManager.patternHasNoteNames && soundManager.patternHasNoteNames(pattern)) ||
@@ -8381,6 +8389,7 @@ class InteractiveSoundApp {
           if (converted && converted !== pattern) {
             console.log(`🔄 Converted note names to scale degrees: ${converted.substring(0, 80)}...`);
             syncLastSemitonePattern(converted, true);
+            lastCanonicalNumericPattern = converted;
             return converted;
           }
           return pattern;
@@ -8398,7 +8407,13 @@ class InteractiveSoundApp {
         const useNoteNames = keepNotesCheckbox.checked;
         
         // Convert pattern format based on toggle state
-        let convertedPattern = convertPatternFormat(patternValue, useNoteNames);
+        let convertedPattern;
+        if (!useNoteNames && lastNoteNamesSnapshot && patternValue === lastNoteNamesSnapshot && lastCanonicalNumericPattern) {
+          convertedPattern = lastCanonicalNumericPattern;
+          console.log('🔁 Restoring canonical numeric pattern from snapshot');
+        } else {
+          convertedPattern = convertPatternFormat(patternValue, useNoteNames, true);
+        }
         
         const modalKeySelectRef = document.getElementById('modal-key-select');
         const modalScaleSelectRef = document.getElementById('modal-scale-select');
@@ -8433,9 +8448,19 @@ class InteractiveSoundApp {
         
         if (convertedPattern !== patternValue) {
           setStrudelEditorValue('modal-pattern', convertedPattern);
-          syncLastSemitonePattern(convertedPattern, true);
+          if (useNoteNames) {
+            lastCanonicalNumericPattern = patternValue;
+            lastNoteNamesSnapshot = convertedPattern;
+            semitoneSnapshotLocked = true;
+          } else {
+            lastNoteNamesSnapshot = null;
+            semitoneSnapshotLocked = false;
+            syncLastSemitonePattern(convertedPattern, true);
+          }
           console.log(`🔄 Converted pattern ${useNoteNames ? 'to note names' : 'to semitones'}: ${convertedPattern.substring(0, 100)}...`);
         } else if (!useNoteNames) {
+          lastNoteNamesSnapshot = null;
+          semitoneSnapshotLocked = false;
           syncLastSemitonePattern(patternValue, true);
         }
         
