@@ -734,6 +734,12 @@ header h1 {
   margin-bottom: 16px;
 }
 
+.visualizer-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .master-visualizer-header h3 {
   margin: 0;
   font-size: 1.25rem;
@@ -770,6 +776,42 @@ header h1 {
 .visualizer-select:focus {
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.visualizer-fullscreen-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: #4c51bf;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.visualizer-fullscreen-btn:hover,
+.visualizer-fullscreen-btn.is-active {
+  color: #2c3591;
+  transform: translateY(-1px);
+}
+
+.fullscreen-icon {
+  line-height: 1;
+}
+
+.fullscreen-icon--exit {
+  display: none;
+}
+
+.visualizer-fullscreen-btn.is-active .fullscreen-icon--enter {
+  display: none;
+}
+
+.visualizer-fullscreen-btn.is-active .fullscreen-icon--exit {
+  display: inline;
 }
 
 .punchcard-grid {
@@ -831,6 +873,19 @@ header h1 {
   color: #374151;
   max-width: 260px;
   line-height: 1.4;
+}
+
+.punchcard-grid:fullscreen,
+#master-punchcard.is-fullscreen {
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+  max-width: none;
+}
+
+.punchcard-grid:fullscreen canvas,
+#master-punchcard.is-fullscreen canvas {
+  border-radius: 0;
 }
 
 /* Master Pattern Field Styles */

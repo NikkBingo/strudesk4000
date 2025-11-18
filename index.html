@@ -303,11 +303,17 @@
       <div class="master-visualizer">
         <div class="master-visualizer-header">
           <h3>Visualizer</h3>
-          <select id="visualizer-select" class="visualizer-select">
-            <option value="scope">Scope (Waveform)</option>
-            <option value="spectrum">Spectrum (Frequency)</option>
-            <option value="pianoroll">Pianoroll</option>
-          </select>
+          <div class="visualizer-header-controls">
+            <select id="visualizer-select" class="visualizer-select">
+              <option value="scope">Scope (Waveform)</option>
+              <option value="spectrum">Spectrum (Frequency)</option>
+              <option value="pianoroll">Pianoroll</option>
+            </select>
+            <button id="visualizer-fullscreen-btn" class="visualizer-fullscreen-btn" type="button" aria-label="Enter visualizer fullscreen">
+              <span class="fullscreen-icon fullscreen-icon--enter" aria-hidden="true">⤢</span>
+              <span class="fullscreen-icon fullscreen-icon--exit" aria-hidden="true">⤡</span>
+            </button>
+          </div>
         </div>
         <div id="master-punchcard" class="punchcard-grid">
           <canvas id="master-punchcard-canvas" aria-label="Master visualizer"></canvas>
