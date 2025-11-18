@@ -2035,6 +2035,13 @@ class InteractiveSoundApp {
     this.masterHighlightData = null;
     this.masterHighlightRaf = null;
     this.currentMasterHighlightKey = null;
+
+    this.visualizerFullscreenBtn = null;
+    this.handleVisualizerFullscreenChange = this.handleVisualizerFullscreenChange.bind(this);
+    document.addEventListener('fullscreenchange', this.handleVisualizerFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', this.handleVisualizerFullscreenChange);
+    document.addEventListener('mozfullscreenchange', this.handleVisualizerFullscreenChange);
+    document.addEventListener('MSFullscreenChange', this.handleVisualizerFullscreenChange);
   }
 
   /**
@@ -2657,6 +2664,14 @@ class InteractiveSoundApp {
       });
     }
     
+    this.visualizerFullscreenBtn = document.getElementById('visualizer-fullscreen-btn');
+    if (this.visualizerFullscreenBtn) {
+      this.visualizerFullscreenBtn.addEventListener('click', () => {
+        this.toggleVisualizerFullscreen();
+      });
+      this.updateVisualizerFullscreenButton(false);
+    }
+    
     // Ensure initial placeholder text reflects current steps
     this.showMasterPunchcardPlaceholder();
     
@@ -2673,6 +2688,67 @@ class InteractiveSoundApp {
     
     this.refreshMasterPunchcard('initial').catch(err => {
       console.warn('⚠️ Unable to render initial punchcard:', err);
+    });
+  }
+
+  getCurrentFullscreenElement() {
+    return document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement ||
+      null;
+  }
+
+  async toggleVisualizerFullscreen() {
+    if (!this.masterPunchcardContainer) return;
+    const fullscreenElement = this.getCurrentFullscreenElement();
+    if (fullscreenElement === this.masterPunchcardContainer) {
+      if (document.exitFullscreen) {
+        await document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) {
+        await document.webkitExitFullscreen();
+      } else if (document.mozCancelFullScreen) {
+        await document.mozCancelFullScreen();
+      } else if (document.msExitFullscreen) {
+        await document.msExitFullscreen();
+      }
+      return;
+    }
+
+    const requestFs =
+      this.masterPunchcardContainer.requestFullscreen ||
+      this.masterPunchcardContainer.webkitRequestFullscreen ||
+      this.masterPunchcardContainer.mozRequestFullScreen ||
+      this.masterPunchcardContainer.msRequestFullscreen;
+
+    if (requestFs) {
+      try {
+        await requestFs.call(this.masterPunchcardContainer);
+      } catch (err) {
+        console.warn('⚠️ Unable to enter visualizer fullscreen:', err);
+      }
+    }
+  }
+
+  updateVisualizerFullscreenButton(isFullscreen) {
+    if (!this.visualizerFullscreenBtn) return;
+    this.visualizerFullscreenBtn.classList.toggle('is-active', isFullscreen);
+    this.visualizerFullscreenBtn.setAttribute(
+      'aria-label',
+      isFullscreen ? 'Exit visualizer fullscreen' : 'Enter visualizer fullscreen'
+    );
+  }
+
+  handleVisualizerFullscreenChange() {
+    const fullscreenElement = this.getCurrentFullscreenElement();
+    const isFullscreen = fullscreenElement === this.masterPunchcardContainer;
+    if (this.masterPunchcardContainer) {
+      this.masterPunchcardContainer.classList.toggle('is-fullscreen', isFullscreen);
+    }
+    this.updateVisualizerFullscreenButton(isFullscreen);
+    // Recalculate canvas sizing after entering/exiting fullscreen
+    this.refreshMasterPunchcard('fullscreen-change').catch(err => {
+      console.warn('⚠️ Unable to refresh punchcard after fullscreen change:', err);
     });
   }
 
