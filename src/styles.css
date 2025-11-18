@@ -1693,40 +1693,55 @@ header h1 {
   font-size: 0.9rem;
 }
 
-.scale-chord-suggestions__lists {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-.scale-chord-suggestions__column {
-  flex: 1 1 220px;
+.scale-chord-suggestions__dropdown-wrapper {
+  margin-top: 12px;
 }
 
 .scale-chord-suggestions__label {
+  display: block;
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: #64748b;
-  margin-bottom: 6px;
+  color: #475569;
+  margin-bottom: 8px;
 }
 
-.scale-chord-suggestions ul {
-  list-style: disc;
-  margin: 0 0 0 18px;
-  padding-left: 4px;
+.scale-chord-suggestions__select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(100, 116, 139, 0.4);
+  border-radius: 6px;
+  background: #ffffff;
   color: #0f172a;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.scale-chord-suggestions li + li {
-  margin-top: 4px;
+.scale-chord-suggestions__select:hover {
+  border-color: rgba(100, 116, 139, 0.6);
 }
 
-.scale-chord-suggestions[data-state='placeholder'] ul {
+.scale-chord-suggestions__select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.scale-chord-suggestions__select option {
+  padding: 8px;
+}
+
+.scale-chord-suggestions__select optgroup {
+  font-weight: 600;
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.scale-chord-suggestions[data-state='placeholder'] .scale-chord-suggestions__select {
   opacity: 0.7;
-  font-style: italic;
+  cursor: not-allowed;
 }
 
 .pattern-help {
@@ -2746,22 +2761,6 @@ header h1 {
 .effect-toggle.snippet-group-reverb.active {
   background: rgba(115, 163, 255, 0.5);
   border-color: rgba(52, 109, 204, 0.8);
-}
-
-.effect-toggle.snippet-group-phaser {
-  border-color: rgba(38, 122, 82, 0.5);
-  background: rgba(102, 191, 142, 0.26);
-  color: #0f3f2a;
-}
-
-.effect-toggle.snippet-group-phaser:hover {
-  background: rgba(102, 191, 142, 0.4);
-  border-color: rgba(38, 122, 82, 0.7);
-}
-
-.effect-toggle.snippet-group-phaser.active {
-  background: rgba(102, 191, 142, 0.5);
-  border-color: rgba(38, 122, 82, 0.8);
 }
 
 .effect-toggle.snippet-group-amplitude-modulation {

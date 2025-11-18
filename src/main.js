@@ -9,7 +9,7 @@ import { initStrudelReplEditors, getStrudelEditor, getStrudelEditorValue, setStr
 import { getDrawContext } from '@strudel/draw';
 import { transpiler as strudelTranspiler } from '@strudel/transpiler';
 import { evaluate as strudelCoreEvaluate } from '@strudel/core';
-import { Scale, Note } from '@tonaljs/tonal';
+import { Scale, Note, Progression } from '@tonaljs/tonal';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -574,7 +574,7 @@ const PATTERN_SNIPPET_GROUPS = [
     order: 0,
     label: 'Core',
     heading: 'Core',
-    matcher: (key) => ['stack', 'beat', 'bank', 'sound', 'chord', 'note'].includes(key),
+    matcher: (key) => ['stack', 'beat', 'bank', 'sound'].includes(key),
     className: 'snippet-group-core'
   },
   {
@@ -850,7 +850,7 @@ const PATTERN_SNIPPET_GROUPS = [
     order: 13,
     label: 'Tonal Functions',
     heading: 'Tonal Functions',
-    matcher: (key) => ['voicing', 'voicings', 'addvoicings', 'scale', 'transpose', 'scaletranspose', 'rootnotes'].includes(key),
+    matcher: (key) => ['voicing', 'voicings', 'addvoicings', 'scale', 'transpose', 'scaletranspose', 'rootnotes', 'chord', 'dict', 'anchor', 'mode', 'below', 'duck', 'above', 'offset', 'n', 'note'].includes(key),
     className: 'snippet-group-tonal'
   },
   {
@@ -4587,24 +4587,6 @@ class InteractiveSoundApp {
         params: [
           { key: 'roomsize', label: 'Room Size' }
         ]
-      },
-      { 
-        key: 'phaser', 
-        label: 'Phaser',
-        params: [
-          { key: 'phaserdepth', label: 'Depth' },
-          { key: 'phasercenter', label: 'Center' },
-          { key: 'phasersweep', label: 'Sweep' }
-        ]
-      },
-      { 
-        key: 'tremolo', 
-        label: 'Tremolo',
-        params: [
-          { key: 'tremolodepth', label: 'Depth' },
-          { key: 'tremoloskew', label: 'Skew' },
-          { key: 'tremolophase', label: 'Phase' }
-        ]
       }
     ];
     
@@ -4616,9 +4598,7 @@ class InteractiveSoundApp {
       // Map effect types to their color classes
       const effectColorClasses = {
         'delay': 'snippet-group-delay',
-        'room': 'snippet-group-reverb',
-        'phaser': 'snippet-group-phaser',
-        'tremolo': 'snippet-group-amplitude-modulation'
+        'room': 'snippet-group-reverb'
       };
       
       const colorClass = effectColorClasses[effect.key] || '';
@@ -6442,9 +6422,15 @@ class InteractiveSoundApp {
           const heading = (typeof entry === 'string' ? 'Other' : entry.heading) || 'Other';
           const key = getSnippetKey(snippet);
           const referenceEntry = reference.get(key);
-          const rawInsertion = buildSnippetInsertion(snippet, referenceEntry);
+          let rawInsertion = buildSnippetInsertion(snippet, referenceEntry);
+          // Fix: Replace "display bank(bank)" with "bank()" in core group
+          if (key === 'bank' && rawInsertion.includes('display bank(bank)')) {
+            rawInsertion = 'bank()';
+          }
           const insertionSnippet = rawInsertion.replace(/^[.]+/, '');
-          const displayLabel = insertionSnippet;
+          let displayLabel = insertionSnippet;
+          // Remove text inside parentheses for all tags
+          displayLabel = displayLabel.replace(/\([^)]*\)/g, '()');
           const lowerLabel = displayLabel.toLowerCase();
           const headingLower = heading.toLowerCase();
 
@@ -6476,6 +6462,13 @@ class InteractiveSoundApp {
             heading,
             referenceEntry
           });
+        });
+
+        // Sort groups by name (heading)
+        groupOrder.sort((a, b) => {
+          const headingA = (a.heading || '').toLowerCase();
+          const headingB = (b.heading || '').toLowerCase();
+          return headingA.localeCompare(headingB);
         });
 
         let renderedAny = false;
@@ -7764,224 +7757,303 @@ class InteractiveSoundApp {
       container: document.getElementById('modal-scale-chord-suggestions'),
       title: document.getElementById('modal-scale-chord-title'),
       characteristic: document.getElementById('modal-scale-characteristic'),
-      chords: document.getElementById('modal-scale-chord-list'),
-      voicings: document.getElementById('modal-scale-voicing-list')
+      dropdown: document.getElementById('modal-chord-progression-select')
     };
 
-    const SCALE_CHORD_LIBRARY = {
+    // Helper function to convert Roman numerals to chord names
+    const romanToChords = (key, romanNumerals) => {
+      try {
+        // Normalize key format (e.g., "C#" -> "C#", "Db" -> "Db")
+        const normalizedKey = key.trim();
+        // Map special cases to Tonal.js compatible format
+        const normalizedRomans = romanNumerals.map((rn) => {
+          // Handle special cases that Tonal.js might not support directly
+          // Convert "bII" to "bII", "vii°" to "vii°", etc.
+          // Tonal.js should handle most of these, but we'll try to normalize
+          let normalized = rn;
+          // Remove special characters that might cause issues, but keep the core structure
+          // Tonal.js Progression should handle: bII, vii°, V7alt, imMaj7, etc.
+          return normalized;
+        });
+        
+        // Use Tonal.js Progression to convert Roman numerals to chord names
+        const chords = Progression.fromRomanNumerals(normalizedKey, normalizedRomans);
+        return chords.filter(Boolean).map((chord, idx) => {
+          // If conversion failed for a specific chord, fall back to showing the Roman numeral
+          if (!chord || chord === '') {
+            return romanNumerals[idx];
+          }
+          return chord;
+        });
+      } catch (error) {
+        console.warn('Error converting Roman numerals to chords:', error, 'Romans:', romanNumerals);
+        // Fallback: return Roman numerals formatted nicely
+        return romanNumerals.map((rn) => {
+          // Format Roman numerals for display (e.g., "bII" -> "♭II")
+          return rn.replace(/b/g, '♭').replace(/#/g, '♯');
+        });
+      }
+    };
+
+    const SCALE_CHORD_PROGRESSIONS = {
       ionian: {
         displayName: 'Ionian (Major)',
-        characteristic: 'Imaj7',
-        suitableChords: ['Imaj7', 'ii−7', 'iii−7', 'IVmaj7', 'V7', 'vi−7', 'viiø7'],
-        voicings: [
-          { name: 'maj7', intervals: '1–3–5–7' },
-          { name: 'maj9', intervals: '1–3–5–7–9' },
-          { name: 'maj6/9', intervals: '1–3–5–6–9' },
-          { name: 'V7', intervals: '1–3–5–♭7' },
-          { name: '−7', intervals: '1–♭3–5–♭7' },
-          { name: 'ø7', intervals: '1–♭3–♭5–♭7' }
-        ]
+        colorTone: '7 (natural)',
+        progressions: {
+          '2-chord': [
+            { label: 'I – IV', romans: ['I', 'IV'] },
+            { label: 'I – V', romans: ['I', 'V'] },
+            { label: 'I – vi', romans: ['I', 'vi'] }
+          ],
+          '3-chord': [
+            { label: 'I – IV – V', romans: ['I', 'IV', 'V'] },
+            { label: 'I – V – vi', romans: ['I', 'V', 'vi'] },
+            { label: 'I – iii – vi', romans: ['I', 'iii', 'vi'] }
+          ],
+          '4-chord': [
+            { label: 'I – IV – V – I', romans: ['I', 'IV', 'V', 'I'] },
+            { label: 'I – vi – IV – V', romans: ['I', 'vi', 'IV', 'V'] },
+            { label: 'I – V – vi – IV (pop classic)', romans: ['I', 'V', 'vi', 'IV'] }
+          ]
+        }
       },
       dorian: {
         displayName: 'Dorian',
-        characteristic: 'i−7 (natural 6)',
-        suitableChords: ['i−7', 'IV7', 'v−7', 'ii−7', 'viiø7'],
-        voicings: [
-          { name: 'i−7', intervals: '1–♭3–5–♭7' },
-          { name: 'i−9', intervals: '1–♭3–5–♭7–9' },
-          { name: 'i−11', intervals: '1–♭3–♭7–11' },
-          { name: 'IV7', intervals: '1–3–5–♭7' },
-          { name: 'IV9', intervals: '1–3–♭7–9' }
-        ]
+        colorTone: 'natural 6 in a minor scale',
+        progressions: {
+          '2-chord': [
+            { label: 'i – IV', romans: ['i', 'IV'] },
+            { label: 'i – ii', romans: ['i', 'ii'] }
+          ],
+          '3-chord': [
+            { label: 'i – IV – v', romans: ['i', 'IV', 'v'] },
+            { label: 'i – ii – IV', romans: ['i', 'ii', 'IV'] },
+            { label: 'i – IV – VII', romans: ['i', 'IV', 'VII'] }
+          ],
+          '4-chord': [
+            { label: 'i – IV – i – v', romans: ['i', 'IV', 'i', 'v'] },
+            { label: 'i – ii – IV – i', romans: ['i', 'ii', 'IV', 'i'] },
+            { label: 'i – IV – vii° – i', romans: ['i', 'IV', 'vii°', 'i'] }
+          ]
+        }
       },
       phrygian: {
         displayName: 'Phrygian',
-        characteristic: '♭II',
-        suitableChords: ['i−7', '♭IImaj7', 'v−7', 'VII'],
-        voicings: [
-          { name: 'i−7', intervals: '1–♭3–5–♭7' },
-          { name: '♭IImaj7', intervals: '1–3–5–7' },
-          { name: 'i−7(♭9)', intervals: '1–♭3–5–♭7–♭9' }
-        ]
+        colorTone: '♭2 (very dark/tense)',
+        progressions: {
+          '2-chord': [
+            { label: 'i – ♭II', romans: ['i', 'bII'] },
+            { label: 'i – v', romans: ['i', 'v'] }
+          ],
+          '3-chord': [
+            { label: 'i – ♭II – i', romans: ['i', 'bII', 'i'] },
+            { label: 'i – v – ♭II', romans: ['i', 'v', 'bII'] }
+          ],
+          '4-chord': [
+            { label: 'i – ♭II – vii – i', romans: ['i', 'bII', 'vii', 'i'] },
+            { label: 'i – v – ♭II – i', romans: ['i', 'v', 'bII', 'i'] }
+          ]
+        }
       },
       lydian: {
         displayName: 'Lydian',
-        characteristic: 'Imaj7♯11',
-        suitableChords: ['Imaj7♯11', 'II7', 'Vmaj7', 'vii−7'],
-        voicings: [
-          { name: 'Imaj7♯11', intervals: '1–3–7–♯11' },
-          { name: 'Imaj9♯11', intervals: '1–3–7–9–♯11' },
-          { name: 'II7', intervals: '1–3–5–♭7' }
-        ]
+        colorTone: '♯4 (bright, dreamy, floaty)',
+        progressions: {
+          '2-chord': [
+            { label: 'I – II', romans: ['I', 'II'] },
+            { label: 'I – Vmaj7', romans: ['I', 'Vmaj7'] }
+          ],
+          '3-chord': [
+            { label: 'I – II – I', romans: ['I', 'II', 'I'] },
+            { label: 'I – V – II', romans: ['I', 'V', 'II'] }
+          ],
+          '4-chord': [
+            { label: 'I – II – V – I', romans: ['I', 'II', 'V', 'I'] },
+            { label: 'I – vii – II – I', romans: ['I', 'vii', 'II', 'I'] }
+          ]
+        }
       },
       mixolydian: {
         displayName: 'Mixolydian',
-        characteristic: 'I7',
-        suitableChords: ['I7', '♭VII', 'IVmaj7', 'v−7'],
-        voicings: [
-          { name: 'I7', intervals: '1–3–5–♭7' },
-          { name: 'I9', intervals: '1–3–♭7–9' },
-          { name: 'I13', intervals: '1–3–♭7–13' }
-        ]
+        colorTone: '♭7 (rock-dominant sound)',
+        progressions: {
+          '2-chord': [
+            { label: 'I – ♭VII', romans: ['I', 'bVII'] },
+            { label: 'I – v', romans: ['I', 'v'] }
+          ],
+          '3-chord': [
+            { label: 'I – ♭VII – IV', romans: ['I', 'bVII', 'IV'] },
+            { label: 'I – IV – ♭VII', romans: ['I', 'IV', 'bVII'] }
+          ],
+          '4-chord': [
+            { label: 'I – ♭VII – IV – I', romans: ['I', 'bVII', 'IV', 'I'] },
+            { label: 'I – v – ♭VII – IV', romans: ['I', 'v', 'bVII', 'IV'] }
+          ]
+        }
       },
       aeolian: {
         displayName: 'Aeolian (Natural Minor)',
-        characteristic: 'i−7 (with ♭6)',
-        suitableChords: ['i−7', '♭VImaj7', '♭VII', 'iv−7'],
-        voicings: [
-          { name: 'i−7', intervals: '1–♭3–5–♭7' },
-          { name: 'i−11', intervals: '1–♭3–♭7–11' },
-          { name: '♭VImaj7', intervals: '1–3–5–7' }
-        ]
+        colorTone: '♭6',
+        progressions: {
+          '2-chord': [
+            { label: 'i – ♭VI', romans: ['i', 'bVI'] },
+            { label: 'i – ♭VII', romans: ['i', 'bVII'] }
+          ],
+          '3-chord': [
+            { label: 'i – ♭VII – ♭VI', romans: ['i', 'bVII', 'bVI'] },
+            { label: 'i – iv – ♭VI', romans: ['i', 'iv', 'bVI'] }
+          ],
+          '4-chord': [
+            { label: 'i – ♭VII – ♭VI – v', romans: ['i', 'bVII', 'bVI', 'v'] },
+            { label: 'i – iv – ♭VII – ♭VI', romans: ['i', 'iv', 'bVII', 'bVI'] }
+          ]
+        }
       },
       locrian: {
         displayName: 'Locrian',
-        characteristic: 'iø7',
-        suitableChords: ['iø7', '♭IImaj7', 'v−7'],
-        voicings: [
-          { name: 'iø7', intervals: '1–♭3–♭5–♭7' },
-          { name: 'iø9', intervals: '1–♭3–♭5–♭7–9' },
-          { name: '♭IImaj7', intervals: '1–3–5–7' }
-        ]
+        colorTone: '♭2, ♭5 (very unstable)',
+        progressions: {
+          '2-chord': [
+            { label: 'iø – ♭II', romans: ['iø', 'bII'] },
+            { label: 'iø – v', romans: ['iø', 'v'] }
+          ],
+          '3-chord': [
+            { label: 'iø – ♭II – iø', romans: ['iø', 'bII', 'iø'] },
+            { label: 'iø – v – ♭II', romans: ['iø', 'v', 'bII'] }
+          ],
+          '4-chord': [
+            { label: 'iø – ♭II – v – iø', romans: ['iø', 'bII', 'v', 'iø'] }
+          ]
+        }
       },
       'melodic minor': {
         displayName: 'Melodic Minor (Jazz Minor)',
-        characteristic: 'i−maj7',
-        suitableChords: ['i−maj7', 'ii−7', 'IIImaj7♯5', 'IV7', 'viø7', 'viiø7'],
-        voicings: [
-          { name: 'i−maj7', intervals: '1–♭3–5–7' },
-          { name: 'IIImaj7♯5', intervals: '1–3–♯5–7' },
-          { name: 'IV7', intervals: '1–3–5–♭7' }
-        ]
-      },
-      'dorian b2': {
-        displayName: 'Dorian ♭2',
-        characteristic: 'i−11(♭9)',
-        suitableChords: ['i−11(♭9)', '♭IImaj7', 'iv−7'],
-        voicings: [
-          { name: 'i−7(♭9)', intervals: '1–♭3–5–♭7–♭9' },
-          { name: '♭IImaj7', intervals: '1–3–5–7' },
-          { name: 'iv−7', intervals: '1–♭3–5–♭7' }
-        ]
-      },
-      'lydian augmented': {
-        displayName: 'Lydian Augmented',
-        characteristic: 'Imaj7♯5♯11',
-        suitableChords: ['Imaj7♯5♯11', 'IImaj7'],
-        voicings: [
-          { name: 'Imaj7♯5', intervals: '1–3–♯5–7' },
-          { name: 'Imaj7♯11', intervals: '1–3–7–♯11' }
-        ]
+        colorTone: 'i−maj7',
+        progressions: {
+          '2-chord': [
+            { label: 'i−maj7 – IV7', romans: ['imMaj7', 'IV7'] }
+          ],
+          '3-chord': [
+            { label: 'i−maj7 – IV7 – v', romans: ['imMaj7', 'IV7', 'v'] }
+          ],
+          '4-chord': [
+            { label: 'i−maj7 – ii – IV7 – i−maj7', romans: ['imMaj7', 'ii', 'IV7', 'imMaj7'] }
+          ]
+        }
       },
       'lydian dominant': {
         displayName: 'Lydian Dominant',
-        characteristic: 'I7♯11',
-        suitableChords: ['I7♯11', 'iiø7', '♭VIImaj7'],
-        voicings: [
-          { name: 'I7♯11', intervals: '1–3–♭7–♯11' },
-          { name: 'I9♯11', intervals: '1–3–♭7–9–♯11' }
-        ]
-      },
-      'mixolydian b6': {
-        displayName: 'Mixolydian ♭6',
-        characteristic: 'I7♭13',
-        suitableChords: ['I7♭13', 'iv−7', '♭VImaj7'],
-        voicings: [{ name: 'I7♭13', intervals: '1–3–♭7–♭13' }]
-      },
-      'locrian #2': {
-        displayName: 'Locrian ♮2',
-        characteristic: 'iø7(♮2)',
-        suitableChords: ['iø7(♮2)', '♭IIImaj7', 'v−7'],
-        voicings: [{ name: 'iø7(♮2)', intervals: '1–♭3–♭5–♭7–2' }]
+        colorTone: '♯11',
+        progressions: {
+          '2-chord': [
+            { label: 'I7 – II', romans: ['I7', 'II'] }
+          ],
+          '3-chord': [
+            { label: 'I7 – ♭VII – II', romans: ['I7', 'bVII', 'II'] }
+          ],
+          '4-chord': [
+            { label: 'I7 – iiø – ♭VII – I7', romans: ['I7', 'iiø', 'bVII', 'I7'] }
+          ]
+        }
       },
       altered: {
         displayName: 'Altered (Super-Locrian)',
-        characteristic: 'V7alt',
-        suitableChords: ['V7alt'],
-        voicings: [
-          { name: 'V7alt (shell)', intervals: '1–3–♭7–♭9/♯9/♭5/♯5' },
-          { name: 'V7♭9♯9', intervals: '1–3–♭7–♭9–♯9' }
-        ]
+        colorTone: 'V7alt',
+        progressions: {
+          '2-chord': [
+            { label: 'V7alt → i', romans: ['V7alt', 'i'] },
+            { label: 'V7alt → Imaj7', romans: ['V7alt', 'Imaj7'] }
+          ],
+          '3-chord': [
+            { label: 'iiø – V7alt – i', romans: ['iiø', 'V7alt', 'i'] }
+          ]
+        }
       },
       'harmonic minor': {
         displayName: 'Harmonic Minor',
-        characteristic: 'i−maj7',
-        suitableChords: ['i−maj7', 'iiø7', 'III+maj7', 'iv−7', 'V7', 'VImaj7'],
-        voicings: [
-          { name: 'i−maj7', intervals: '1–♭3–5–7' },
-          { name: 'III+maj7', intervals: '1–3–♯5–7' },
-          { name: 'V7', intervals: '1–3–5–♭7' }
-        ]
+        colorTone: 'i−maj7',
+        progressions: {
+          '2-chord': [
+            { label: 'i – V', romans: ['i', 'V'] }
+          ],
+          '3-chord': [
+            { label: 'i – iv – V', romans: ['i', 'iv', 'V'] }
+          ],
+          '4-chord': [
+            { label: 'i – iv – V – i', romans: ['i', 'iv', 'V', 'i'] }
+          ]
+        }
       },
       'phrygian dominant': {
         displayName: 'Phrygian Dominant',
-        characteristic: 'V7♭9♭13',
-        suitableChords: ['V7♭9♭13', 'i', '♭IImaj7'],
-        voicings: [
-          { name: 'V7♭9♭13', intervals: '1–3–♭7–♭9–♭13' },
-          { name: 'i', intervals: '1–♭3–5' },
-          { name: '♭IImaj7', intervals: '1–3–5–7' }
-        ]
+        colorTone: 'Major chord on ♭II + dominant on V',
+        progressions: {
+          '2-chord': [
+            { label: 'i – ♭II', romans: ['i', 'bII'] },
+            { label: 'V – i', romans: ['V', 'i'] }
+          ],
+          '3-chord': [
+            { label: 'V – ♭II – i', romans: ['V', 'bII', 'i'] }
+          ],
+          '4-chord': [
+            { label: 'i – ♭II – V – i', romans: ['i', 'bII', 'V', 'i'] }
+          ]
+        }
       },
       'dorian #4': {
         displayName: 'Ukrainian Dorian (Dorian ♯4)',
-        characteristic: 'i−7(♯11)',
-        suitableChords: ['i−7(♯11)', 'IVmaj7♯11', '♭VII'],
-        voicings: [{ name: 'i−7♯11', intervals: '1–♭3–♭7–♯11' }]
-      },
-      'ionian #5': {
-        displayName: 'Ionian ♯5',
-        characteristic: 'Imaj7♯5',
-        suitableChords: ['Imaj7♯5', 'ii−7', 'V7'],
-        voicings: [{ name: 'Imaj7♯5', intervals: '1–3–♯5–7' }]
-      },
-      'locrian #6': {
-        displayName: 'Locrian ♮6',
-        characteristic: 'iø7(♮6)',
-        suitableChords: ['iø7(♮6)', '♭IImaj7'],
-        voicings: [{ name: 'iø7(♮6)', intervals: '1–♭3–♭5–♭7–6' }]
-      },
-      'lydian #2': {
-        displayName: 'Lydian ♯2',
-        characteristic: 'Imaj7♯11(♯9)',
-        suitableChords: ['Imaj7♯11(♯9)', 'II7'],
-        voicings: [{ name: 'Imaj7♯11♯9', intervals: '1–3–7–♯9–♯11' }]
-      },
-      ultralocrian: {
-        displayName: 'Ultralocrian',
-        characteristic: 'i°7',
-        suitableChords: ['i°7', '♭IImaj7'],
-        voicings: [{ name: 'i°7', intervals: '1–♭3–♭5–𝄫7' }]
+        colorTone: 'Dorian ♯4',
+        progressions: {
+          '2-chord': [
+            { label: 'i – IV', romans: ['i', 'IV'] }
+          ],
+          '3-chord': [
+            { label: 'i – ♭VII – IV', romans: ['i', 'bVII', 'IV'] }
+          ],
+          '4-chord': [
+            { label: 'i – iv – ♭VII – IV', romans: ['i', 'iv', 'bVII', 'IV'] }
+          ]
+        }
       },
       'whole tone': {
         displayName: 'Whole Tone',
-        characteristic: 'V7♯5',
-        suitableChords: ['V7♯5', 'Augmented triads'],
-        voicings: [
-          { name: 'V7♯5', intervals: '1–3–♯5–♭7' },
-          { name: 'aug triad', intervals: '1–3–♯5' }
-        ]
+        colorTone: 'V7♯5',
+        progressions: {
+          '2-chord': [
+            { label: 'V7♯5 – V7♯5', romans: ['V7#5', 'V7#5'] },
+            { label: 'V7♯5 – I', romans: ['V7#5', 'I'] }
+          ],
+          '3-chord': [
+            { label: 'V7♯5 – ♭III+ – V7♯5', romans: ['V7#5', 'bIII+', 'V7#5'] }
+          ]
+        }
       },
       'half-whole diminished': {
         displayName: 'Half–Whole Diminished',
-        characteristic: 'V7♭9♯11♭13',
-        suitableChords: ['V7♭9♯11♭13'],
-        voicings: [{ name: 'V7dim', intervals: '1–3–♭7–♭9–♯11–♭13' }]
+        colorTone: 'V7♭9♯11♭13',
+        progressions: {
+          '2-chord': [
+            { label: 'V7♭9 – V7♭9', romans: ['V7b9', 'V7b9'] }
+          ],
+          '3-chord': [
+            { label: 'iiø – V7♭9 – i', romans: ['iiø', 'V7b9', 'i'] }
+          ]
+        }
       },
       'whole-half diminished': {
         displayName: 'Whole–Half Diminished',
-        characteristic: '°7',
-        suitableChords: ['°7'],
-        voicings: [{ name: '°7', intervals: '1–♭3–♭5–𝄫7' }]
-      },
-      'minor blues': {
-        displayName: 'Minor Blues',
-        characteristic: 'i7',
-        suitableChords: ['i7', 'iv7', 'V7', '♭III7'],
-        voicings: [
-          { name: 'i7', intervals: '1–♭3–5–♭7' },
-          { name: 'i7(♯9)', intervals: '1–♭3–5–♭7–♯9' }
-        ]
+        colorTone: '°7',
+        progressions: {
+          '2-chord': [
+            { label: '°7 – °7', romans: ['°7', '°7'] }
+          ],
+          '3-chord': [
+            { label: '°7 – °7 – °7', romans: ['°7', '°7', '°7'] }
+          ],
+          '4-chord': [
+            { label: '°7 – ♭III – vi – °7', romans: ['°7', 'bIII', 'vi', '°7'] }
+          ]
+        }
       }
     };
 
@@ -8000,70 +8072,125 @@ class InteractiveSoundApp {
         .join(' ');
     };
 
-    const renderSuggestionList = (targetEl, items, fallbackText = '—') => {
-      if (!targetEl) {
-        return;
-      }
-      targetEl.replaceChildren();
-      const source = items && items.length ? items : [fallbackText];
-      source.forEach((entry) => {
-        const li = document.createElement('li');
-        if (typeof entry === 'string') {
-          li.textContent = entry;
-        } else if (entry && typeof entry === 'object') {
-          const label = entry.name ? `${entry.name}: ` : '';
-          li.textContent = `${label}${entry.intervals || ''}`.trim();
-        } else {
-          li.textContent = fallbackText;
-        }
-        targetEl.appendChild(li);
-      });
-    };
-
     const updateScaleChordSuggestionsUI = () => {
-      if (!scaleChordSuggestionEls.container) {
+      if (!scaleChordSuggestionEls.container || !scaleChordSuggestionEls.dropdown) {
         return;
       }
       const selectedKey = modalKeySelect ? (modalKeySelect.value || '').trim() : '';
       const selectedScale = modalScaleSelect ? (modalScaleSelect.value || '').trim() : '';
+      
+      // Clear dropdown
+      scaleChordSuggestionEls.dropdown.innerHTML = '<option value="">Select a progression...</option>';
+      
       if (!selectedKey || !selectedScale) {
         scaleChordSuggestionEls.container.style.display = 'none';
         scaleChordSuggestionEls.container.dataset.state = 'idle';
         if (scaleChordSuggestionEls.title) {
-          scaleChordSuggestionEls.title.textContent = 'Select a key and scale to view chord ideas.';
+          scaleChordSuggestionEls.title.textContent = 'Select a key and scale to view chord progressions.';
         }
         if (scaleChordSuggestionEls.characteristic) {
           scaleChordSuggestionEls.characteristic.textContent = '';
         }
-        renderSuggestionList(scaleChordSuggestionEls.chords, [], '—');
-        renderSuggestionList(scaleChordSuggestionEls.voicings, [], '—');
         return;
       }
+      
       const normalizedScale = selectedScale.toLowerCase();
-      const suggestion = SCALE_CHORD_LIBRARY[normalizedScale];
-      const friendlyScaleName = suggestion?.displayName || prettifyScaleLabel(selectedScale);
+      const scaleData = SCALE_CHORD_PROGRESSIONS[normalizedScale];
+      const friendlyScaleName = scaleData?.displayName || prettifyScaleLabel(selectedScale);
+      
       scaleChordSuggestionEls.container.style.display = 'block';
+      
       if (scaleChordSuggestionEls.title) {
-        scaleChordSuggestionEls.title.textContent = `${selectedKey} ${friendlyScaleName} chord palette`;
+        scaleChordSuggestionEls.title.textContent = `${selectedKey} ${friendlyScaleName} Chord Progressions`;
       }
-      if (!suggestion) {
+      
+      if (!scaleData || !scaleData.progressions) {
         scaleChordSuggestionEls.container.dataset.state = 'placeholder';
         if (scaleChordSuggestionEls.characteristic) {
-          scaleChordSuggestionEls.characteristic.textContent = 'No curated chord voicings available for this scale yet.';
+          scaleChordSuggestionEls.characteristic.textContent = 'No chord progressions available for this scale yet.';
         }
-        renderSuggestionList(scaleChordSuggestionEls.chords, [], 'Coming soon');
-        renderSuggestionList(scaleChordSuggestionEls.voicings, [], 'Coming soon');
         return;
       }
+      
       scaleChordSuggestionEls.container.dataset.state = 'ready';
+      
       if (scaleChordSuggestionEls.characteristic) {
-        scaleChordSuggestionEls.characteristic.textContent = `Characteristic chord: ${suggestion.characteristic}`;
+        scaleChordSuggestionEls.characteristic.textContent = `Color tone: ${scaleData.colorTone || 'N/A'}`;
       }
-      renderSuggestionList(scaleChordSuggestionEls.chords, suggestion.suitableChords, '—');
-      renderSuggestionList(scaleChordSuggestionEls.voicings, suggestion.voicings, '—');
+      
+      // Populate dropdown with progressions
+      const progressionTypes = ['2-chord', '3-chord', '4-chord'];
+      progressionTypes.forEach((type) => {
+        const progressions = scaleData.progressions[type];
+        if (progressions && progressions.length > 0) {
+          const optgroup = document.createElement('optgroup');
+          optgroup.label = type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ');
+          
+          progressions.forEach((prog) => {
+            const option = document.createElement('option');
+            const chordNames = romanToChords(selectedKey, prog.romans);
+            const displayText = chordNames.length > 0 
+              ? `${prog.label} (${chordNames.join(' – ')})`
+              : prog.label;
+            option.value = JSON.stringify({ romans: prog.romans, label: prog.label });
+            option.textContent = displayText;
+            optgroup.appendChild(option);
+          });
+          
+          scaleChordSuggestionEls.dropdown.appendChild(optgroup);
+        }
+      });
     };
 
     updateScaleChordSuggestionsUI();
+    
+    // Add event listener for chord progression dropdown
+    if (scaleChordSuggestionEls.dropdown) {
+      scaleChordSuggestionEls.dropdown.addEventListener('change', (e) => {
+        const selectedValue = e.target.value;
+        if (!selectedValue || selectedValue === '') {
+          return;
+        }
+        
+        try {
+          const progressionData = JSON.parse(selectedValue);
+          const selectedKey = modalKeySelect ? (modalKeySelect.value || '').trim() : '';
+          
+          if (!selectedKey) {
+            console.warn('No key selected for chord progression');
+            return;
+          }
+          
+          // Get chord names from Roman numerals
+          const chordNames = romanToChords(selectedKey, progressionData.romans);
+          
+          if (chordNames.length > 0) {
+            // Get current pattern from editor
+            const currentPattern = getStrudelEditorValue('modal-pattern') || '';
+            
+            // Remove the entire n(...).scale(...) pattern and any chained modifiers after it
+            let cleanedPattern = currentPattern;
+            // Match n(...).scale(...) followed by any chained modifiers (like .s(...), .gain(...), etc.)
+            // This regex matches the entire chain: n(...).scale(...).modifier1(...).modifier2(...) etc.
+            cleanedPattern = cleanedPattern.replace(/\bn\s*\([^)]*\)\s*\.\s*scale\s*\([^)]*\)(?:\s*\.\s*[a-zA-Z]+\s*\([^)]*\))*/gi, '');
+            // Also handle quoted versions
+            cleanedPattern = cleanedPattern.replace(/\bn\s*\(["'][^"']*["']\)\s*\.\s*scale\s*\(["'][^"']*["']\)(?:\s*\.\s*[a-zA-Z]+\s*\([^)]*\))*/gi, '');
+            // Clean up any leading dots, whitespace, and trailing dots
+            cleanedPattern = cleanedPattern.replace(/^\s*\.\s*/, '').replace(/\s*\.\s*$/, '').trim();
+            
+            // Join chord names with spaces and wrap in angle brackets
+            const chordString = chordNames.join(' ');
+            // Build pattern: n().chord("<selected chords>").voicing() - no other modifiers
+            const patternToInsert = `n().chord("<${chordString}>").voicing()`;
+            
+            // Replace the entire pattern with just the chord pattern
+            setStrudelEditorValue('modal-pattern', patternToInsert);
+          }
+        } catch (error) {
+          console.warn('Error parsing chord progression data:', error);
+        }
+      });
+    }
     
     // Lightweight syntax validator for obvious issues (balanced quotes/parens)
     const isLikelyValidPattern = (code) => {
@@ -8745,6 +8872,61 @@ class InteractiveSoundApp {
     };
 
     syncLastSemitonePattern(getStrudelEditorValue('modal-pattern'), true);
+
+    const escapeRegexValue = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    const stripMasterInjectedModifiers = (pattern, trackData) => {
+      if (!pattern || !trackData) {
+        return pattern;
+      }
+      let result = pattern.trim();
+
+      const removeModifier = (text, name, valueStr) => {
+        if (!valueStr) {
+          return text;
+        }
+        const modifierRegex = new RegExp(`\\s*\\.\\s*${name}\\s*\\(\\s*${escapeRegexValue(valueStr)}\\s*\\)\\s*$`, 'i');
+        let updated = text;
+        while (modifierRegex.test(updated)) {
+          updated = updated.replace(modifierRegex, '').trim();
+        }
+        return updated;
+      };
+
+      if (typeof trackData.gain === 'number' && Math.abs(trackData.gain - 1) > 1e-6) {
+        result = removeModifier(result, 'gain', trackData.gain.toFixed(2));
+      }
+
+      if (typeof trackData.pan === 'number' && Math.abs(trackData.pan) > 1e-6) {
+        result = removeModifier(result, 'pan', trackData.pan.toFixed(2));
+      }
+
+      const unwrapBalancedParens = (text) => {
+        let unwrapped = text;
+        while (unwrapped.startsWith('(') && unwrapped.endsWith(')')) {
+          let depth = 0;
+          let balanced = true;
+          for (let i = 0; i < unwrapped.length; i++) {
+            const ch = unwrapped[i];
+            if (ch === '(') depth++;
+            else if (ch === ')') depth--;
+            if (depth === 0 && i < unwrapped.length - 1) {
+              balanced = false;
+              break;
+            }
+          }
+          if (balanced && depth === 0) {
+            unwrapped = unwrapped.slice(1, -1).trim();
+          } else {
+            break;
+          }
+        }
+        return unwrapped;
+      };
+
+      result = unwrapBalancedParens(result.trim());
+      return result;
+    };
     
     this.syncElementsFromMasterPattern = (masterPattern) => {
       if (!masterPattern || typeof masterPattern !== 'string') {
@@ -8813,10 +8995,13 @@ class InteractiveSoundApp {
           if (!patternBody) continue;
           
           const elementId = `element-${channelNumber}`;
+          const trackData = soundManager.trackedPatterns?.get(elementId);
+          const strippedPatternBody = stripMasterInjectedModifiers(patternBody, trackData);
+          
           const existingConfig = this.loadElementConfig(elementId) || {};
           const newConfig = {
             ...existingConfig,
-            pattern: patternBody
+            pattern: strippedPatternBody || patternBody
           };
           
           this.saveElementConfig(elementId, newConfig, true);
@@ -8824,7 +9009,8 @@ class InteractiveSoundApp {
           if (soundManager.trackedPatterns?.has(elementId)) {
             const trackData = soundManager.trackedPatterns.get(elementId);
             if (trackData) {
-              trackData.pattern = patternBody;
+              trackData.pattern = strippedPatternBody || patternBody;
+              trackData.rawPattern = strippedPatternBody || patternBody;
             }
           }
 
