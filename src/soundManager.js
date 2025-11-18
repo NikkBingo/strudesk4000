@@ -1884,7 +1884,7 @@ class SoundManager {
         // Check if bank is loaded
         // Built-in banks are loaded from CDN, with local fallback for TR-808/TR-909
         const localFallbackBanks = ['RolandTR808', 'RolandTR909']; // Have local fallback in assets folder
-        const builtInDrumBanks = ['RolandTR808', 'RolandTR909', 'RolandTR707', 'RhythmAce', 'AkaiLinn', 'ViscoSpaceDrum', 'EmuSP1200', 'CasioRZ1'];
+        const builtInDrumBanks = ['RolandTR808', 'RolandTR909', 'RolandTR707', 'RhythmAce', 'AkaiLinn', 'ViscoSpaceDrum', 'CasioRZ1'];
         const isBuiltInBank = builtInDrumBanks.includes(strudelBankName);
 
         let isLoaded = this.loadedBanks.has(strudelBankName) || isBuiltInBank;
@@ -5378,7 +5378,6 @@ class SoundManager {
             tidalDrums: false,
             piano: false,
             dirt: false,
-            emusp12: false,
             vcsl: false,
             mridangam: false
           };
@@ -5402,11 +5401,6 @@ class SoundManager {
               console.log('  ✅ Dirt-Samples loaded');
               loadResults.dirt = true;
             }).catch(e => console.warn('  ⚠️ Could not load Dirt-Samples:', e.message)),
-            
-            samplesFunc(`${ds}/EmuSP12.json`).then(() => {
-              console.log('  ✅ EmuSP12 samples loaded');
-              loadResults.emusp12 = true;
-            }).catch(e => console.warn('  ⚠️ Could not load EmuSP12:', e.message)),
             
             samplesFunc(`${ds}/vcsl.json`).then(() => {
               console.log('  ✅ VCSL (vocal) samples loaded');
@@ -5451,7 +5445,7 @@ class SoundManager {
       this.strudelSoundBanksLoaded = true;
       this.strudelSoundBankLoading = false;
       console.log('✅ Default sound banks ready');
-      console.log('📦 Available: Piano, Dirt-Samples, EmuSP12, VCSL, Mridangam, Drum Machines (TR-808, TR-909, TR-707, etc.)');
+      console.log('📦 Available: Piano, Dirt-Samples, VCSL, Mridangam, Drum Machines (TR-808, TR-909, TR-707, etc.)');
       
       // Verify patterns can actually be evaluated before notifying
       console.log('🧪 Testing pattern evaluation...');
@@ -5906,7 +5900,7 @@ class SoundManager {
     // Note: RolandTR808 and RolandTR909 are now loaded from local assets folder
     const builtInDrumBanks = [
       'RolandTR707', 'RhythmAce', 'AkaiLinn', 'ViscoSpaceDrum',
-      'EmuSP1200', 'CasioRZ1'
+      'CasioRZ1'
     ];
     
     const builtInSampleBanks = [

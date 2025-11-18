@@ -39,7 +39,6 @@ const DRUM_BANK_VALUES = new Set([
   'RhythmAce',
   'AkaiLinn',
   'ViscoSpaceDrum',
-  'EmuSP1200',
   'CasioRZ1'
 ]);
 
@@ -50,7 +49,6 @@ const DRUM_BANK_DISPLAY_NAMES = {
   RhythmAce: 'Rhythm Ace',
   AkaiLinn: 'Akai Linn',
   ViscoSpaceDrum: 'Visco Space Drum',
-  EmuSP1200: 'Emu SP-1200',
   CasioRZ1: 'Casio RZ-1'
 };
 
@@ -71,6 +69,33 @@ const containsNumericNotePattern = (value) => {
   }
   NUMERIC_NOTE_REGEX.lastIndex = 0;
   return NUMERIC_NOTE_REGEX.test(value);
+};
+
+const getChannelDisplayLabel = (elementId) => {
+  if (!elementId) return 'Channel';
+  const match = elementId.match(/element-(\d+)/i);
+  return match && match[1] ? `Channel ${match[1]}` : elementId;
+};
+
+const formatElementTitle = (elementId, rawTitle) => {
+  const channelLabel = getChannelDisplayLabel(elementId);
+  if (!rawTitle || !rawTitle.trim() || /^element\s*\d+$/i.test(rawTitle.trim())) {
+    return channelLabel;
+  }
+  return `${channelLabel} – ${rawTitle.trim()}`;
+};
+
+const updateElementTitleDisplay = (elementId, baseTitle) => {
+  const element = document.querySelector(`[data-sound-id="${elementId}"]`);
+  if (!element) return;
+  const titleEl = element.querySelector('.element-title');
+  if (titleEl) {
+    titleEl.textContent = formatElementTitle(elementId, baseTitle);
+  }
+  const configButton = element.querySelector('.config-button');
+  if (configButton) {
+    configButton.textContent = baseTitle && baseTitle.trim() ? baseTitle.trim() : 'Configure Sound';
+  }
 };
 
 const getDrumBankDisplayName = (bank) => {
@@ -146,17 +171,6 @@ const DRUM_BANK_INSTRUMENTS = {
     { key: 'ht', label: 'HT', sample: 'ht' }
   ],
   'ViscoSpaceDrum': [
-    { key: 'bd', label: 'BD', sample: 'bd' },
-    { key: 'sd', label: 'SD', sample: 'sd' },
-    { key: 'hh', label: 'HH', sample: 'hh' },
-    { key: 'oh', label: 'OH', sample: 'oh' },
-    { key: 'cr', label: 'CR', sample: 'cr' },
-    { key: 'rd', label: 'RD', sample: 'rd' },
-    { key: 'lt', label: 'LT', sample: 'lt' },
-    { key: 'mt', label: 'MT', sample: 'mt' },
-    { key: 'ht', label: 'HT', sample: 'ht' }
-  ],
-  'EmuSP1200': [
     { key: 'bd', label: 'BD', sample: 'bd' },
     { key: 'sd', label: 'SD', sample: 'sd' },
     { key: 'hh', label: 'HH', sample: 'hh' },
@@ -403,7 +417,7 @@ const createPatternHistoryModal = () => {
   const openChannelHistory = (elementId) => {
     if (!elementId) return;
     context = { type: 'channel', elementId };
-    titleEl.textContent = `Channel ${elementId} history`;
+    titleEl.textContent = `${getChannelDisplayLabel(elementId)} history`;
     openModal();
     listEl.innerHTML = '<p class="pattern-history-empty">Loading…</p>';
     currentEntries = patternHistoryStore.getChannelVersions(elementId);
@@ -2304,21 +2318,12 @@ class InteractiveSoundApp {
       if (hasValidPattern) {
         // Show/hide synthesis section based on pattern type
         this.updateSynthesisSectionVisibility(id, saved.pattern);
-        
-        // Update config button text to show title (only if pattern exists)
-        if (configButton) {
-          const titleEl = el.querySelector('.element-title');
-          const displayTitle = titleEl ? titleEl.textContent : id;
-          // Only use title if it's not a default "Element X" name
-          if (displayTitle && !displayTitle.match(/^Element \d+$/)) {
-            configButton.textContent = displayTitle || 'Configure Sound';
-          } else {
-            configButton.textContent = 'Configure Sound';
-          }
-        }
-      } else if (configButton) {
-        // No pattern saved, always show "Configure Sound"
-        configButton.textContent = 'Configure Sound';
+        const resolvedTitle = saved.title && saved.title.trim()
+          ? saved.title
+          : (saved.bank ? (DRUM_BANK_DISPLAY_NAMES[saved.bank] || saved.bank) : '');
+        updateElementTitleDisplay(id, resolvedTitle);
+      } else {
+        updateElementTitleDisplay(id, '');
       }
     });
   }
@@ -6196,16 +6201,7 @@ class InteractiveSoundApp {
         soundManager.removeElementFromMaster(elementId);
         
         // Reset UI
-        const titleEl = element.querySelector('.element-title');
-        const configButton = element.querySelector('.config-button');
-        if (titleEl) {
-          // Extract element number from elementId
-          const elementNumber = elementId.replace('element-', '');
-          titleEl.textContent = `Element ${elementNumber}`;
-        }
-        if (configButton) {
-          configButton.textContent = 'Configure Sound';
-        }
+        updateElementTitleDisplay(elementId, '');
         
         // Reset status dots
         this.updateStatusDots(elementId, false, false);
@@ -6395,24 +6391,12 @@ class InteractiveSoundApp {
     soundConfig.elements.forEach(elementConfig => {
       const savedConfig = this.loadElementConfig(elementConfig.id);
       if (savedConfig) {
-        // Update element title in DOM - show bank name if title is blank
-        const element = document.querySelector(`[data-sound-id="${elementConfig.id}"]`);
-        if (element) {
-          const titleEl = element.querySelector('.element-title');
-          if (titleEl) {
-            if (savedConfig.title && savedConfig.title.trim()) {
-              titleEl.textContent = savedConfig.title;
-            } else if (savedConfig.bank && savedConfig.bank.trim()) {
-              // Show bank name if title is blank
-              const bankDisplayName = savedConfig.bank.startsWith('github:') 
-                ? savedConfig.bank.replace('github:tidalcycles/', '') 
-                : savedConfig.bank;
-              titleEl.textContent = bankDisplayName;
-            } else {
-              titleEl.textContent = elementConfig.id;
-            }
-          }
-        }
+        const resolvedTitle = savedConfig.title && savedConfig.title.trim()
+          ? savedConfig.title
+          : (savedConfig.bank && savedConfig.bank.trim()
+              ? (DRUM_BANK_DISPLAY_NAMES[savedConfig.bank] || savedConfig.bank.replace('github:tidalcycles/', ''))
+              : '');
+        updateElementTitleDisplay(elementConfig.id, resolvedTitle);
         
         // Update config array (but keep original as fallback)
         if (savedConfig.pattern !== undefined) {
@@ -6422,14 +6406,7 @@ class InteractiveSoundApp {
           elementConfig.description = savedConfig.title;
         }
       } else {
-        // Set default title from elementConfig
-        const element = document.querySelector(`[data-sound-id="${elementConfig.id}"]`);
-        if (element) {
-          const titleEl = element.querySelector('.element-title');
-          if (titleEl) {
-            titleEl.textContent = elementConfig.description || elementConfig.id;
-          }
-        }
+        updateElementTitleDisplay(elementConfig.id, elementConfig.description || '');
       }
     });
   }
@@ -6552,39 +6529,13 @@ class InteractiveSoundApp {
         }
       }
       
-      // Update title in DOM - show bank name if title is blank
+      const displayTitle = config.title && config.title.trim()
+        ? config.title
+        : (config.bank ? (DRUM_BANK_DISPLAY_NAMES[config.bank] || config.bank.replace('github:tidalcycles/', '')) : '');
+      updateElementTitleDisplay(elementId, displayTitle);
+
       const element = document.querySelector(`[data-sound-id="${elementId}"]`);
       if (element) {
-        const titleEl = element.querySelector('.element-title');
-        const configButton = element.querySelector('.config-button');
-        
-        let displayTitle = '';
-        
-        if (titleEl) {
-          if (config.title && config.title.trim()) {
-            displayTitle = config.title;
-            titleEl.textContent = config.title;
-          } else if (config.bank && config.bank.trim()) {
-            // Show bank name if title is blank
-            const bankDisplayName = config.bank.startsWith('github:') 
-              ? config.bank.replace('github:tidalcycles/', '') 
-              : config.bank;
-            displayTitle = bankDisplayName;
-            titleEl.textContent = bankDisplayName;
-          } else {
-            // Fallback to element ID
-            displayTitle = elementId;
-            titleEl.textContent = elementId;
-          }
-        }
-        
-        // Update config button text to show title if pattern is configured
-        if (configButton && config.pattern && config.pattern.trim() !== '') {
-          configButton.textContent = displayTitle || 'Configure Sound';
-        } else if (configButton) {
-          configButton.textContent = 'Configure Sound';
-        }
-        
         // Show Synthesis section if this is a synth pattern
         const isSynthPattern = config.pattern && patternContainsKnownSynth(config.pattern);
         
@@ -6791,7 +6742,8 @@ class InteractiveSoundApp {
       currentBankRows: null,
       checkboxes: {},
       numBars: 1, // Number of bars in the grid
-      currentBar: 1 // Currently displayed bar (1-indexed)
+      currentBar: 1, // Currently displayed bar (1-indexed)
+      barTokens: []
     };
 
     const patternEditorSelect = document.getElementById('modal-pattern-editor-select');
@@ -7721,24 +7673,35 @@ class InteractiveSoundApp {
     
     const switchToBar = (barNumber) => {
       if (barNumber < 1 || barNumber > drumGridState.numBars) return;
-      drumGridState.currentBar = barNumber;
-      updateBarSelector();
-      // Force rebuild to show the selected bar
-      const bankValue = bankSelect ? bankSelect.value : '';
       const modalTimeSigSelect = document.getElementById('modal-time-signature-select');
       const timeSig = modalTimeSigSelect?.value || this.currentTimeSignature || '4/4';
       const metrics = getTimeSignatureMetrics(timeSig);
-      drumGridState.built = false; // Force rebuild
+      saveCurrentBarTokens(metrics);
+      drumGridState.currentBar = barNumber;
+      updateBarSelector();
+      const bankValue = bankSelect ? bankSelect.value : '';
+      drumGridState.built = false;
       ensureDrumGridBuilt(metrics, bankValue);
-      // Update pattern from current bar
-      const currentPattern = getStrudelEditorValue('modal-pattern');
-      populateDrumGridFromPattern(currentPattern, metrics);
+      if (!drumGridState.barTokens || !drumGridState.barTokens.length) {
+        const currentPattern = getStrudelEditorValue('modal-pattern');
+        const tokens = tokenizePattern(currentPattern);
+        initializeBarTokensFromSequence(metrics, tokens || []);
+      } else {
+        rebalanceBarTokens(metrics);
+      }
+      applyBarTokensToGrid(metrics);
     };
     
     const addBar = () => {
+      const modalTimeSigSelect = document.getElementById('modal-time-signature-select');
+      const timeSig = modalTimeSigSelect?.value || this.currentTimeSignature || '4/4';
+      const metrics = getTimeSignatureMetrics(timeSig);
+      saveCurrentBarTokens(metrics);
       drumGridState.numBars++;
+      rebalanceBarTokens(metrics);
+      const stepsPerBar = metrics.totalSteps;
+      drumGridState.barTokens[drumGridState.numBars - 1] = new Array(stepsPerBar).fill('~');
       updateBarSelector();
-      // Switch to the new bar
       switchToBar(drumGridState.numBars);
     };
     
@@ -7840,6 +7803,8 @@ class InteractiveSoundApp {
         gridContainer.appendChild(row);
       });
       
+      rebalanceBarTokens(metrics);
+      applyBarTokensToGrid(metrics);
       drumGridState.totalSteps = metrics.totalSteps;
       drumGridState.built = true;
     };
@@ -7853,7 +7818,7 @@ class InteractiveSoundApp {
       return sequence.split(/\s+/).filter(Boolean);
     };
     
-    const parseTokenToSamples = (token) => {
+    function parseTokenToSamples(token) {
       if (!token) return [];
       const trimmed = token.trim();
       if (!trimmed || trimmed === '~') return [];
@@ -7863,72 +7828,124 @@ class InteractiveSoundApp {
       }
       working = working.replace(/[,]+/g, ' ');
       return working.split(/\s+/).map(part => part.trim()).filter(Boolean);
-    };
+    }
+
+    function rebalanceBarTokens(metrics) {
+      if (!drumGridState.barTokens) {
+        drumGridState.barTokens = [];
+      }
+      const stepsPerBar = metrics.totalSteps;
+      const requiredBars = Math.max(1, drumGridState.numBars);
+      if (drumGridState.barTokens.length > requiredBars) {
+        drumGridState.barTokens.length = requiredBars;
+      }
+      while (drumGridState.barTokens.length < requiredBars) {
+        drumGridState.barTokens.push(new Array(stepsPerBar).fill('~'));
+      }
+      drumGridState.barTokens = drumGridState.barTokens.map((bar) => {
+        const normalized = Array.isArray(bar) ? bar.slice(0, stepsPerBar) : [];
+        while (normalized.length < stepsPerBar) {
+          normalized.push('~');
+        }
+        return normalized;
+      });
+    }
+
+    function initializeBarTokensFromSequence(metrics, sequenceTokens) {
+      const stepsPerBar = metrics.totalSteps;
+      const totalBars = Math.max(1, drumGridState.numBars);
+      const totalStepsNeeded = stepsPerBar * totalBars;
+      let working = Array.isArray(sequenceTokens) ? sequenceTokens.slice(0, totalStepsNeeded) : [];
+      if (working.length < totalStepsNeeded) {
+        working = working.concat(new Array(totalStepsNeeded - working.length).fill('~'));
+      }
+      drumGridState.barTokens = [];
+      for (let bar = 0; bar < totalBars; bar++) {
+        const start = bar * stepsPerBar;
+        drumGridState.barTokens.push(working.slice(start, start + stepsPerBar));
+      }
+      rebalanceBarTokens(metrics);
+    }
+
+    function saveCurrentBarTokens(metrics) {
+      if (!drumGridState.active || drumGridState.updatingFromPattern || !drumGridState.checkboxes) return;
+      const barIndex = drumGridState.currentBar - 1;
+      if (barIndex < 0) return;
+      rebalanceBarTokens(metrics);
+      const stepsPerBar = metrics.totalSteps;
+      const rows = drumGridState.currentBankRows || DRUM_GRID_ROWS;
+      const tokens = new Array(stepsPerBar).fill('~');
+      for (let step = 0; step < stepsPerBar; step += 1) {
+        const samples = [];
+        rows.forEach(({ key, sample }) => {
+          const checkboxes = drumGridState.checkboxes[key];
+          const checkbox = checkboxes ? checkboxes[step] : null;
+          if (checkbox && checkbox.checked) {
+            samples.push(sample);
+          }
+        });
+        if (samples.length === 1) {
+          tokens[step] = samples[0];
+        } else if (samples.length > 1) {
+          tokens[step] = `[${samples.join(' ')}]`;
+        }
+      }
+      drumGridState.barTokens[barIndex] = tokens;
+    }
+
+    function applyBarTokensToGrid(metrics) {
+      if (!drumGridState.checkboxes) return;
+      rebalanceBarTokens(metrics);
+      const barIndex = drumGridState.currentBar - 1;
+      const barTokens = drumGridState.barTokens[barIndex];
+      if (!barTokens) return;
+      const rows = drumGridState.currentBankRows || DRUM_GRID_ROWS;
+      rows.forEach(({ key, sample }) => {
+        const checkboxes = drumGridState.checkboxes[key];
+        if (!checkboxes) return;
+        checkboxes.forEach((checkbox, step) => {
+          if (!checkbox) return;
+          const samples = parseTokenToSamples(barTokens[step]);
+          checkbox.checked = samples.includes(sample);
+        });
+      });
+    }
+
+    function getFlattenedBarTokens() {
+      if (!Array.isArray(drumGridState.barTokens)) {
+        return [];
+      }
+      return drumGridState.barTokens.flat();
+    }
     
     const populateDrumGridFromPattern = (pattern, metrics) => {
       if (!drumGridSection || !drumGridState.active) return;
       const tokens = tokenizePattern(pattern);
-      resetDrumGridSelection();
-      if (!tokens || tokens.length === 0) {
-        return;
-      }
-      
-      const totalStepsForAllBars = metrics.totalSteps * drumGridState.numBars;
-      let workingTokens = tokens.slice();
-      if (workingTokens.length !== totalStepsForAllBars) {
-        const adjustedTokens = [];
-        for (let step = 0; step < totalStepsForAllBars; step += 1) {
-          adjustedTokens.push(workingTokens[step % workingTokens.length]);
+      const stepsPerBar = metrics.totalSteps;
+      if (tokens && tokens.length) {
+        const requiredBars = Math.max(1, Math.ceil(tokens.length / stepsPerBar));
+        if (drumGridState.numBars !== requiredBars) {
+          drumGridState.numBars = requiredBars;
+          if (drumGridState.currentBar > drumGridState.numBars) {
+            drumGridState.currentBar = drumGridState.numBars;
+          }
+          updateBarSelector();
         }
-        workingTokens = adjustedTokens;
+        initializeBarTokensFromSequence(metrics, tokens);
+      } else if (!drumGridState.barTokens.length) {
+        initializeBarTokensFromSequence(metrics, []);
+      } else {
+        rebalanceBarTokens(metrics);
       }
       
       drumGridState.updatingFromPattern = true;
-      // Only populate the current bar's checkboxes
-      const startStep = (drumGridState.currentBar - 1) * metrics.totalSteps;
-      const endStep = startStep + metrics.totalSteps;
-      
-      for (let step = startStep; step < endStep; step += 1) {
-        const samples = parseTokenToSamples(workingTokens[step]);
-        samples.forEach(sample => {
-          const rowKey = DRUM_SAMPLE_TO_ROW.get(sample.toLowerCase());
-          if (!rowKey) return;
-          const checkboxes = drumGridState.checkboxes[rowKey];
-          // Find checkbox for this step
-          const checkbox = checkboxes ? checkboxes.find(cb => cb && parseInt(cb.dataset.step) === step) : null;
-          if (checkbox) {
-            checkbox.checked = true;
-          }
-        });
-      }
+      applyBarTokensToGrid(metrics);
       drumGridState.updatingFromPattern = false;
     };
     
     const generateTokensFromGrid = (metrics) => {
-      const tokens = [];
-      const currentBankRows = drumGridState.currentBankRows || DRUM_GRID_ROWS;
-      const totalStepsForAllBars = metrics.totalSteps * drumGridState.numBars;
-      
-      // Generate tokens for all bars
-      for (let step = 0; step < totalStepsForAllBars; step += 1) {
-        const activeSamples = [];
-        currentBankRows.forEach(({ key, sample }) => {
-          const checkboxes = drumGridState.checkboxes[key];
-          // Find checkbox for this step (may be in a different bar)
-          const checkbox = checkboxes ? checkboxes.find(cb => cb && parseInt(cb.dataset.step) === step) : null;
-          if (checkbox && checkbox.checked) {
-            activeSamples.push(sample);
-          }
-        });
-        if (activeSamples.length === 0) {
-          tokens.push('~');
-        } else if (activeSamples.length === 1) {
-          tokens.push(activeSamples[0]);
-        } else {
-          tokens.push(`[${activeSamples.join(' ')}]`);
-        }
-      }
-      return tokens;
+      rebalanceBarTokens(metrics);
+      return getFlattenedBarTokens();
     };
     
     const updatePatternFromGrid = () => {
@@ -7936,6 +7953,7 @@ class InteractiveSoundApp {
       const modalTimeSigSelect = document.getElementById('modal-time-signature-select');
       const timeSig = modalTimeSigSelect?.value || this.currentTimeSignature || '4/4';
       const metrics = getTimeSignatureMetrics(timeSig);
+      saveCurrentBarTokens(metrics);
       const tokens = generateTokensFromGrid(metrics);
       const sequence = tokens.join(' ');
       // Note: .fast() modifier removed - patterns are clean without tempo modifiers
@@ -9575,25 +9593,12 @@ class InteractiveSoundApp {
           const titleInput = document.getElementById('modal-title');
           titleInput.value = 'Default';
           
-          // Update modal header title
           const modalElementId = document.getElementById('modal-element-id');
           if (modalElementId) {
-            modalElementId.textContent = 'Default';
+            modalElementId.textContent = getChannelDisplayLabel(elementId);
           }
           
-          // Update title in DOM immediately and save it
-          const element = document.querySelector(`[data-sound-id="${elementId}"]`);
-          if (element) {
-            const titleEl = element.querySelector('.element-title');
-            if (titleEl) {
-              titleEl.textContent = 'Default';
-              console.log(`📝 Updated element title in DOM to: Default`);
-            } else {
-              console.warn(`⚠️ Element title not found for ${elementId}`);
-            }
-          } else {
-            console.warn(`⚠️ Element not found: ${elementId}`);
-          }
+          updateElementTitleDisplay(elementId, 'Default');
           
           // Save title immediately when Default is selected
           const currentConfig = this.loadElementConfig(elementId) || {};
@@ -9657,22 +9662,10 @@ class InteractiveSoundApp {
             // Update modal header title
             const modalElementId = document.getElementById('modal-element-id');
             if (modalElementId) {
-              modalElementId.textContent = displayName;
+              modalElementId.textContent = getChannelDisplayLabel(elementId);
             }
             
-            // Update title in DOM immediately and save it
-            const element = document.querySelector(`[data-sound-id="${elementId}"]`);
-            if (element) {
-              const titleEl = element.querySelector('.element-title');
-              if (titleEl) {
-                titleEl.textContent = displayName;
-                console.log(`📝 Updated element title in DOM to: ${displayName}`);
-              } else {
-                console.warn(`⚠️ Element title not found for ${elementId}`);
-              }
-            } else {
-              console.warn(`⚠️ Element not found: ${elementId}`);
-            }
+            updateElementTitleDisplay(elementId, displayName);
             
             // Save title immediately when synth is selected
             const currentConfig = this.loadElementConfig(elementId) || {};
@@ -9746,7 +9739,7 @@ class InteractiveSoundApp {
             // TR-808 and TR-909 have local fallback in assets folder
             const builtInDrumBanks = [
               'RolandTR808', 'RolandTR909', 'RolandTR707', 'RhythmAce',
-              'AkaiLinn', 'ViscoSpaceDrum', 'EmuSP1200', 'CasioRZ1'
+              'AkaiLinn', 'ViscoSpaceDrum', 'CasioRZ1'
             ];
             const builtInSynthSounds = [
               ...OSCILLATOR_SYNTHS,
@@ -9805,25 +9798,12 @@ class InteractiveSoundApp {
               // Always update title when bank is selected
               titleInput.value = bankDisplayName;
               
-              // Update modal header title
               const modalElementId = document.getElementById('modal-element-id');
               if (modalElementId) {
-                modalElementId.textContent = bankDisplayName;
+                modalElementId.textContent = getChannelDisplayLabel(elementId);
               }
               
-              // Update title in DOM immediately and save it
-              const element = document.querySelector(`[data-sound-id="${elementId}"]`);
-              if (element) {
-                const titleEl = element.querySelector('.element-title');
-                if (titleEl) {
-                  titleEl.textContent = bankDisplayName;
-                  console.log(`📝 Updated element title in DOM to: ${bankDisplayName}`);
-                } else {
-                  console.warn(`⚠️ Element title not found for ${elementId}`);
-                }
-              } else {
-                console.warn(`⚠️ Element not found: ${elementId}`);
-              }
+              updateElementTitleDisplay(elementId, bankDisplayName);
               
               // Stop any currently playing sound BEFORE saving config to prevent auto-playback
               if (this.activeElements.has(elementId)) {
@@ -10543,6 +10523,8 @@ class InteractiveSoundApp {
       if (configBtn) {
         configBtn.textContent = 'Configure Sound';
       }
+      
+      updateElementTitleDisplay(newElementId, '');
       
       // Initialize visualizations (this may update button text if pattern exists)
       this.initializeElementVisualizations(newElement, newElementId);

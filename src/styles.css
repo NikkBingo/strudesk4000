@@ -2727,14 +2727,29 @@ header h1 {
 
 
 .drum-grid-step input[type="checkbox"] {
+  appearance: none;
   width: 14px;
   height: 14px;
+  border-radius: 50%;
+  border: 2px solid #cbd5f5;
+  background: transparent;
   cursor: pointer;
-  accent-color: #6366f1;
+  transition: all 0.15s ease;
+}
+
+.drum-grid-step input[type="checkbox"]:hover {
+  border-color: #7c90f6;
+}
+
+.drum-grid-step input[type="checkbox"]:checked {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  box-shadow: 0 0 5px rgba(79, 70, 229, 0.4);
 }
 
 .drum-grid-step input[type="checkbox"]:focus {
   outline: none;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
 }
 
 .drum-grid-hint {
