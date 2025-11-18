@@ -787,7 +787,7 @@ class SoundManager {
           __safeRouteLog(this, '🎚️ Loading Strudel after hijacking AudioContext (master nodes ready for destination)...');
           await this.loadStrudelFromCDN();
         }
-        
+
         // Patch AudioNode.prototype.connect to intercept connections to destination
         // This ensures ALL audio nodes (including Strudel's) route through element gain nodes or master
         if (!AudioNode.prototype.__originalConnect) {
@@ -5333,7 +5333,7 @@ class SoundManager {
       } catch (_) {}
       if (!window.strudel || !window.strudel.evaluate) {
         // Not ready yet; skip without spamming warnings (will be retried later)
-        return false;
+      return false;
       }
     }
     
@@ -5530,7 +5530,7 @@ class SoundManager {
     // Do not evaluate any audible patterns during preload.
     // Rely on bank loading to fetch samples lazily; this avoids any chance of sound on first user gesture.
     console.log('📦 Preloading skipped (silent mode) - no audible patterns will be evaluated');
-    return true;
+      return true;
   }
 
   /**
@@ -6531,49 +6531,14 @@ class SoundManager {
         
         // Add gain modifier if not default
         if (trackData.gain !== 1) {
-          // Wrap the pattern before adding .gain() if not already wrapped
           const basePattern = patternCode.trim();
-          // Check if pattern is wrapped: starts with ( and ends with ) or ))
-          // We check if it ends with one or more closing parens
-          const isAlreadyWrapped = basePattern.startsWith('(') && /\)+$/.test(basePattern);
-          
-          if (isAlreadyWrapped) {
-            // Pattern is wrapped, append .gain() directly
-            patternCode = `${basePattern}.gain(${trackData.gain.toFixed(2)})`;
-          } else {
-            // Pattern is not wrapped, wrap it before adding .gain()
-            patternCode = `(${basePattern}).gain(${trackData.gain.toFixed(2)})`;
-          }
+          patternCode = `${basePattern}.gain(${trackData.gain.toFixed(2)})`;
         }
         
         // Add pan modifier if not centered
         if (trackData.pan !== 0) {
-          // After adding .gain(), the pattern is already wrapped and chained
-          // The pattern at this point is either:
-          // - (pattern).gain(0.80) - already wrapped and chained
-          // - pattern - unwrapped (if gain wasn't added)
           const basePattern = patternCode.trim();
-          
-          // Check if pattern already has method chaining (contains .methodName(...))
-          // This matches patterns like: (pattern).gain(0.80) or pattern.gain(0.80)
-          // We look for a closing paren followed by a dot and method name
-          const hasMethodChaining = /\)\s*\.\s*\w+\s*\(/.test(basePattern);
-          
-          if (hasMethodChaining) {
-            // Pattern already has method chaining (e.g., .gain()), just append .pan()
-            patternCode = `${basePattern}.pan(${trackData.pan.toFixed(2)})`;
-          } else {
-            // Pattern doesn't have method chaining yet
-            // Check if it's wrapped: starts with ( and ends with )
-            const isAlreadyWrapped = basePattern.startsWith('(') && basePattern.endsWith(')');
-            if (isAlreadyWrapped) {
-              // Pattern is wrapped but has no method chaining, append .pan() directly
-              patternCode = `${basePattern}.pan(${trackData.pan.toFixed(2)})`;
-            } else {
-              // Pattern is not wrapped, wrap it before adding .pan()
-              patternCode = `(${basePattern}).pan(${trackData.pan.toFixed(2)})`;
-            }
-          }
+          patternCode = `${basePattern}.pan(${trackData.pan.toFixed(2)})`;
         }
         
         // Apply global settings (scale) per pattern instead of entire stack
@@ -6604,6 +6569,31 @@ class SoundManager {
         const trimmedPattern = patternCode.trim();
         const isWrapped = trimmedPattern.startsWith('(') && trimmedPattern.endsWith(')');
         patternCode = this.applyGlobalSettingsToPattern(patternCode, isWrapped, false, elementKey, elementScale);
+
+        if (trackData.gain === 1 && trackData.pan === 0) {
+          let normalizedPattern = patternCode.trim();
+          const unwrapFullyWrapped = () => {
+            while (normalizedPattern.startsWith('(') && normalizedPattern.endsWith(')')) {
+              let depth = 0;
+              let balanced = true;
+              for (let i = 0; i < normalizedPattern.length; i++) {
+                const char = normalizedPattern[i];
+                if (char === '(') depth++;
+                else if (char === ')') depth--;
+                if (depth === 0 && i < normalizedPattern.length - 1) {
+                  balanced = false;
+                  break;
+                }
+              }
+              if (!balanced || depth !== 0) {
+                break;
+              }
+              normalizedPattern = normalizedPattern.slice(1, -1).trim();
+            }
+          };
+          unwrapFullyWrapped();
+          patternCode = normalizedPattern;
+        }
         
         patterns.push(patternCode);
         patternChannels.push(channelNumber);
@@ -6867,39 +6857,39 @@ class SoundManager {
               // ignore
             }
             
-            try {
-              this.masterGainNode.disconnect(analyser);
-            } catch (e) {
+          try {
+            this.masterGainNode.disconnect(analyser);
+          } catch (e) {
               // ignore
-            }
-            
-            this.masterGainNode.connect(analyser);
+          }
+          
+          this.masterGainNode.connect(analyser);
             if (this.visualizerAnalyserTapGain) {
               analyser.connect(this.visualizerAnalyserTapGain);
             }
             console.log(`✅ Connected visualizer analyser "${analyserId}" with silent tap to destination`);
-            
-            // Verify analyser is receiving data (check after a short delay to allow audio to flow)
-            setTimeout(() => {
-              try {
-                const dataArray = new Uint8Array(analyser.frequencyBinCount);
-                analyser.getByteFrequencyData(dataArray);
-                const hasData = dataArray.some(val => val > 0);
-                const maxValue = Math.max(...dataArray);
-                console.log(`🔍 Analyser data check: hasData=${hasData}, maxValue=${maxValue}, frequencyBinCount=${analyser.frequencyBinCount}`);
-                
-                // Also check if canvas exists and is accessible
-                const canvas = document.getElementById(analyserId);
-                if (canvas) {
-                  console.log(`🔍 Canvas check: found canvas with ID "${analyserId}", width=${canvas.width}, height=${canvas.height}`);
-                } else {
-                  console.warn(`⚠️ Canvas with ID "${analyserId}" not found!`);
-                }
-              } catch (e) {
-                console.warn(`⚠️ Could not check analyser data:`, e);
+          
+          // Verify analyser is receiving data (check after a short delay to allow audio to flow)
+          setTimeout(() => {
+            try {
+              const dataArray = new Uint8Array(analyser.frequencyBinCount);
+              analyser.getByteFrequencyData(dataArray);
+              const hasData = dataArray.some(val => val > 0);
+              const maxValue = Math.max(...dataArray);
+              console.log(`🔍 Analyser data check: hasData=${hasData}, maxValue=${maxValue}, frequencyBinCount=${analyser.frequencyBinCount}`);
+              
+              // Also check if canvas exists and is accessible
+              const canvas = document.getElementById(analyserId);
+              if (canvas) {
+                console.log(`🔍 Canvas check: found canvas with ID "${analyserId}", width=${canvas.width}, height=${canvas.height}`);
+              } else {
+                console.warn(`⚠️ Canvas with ID "${analyserId}" not found!`);
               }
-            }, 500);
-          } catch (connectError) {
+            } catch (e) {
+              console.warn(`⚠️ Could not check analyser data:`, e);
+            }
+          }, 500);
+        } catch (connectError) {
             console.warn(`⚠️ Failed to connect analyser "${analyserId}":`, connectError.message);
           }
         }
@@ -7983,25 +7973,25 @@ class SoundManager {
             
             console.log(`   🔍 FINAL: outputNode=${outputNode ? outputNode.constructor.name : 'null'}, source=${outputSource || 'not found'}`);
             
-            if (outputNode && this.trackedPatterns.size > 0) {
-              const elementId = Array.from(this.trackedPatterns.keys())[0];
-              const elementNodes = this.getElementAudioNodes(elementId);
-              console.log(`   🔍 FINAL: ${elementId}, elementNodes=${!!elementNodes}, gainNode=${!!elementNodes?.gainNode}`);
-              if (elementNodes?.gainNode) {
-                try {
+              if (outputNode && this.trackedPatterns.size > 0) {
+                const elementId = Array.from(this.trackedPatterns.keys())[0];
+                const elementNodes = this.getElementAudioNodes(elementId);
+                console.log(`   🔍 FINAL: ${elementId}, elementNodes=${!!elementNodes}, gainNode=${!!elementNodes?.gainNode}`);
+                if (elementNodes?.gainNode) {
+                  try {
                   // Disconnect from wherever it's currently connected
-                  outputNode.disconnect();
+                    outputNode.disconnect();
                   // Connect to element gain node (which routes through master chain)
-                  outputNode.connect(elementNodes.gainNode);
+                    outputNode.connect(elementNodes.gainNode);
                   console.log(`   ✅ FINAL: Reconnected Strudel output (${outputSource}) -> ${elementId} gainNode (THIS IS CRITICAL FOR AUDIO)`);
-                } catch (e) {
-                  console.log(`   ✅ FINAL: Strudel output already routed to ${elementId} gainNode (${e.message})`);
+                  } catch (e) {
+                    console.log(`   ✅ FINAL: Strudel output already routed to ${elementId} gainNode (${e.message})`);
+                  }
+                } else {
+                  console.error(`   ❌ FINAL: Cannot reconnect - elementNodes or gainNode missing!`);
                 }
               } else {
-                console.error(`   ❌ FINAL: Cannot reconnect - elementNodes or gainNode missing!`);
-              }
-            } else {
-              console.warn(`   ⚠️ FINAL: Cannot reconnect - outputNode=${!!outputNode}, trackedPatterns.size=${this.trackedPatterns.size}`);
+                console.warn(`   ⚠️ FINAL: Cannot reconnect - outputNode=${!!outputNode}, trackedPatterns.size=${this.trackedPatterns.size}`);
               if (!outputNode) {
                 console.warn(`   ⚠️ FINAL: Strudel output node not found in any expected location.`);
                 console.warn(`   ⚠️ FINAL: This might mean Strudel creates audio nodes dynamically. Audio routing hijacking should catch connections.`);

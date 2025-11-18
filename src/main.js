@@ -79,10 +79,15 @@ const getChannelDisplayLabel = (elementId) => {
 
 const formatElementTitle = (elementId, rawTitle) => {
   const channelLabel = getChannelDisplayLabel(elementId);
-  if (!rawTitle || !rawTitle.trim() || /^element\s*\d+$/i.test(rawTitle.trim())) {
+  const title = rawTitle ? rawTitle.trim() : '';
+  if (!title || /^element\s*\d+$/i.test(title)) {
     return channelLabel;
   }
-  return `${channelLabel} – ${rawTitle.trim()}`;
+  if (/^channel\s*\d+$/i.test(title)) {
+    return title;
+  }
+  const stripped = title.replace(/^channel\s*\d+\s*(–|-)\s*/i, '');
+  return `${channelLabel} – ${stripped}`;
 };
 
 const updateElementTitleDisplay = (elementId, baseTitle) => {
@@ -193,6 +198,102 @@ const DRUM_BANK_INSTRUMENTS = {
     { key: 'ht', label: 'HT', sample: 'ht' }
   ]
 };
+
+const DRUM_PATTERN_PRESETS = [
+  {
+    id: 'roland808-simple-bd-hh',
+    label: 'Roland 808 – Kick & Hat',
+    bank: 'RolandTR808',
+    description: 'Simple BD/HH groove shown in the step editor',
+    pattern: 's("bd ~ hh ~ bd ~ hh ~ bd ~ hh ~ bd ~ hh ~").bank("RolandTR808")'
+  },
+  {
+    id: 'drum-beat-generator',
+    label: 'Beat Generator (Code)',
+    bank: '',
+    description: 'Opens in code editor for generative BD patterns',
+    pattern: 's("bd").bank("RolandTR808").segment(16).degradeBy(.5).ribbon(16,1)'
+  },
+  {
+    id: 'random-modifiers',
+    label: 'Random Modifiers',
+    bank: '',
+    description: 'chooseCycles randomizes BD / HH / SD each cycle',
+    pattern: 's(chooseCycles("bd","hh","sd")).bank("RolandTR808").fast(8)'
+  }
+];
+
+const TONAL_PATTERN_PRESETS = [
+  {
+    id: 'independent-params',
+    label: 'Note Names and Filter Pattern',
+    bank: '',
+    description: 'note, cutoff, gain and sound controlled independently',
+    pattern: 'note("F3 A3 C3 E3").cutoff("<500 1000 2000 [4000 8000]>").gain(.8).s("sawtooth").log()'
+  },
+  {
+    id: 'semitones-scale-transpose',
+    label: 'Semitones, Scale & Transpose',
+    bank: '',
+    description: 'Transposes notes inside the scale by the number of steps',
+    pattern: '"[-8 [2,4,6]]*2".scale(\'c:ionian\').scaleTranspose("<0 -1 -2 -3 -4 -5 -6 -4>*2").note().s("piano")',
+    useNoteNames: false
+  },
+  {
+    id: 'simple-arpeggios',
+    label: 'Simple Arpeggios in Semitones & Chords',
+    bank: '',
+    description: 'Combines numeric semitones with chord progressions',
+    pattern: 'n("0 1 2 3").chord("<C Am F G>").voicing()',
+    useNoteNames: false
+  },
+  {
+    id: 'simple-backing-track',
+    label: 'Simple Backing Track',
+    bank: '',
+    description: 'Together with layer, struct and voicings, this can be used to create a basic backing track',
+    pattern: 'note("<C^7 A7b13 Dm7 G7>*2").layer(\n  x => x.voicings("lefthand").struct("[~ x]*2").note(),\n  x => x.rootNotes(2).note().s("sawtooth").cutoff(800)\n)'
+  }
+];
+
+const MASTER_SONG_PRESETS = [
+  {
+    id: 'song-acidic-tooth',
+    label: 'Song · "acidic tooth" @by eddyflux',
+    pattern: `// "acidic tooth" @by eddyflux
+// @version 1.0
+
+setcps(1)
+
+stack(
+
+  /* Channel 1 */
+  stack(
+    s("bd*2").mask("<0@4 1@16>"),
+    s("hh*8").gain(saw.mul(saw.fast(2))).clip(sine)
+    .mask("<0@8 1@16>")
+  ).bank('RolandTR909')
+
+  ,
+
+  /* Channel 2 */
+  note("[<g1 f1>/8](<3 5>,8)")
+  .clip(perlin.range(.15,1.5))
+  .release(.1)
+  .s("sawtooth")
+  .lpf(sine.range(400,800).slow(16))
+  .lpq(cosine.range(6,14).slow(3))
+  .lpenv(sine.mul(4).slow(4))
+  .lpd(.2).lpa(.02)
+  .ftype('24db')
+  .rarely(add(note(12)))
+  .room(.2).shape(.3).postgain(.5)
+  .superimpose(x=>x.add(note(12)).delay(.5).bpf(1000))
+  .gain("[.2 1@3]*2") // fake sidechain
+
+)`.trim()
+  }
+];
 
 let interactiveSoundAppInstance = null;
 
@@ -365,30 +466,66 @@ const createPatternHistoryModal = () => {
     overlay.setAttribute('aria-hidden', 'false');
   };
 
-  const renderEntries = (entries) => {
-    if (!entries || entries.length === 0) {
-      listEl.innerHTML = '<p class="pattern-history-empty">No saved versions yet.</p>';
-      return;
+  const renderEntries = (entries, options = {}) => {
+    const { includeMasterSongs = false } = options;
+    const fragment = document.createDocumentFragment();
+    const hasEntries = Array.isArray(entries) && entries.length > 0;
+
+    if (hasEntries) {
+      const historyHeader = document.createElement('h4');
+      historyHeader.className = 'pattern-history-section-title';
+      historyHeader.textContent = 'Saved Versions';
+      fragment.appendChild(historyHeader);
+
+      entries.forEach((entry, index) => {
+        const row = document.createElement('div');
+        row.className = 'pattern-history-entry';
+        const snippet = entry.pattern.length > 240 ? `${entry.pattern.slice(0, 240)}…` : entry.pattern;
+        const displayIndex = (index + 1).toString().padStart(2, '0');
+        row.innerHTML = `
+          <div class="pattern-history-meta">
+            <span class="pattern-history-index">#${displayIndex}</span>
+            <p class="pattern-history-date">${formatTimestamp(entry.createdAt)}</p>
+          </div>
+          <pre class="pattern-history-snippet">${escapeHtml(snippet)}</pre>
+          <div class="pattern-history-actions">
+            <button type="button" class="pattern-history-load" data-version-id="${entry.id}">Load</button>
+          </div>
+        `;
+        fragment.appendChild(row);
+      });
+    } else {
+      const emptyMsg = document.createElement('p');
+      emptyMsg.className = 'pattern-history-empty';
+      emptyMsg.textContent = 'No saved versions yet.';
+      fragment.appendChild(emptyMsg);
     }
 
-    const fragment = document.createDocumentFragment();
-    entries.forEach((entry, index) => {
-      const row = document.createElement('div');
-      row.className = 'pattern-history-entry';
-      const snippet = entry.pattern.length > 240 ? `${entry.pattern.slice(0, 240)}…` : entry.pattern;
-      const displayIndex = (index + 1).toString().padStart(2, '0');
-      row.innerHTML = `
-        <div class="pattern-history-meta">
-          <span class="pattern-history-index">#${displayIndex}</span>
-          <p class="pattern-history-date">${formatTimestamp(entry.createdAt)}</p>
-        </div>
-        <pre class="pattern-history-snippet">${escapeHtml(snippet)}</pre>
-        <div class="pattern-history-actions">
-          <button type="button" class="pattern-history-load" data-version-id="${entry.id}">Load</button>
-        </div>
-      `;
-      fragment.appendChild(row);
-    });
+    if (includeMasterSongs && MASTER_SONG_PRESETS.length) {
+      const songsHeader = document.createElement('h4');
+      songsHeader.className = 'pattern-history-section-title';
+      songsHeader.textContent = 'Songs';
+      fragment.appendChild(songsHeader);
+
+      MASTER_SONG_PRESETS.forEach((song, index) => {
+        const row = document.createElement('div');
+        row.className = 'pattern-history-entry pattern-history-entry--song';
+        const snippet = song.pattern.length > 400 ? `${song.pattern.slice(0, 400)}…` : song.pattern;
+        const displayIndex = (index + 1).toString().padStart(2, '0');
+        row.innerHTML = `
+          <div class="pattern-history-meta">
+            <span class="pattern-history-index">#${displayIndex}</span>
+            <p class="pattern-history-date">${escapeHtml(song.label)}</p>
+          </div>
+          <pre class="pattern-history-snippet">${escapeHtml(snippet)}</pre>
+          <div class="pattern-history-actions">
+            <button type="button" class="pattern-history-load" data-song-id="${song.id}">Load</button>
+          </div>
+        `;
+        fragment.appendChild(row);
+      });
+    }
+
     listEl.innerHTML = '';
     listEl.appendChild(fragment);
   };
@@ -396,7 +533,18 @@ const createPatternHistoryModal = () => {
   listEl.addEventListener('click', (event) => {
     const loadButton = event.target.closest('.pattern-history-load');
     if (!loadButton || !interactiveSoundAppInstance) return;
-    const entry = currentEntries.find((item) => item.id === loadButton.dataset.versionId);
+    const entryId = loadButton.dataset.versionId;
+    const songId = loadButton.dataset.songId;
+
+    if (songId && context?.type === 'master') {
+      const song = MASTER_SONG_PRESETS.find((item) => item.id === songId);
+      if (!song) return;
+      interactiveSoundAppInstance.applyMasterHistoryEntry(song.pattern);
+      closeModal();
+      return;
+    }
+
+    const entry = currentEntries.find((item) => item.id === entryId);
     if (!entry) return;
 
     if (context?.type === 'channel') {
@@ -430,7 +578,7 @@ const createPatternHistoryModal = () => {
     openModal();
     listEl.innerHTML = '<p class="pattern-history-empty">Loading…</p>';
     currentEntries = patternHistoryStore.getMasterVersions();
-    renderEntries(currentEntries);
+    renderEntries(currentEntries, { includeMasterSongs: true });
   };
 
   return {
@@ -2322,7 +2470,7 @@ class InteractiveSoundApp {
           ? saved.title
           : (saved.bank ? (DRUM_BANK_DISPLAY_NAMES[saved.bank] || saved.bank) : '');
         updateElementTitleDisplay(id, resolvedTitle);
-      } else {
+          } else {
         updateElementTitleDisplay(id, '');
       }
     });
@@ -2764,8 +2912,8 @@ class InteractiveSoundApp {
     console.log(`🎨 Applying visualizer "${this.selectedVisualizer}" to master pattern`);
     
     // Clean up any existing visualizer observers and intervals
-    this.scopeSpectrumObserver = null;
-    this.scopeSpectrumCopyLoop = null;
+      this.scopeSpectrumObserver = null;
+      this.scopeSpectrumCopyLoop = null;
     this.teardownExternalVisualizerCanvas();
     this.stopVisualizerAnimation();
     this.externalVisualizerType = null;
@@ -2969,17 +3117,17 @@ class InteractiveSoundApp {
       }
       this.externalVisualizerType = 'pianoroll';
       this.watchForExternalVisualizerCanvas('pianoroll');
-      patternWithVisualizer = `${basePattern}.pianoroll({ 
-        cycles: 4,
-        playhead: 0.5,
-        fill: true,
-        fillActive: true,
-        stroke: true,
-        strokeActive: true,
-        autorange: true,
-        colorizeInactive: true,
-        background: 'transparent'
-      })`;
+        patternWithVisualizer = `${basePattern}.pianoroll({ 
+          cycles: 4,
+          playhead: 0.5,
+          fill: true,
+          fillActive: true,
+          stroke: true,
+          strokeActive: true,
+          autorange: true,
+          colorizeInactive: true,
+          background: 'transparent'
+        })`;
     } else if (this.selectedVisualizer === 'barchart') {
       // barchart doesn't exist in Strudel - use spectrum as alternative (shows frequency bars)
       console.warn('⚠️ barchart visualizer not available in Strudel, using spectrum instead');
@@ -3003,8 +3151,8 @@ class InteractiveSoundApp {
     if (requiresPatternVisualizer) {
       hasVisualizer = patternWithVisualizer.includes(`.${this.selectedVisualizer}(`);
       if (!hasVisualizer) {
-        console.error(`❌ Visualizer "${this.selectedVisualizer}" not found in pattern! Pattern:`, patternWithVisualizer);
-      } else {
+      console.error(`❌ Visualizer "${this.selectedVisualizer}" not found in pattern! Pattern:`, patternWithVisualizer);
+            } else {
         console.log(`✅ Visualizer "${this.selectedVisualizer}" found in pattern`);
       }
     } else if (usesInternalVisualizer) {
@@ -3019,7 +3167,7 @@ class InteractiveSoundApp {
     } else if (this.selectedVisualizer === 'spectrum') {
       this.startSpectrumVisualizerLoop();
     }
-
+    
     // Refresh the punchcard display
     this.refreshMasterPunchcard('visualizer-applied').catch(err => {
       console.warn('⚠️ Unable to refresh punchcard after applying visualizer:', err);
@@ -3177,7 +3325,7 @@ class InteractiveSoundApp {
     }
     
     this.sizeCanvasToContainer(this.masterPunchcardCanvas, ctx);
-    window.__strudelVisualizerCtx = ctx;
+        window.__strudelVisualizerCtx = ctx;
     
     if (window.strudel && window.strudel.controls) {
       try {
@@ -3192,11 +3340,11 @@ class InteractiveSoundApp {
   sizeCanvasToContainer(canvas, context) {
     if (!canvas || !this.masterPunchcardContainer) {
       return;
-    }
-    const containerRect = this.masterPunchcardContainer.getBoundingClientRect();
-    const displayWidth = Math.max(containerRect.width || this.masterPunchcardContainer.offsetWidth || 320, 240);
-    const displayHeight = Math.max(containerRect.height || this.masterPunchcardContainer.offsetHeight || 200, 220);
-    const pixelRatio = window.devicePixelRatio || 1;
+      }
+      const containerRect = this.masterPunchcardContainer.getBoundingClientRect();
+      const displayWidth = Math.max(containerRect.width || this.masterPunchcardContainer.offsetWidth || 320, 240);
+      const displayHeight = Math.max(containerRect.height || this.masterPunchcardContainer.offsetHeight || 200, 220);
+      const pixelRatio = window.devicePixelRatio || 1;
     canvas.width = displayWidth * pixelRatio;
     canvas.height = displayHeight * pixelRatio;
     canvas.style.width = '100%';
@@ -5267,7 +5415,7 @@ class InteractiveSoundApp {
       }
       return value.toFixed(2);
     };
-
+    
     // Build modifiers string
     let modifiers = [];
     
@@ -5970,16 +6118,18 @@ class InteractiveSoundApp {
         } else {
           // Try to parse as number (scale degree)
           const scaleDegree = parseInt(part.value.trim(), 10);
-          if (!isNaN(scaleDegree) && scaleDegree >= 0) {
-            // Map scale degree to note name (0 = root, 1 = second, etc.)
-            const noteIndex = scaleDegree % scaleNotes.length;
-            const octaveOffset = Math.floor(scaleDegree / scaleNotes.length);
+          if (!isNaN(scaleDegree)) {
+            const stepsPerOctave = scaleNotes.length || 1;
+            const octaveOffset = Math.floor(scaleDegree / stepsPerOctave);
+            const noteIndex = ((scaleDegree % stepsPerOctave) + stepsPerOctave) % stepsPerOctave;
             const noteName = scaleNotes[noteIndex];
             
             // Add octave (default to octave 4, adjust based on offset)
             const baseOctave = 4;
             const finalOctave = baseOctave + octaveOffset;
-            noteNames.push(normalizeSpelling(`${noteName}${finalOctave}`, preferFlats));
+            
+            const resolvedNote = normalizeSpelling(`${noteName}${finalOctave}`, preferFlats);
+            noteNames.push(resolvedNote);
           } else {
             // Not a number, preserve as-is
             noteNames.push(part.value);
@@ -6732,17 +6882,26 @@ class InteractiveSoundApp {
     const drumGridSection = document.getElementById('modal-drum-grid-section');
     const drumGridTimesigLabel = document.getElementById('modal-drum-grid-timesig');
     
+    const lastEditorMode = (() => {
+      if (typeof localStorage === 'undefined') return null;
+      try {
+        return localStorage.getItem('drumGridEditorMode');
+      } catch {
+        return null;
+      }
+    })();
+    
     const drumGridState = {
       active: false,
       totalSteps: 0,
       built: false,
-      patternEditorEnabled: false, // Step editor is default
+      patternEditorEnabled: lastEditorMode ? lastEditorMode === 'code' : true,
       updatingFromPattern: false,
       updatingFromGrid: false,
       currentBankRows: null,
       checkboxes: {},
-      numBars: 1, // Number of bars in the grid
-      currentBar: 1, // Currently displayed bar (1-indexed)
+      numBars: 1,
+      currentBar: 1,
       barTokens: []
     };
 
@@ -6751,7 +6910,18 @@ class InteractiveSoundApp {
     let patternSnippetContainer = modal.querySelector('.pattern-snippet-container');
     let patternSnippetListEl = patternSnippetContainer ? patternSnippetContainer.querySelector('.pattern-snippet-list') : null;
     let patternSnippetSearchInput = patternSnippetContainer ? patternSnippetContainer.querySelector('.pattern-snippet-search') : null;
+    const presetsToggle = document.getElementById('modal-presets-toggle');
+    const presetsContent = document.getElementById('modal-presets-content');
+    const drumPresetsContainer = document.getElementById('modal-drum-presets');
+    const tonalPresetsContainer = document.getElementById('modal-tonal-presets');
     const previewButton = document.getElementById('modal-preview-btn');
+
+    const resetPresetsSection = () => {
+      if (presetsToggle && presetsContent) {
+        presetsToggle.setAttribute('aria-expanded', 'false');
+        presetsContent.hidden = true;
+      }
+    };
 
     const updatePreviewButtonState = () => {
       if (!previewButton) return;
@@ -7309,6 +7479,11 @@ class InteractiveSoundApp {
         if (!modal) return;
         // Remember which element we're editing
         this.currentEditingElementId = elementId;
+        // Always default to code editor when opening the modal
+        setPatternEditorEnabled(true);
+        if (patternEditorSelect) {
+          patternEditorSelect.value = 'code';
+        }
         // Update header title
         const headerEl = document.getElementById('modal-element-id');
         if (headerEl) headerEl.textContent = elementId || '';
@@ -7335,6 +7510,8 @@ class InteractiveSoundApp {
         updatePreviewButtonState();
         updateKeyScaleVisibility();
         refreshDrumGridForCurrentState();
+        // Reset presets section state each time the modal opens
+        resetPresetsSection();
         // Show modal
         modal.style.display = 'block';
       } catch (e) {
@@ -7366,7 +7543,7 @@ class InteractiveSoundApp {
         // Toggle: if playing, stop it
         if (isPreviewPlaying) {
           if (soundManager.stopSound) {
-            soundManager.stopSound(previewElementId);
+          soundManager.stopSound(previewElementId);
           }
           // If we started master for preview and there are no other tracks, stop master
           try {
@@ -7640,6 +7817,13 @@ class InteractiveSoundApp {
     const setPatternEditorEnabled = (enabled) => {
       drumGridState.patternEditorEnabled = !!enabled;
       applyPatternEditorState();
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('drumGridEditorMode', drumGridState.patternEditorEnabled ? 'code' : 'step');
+        }
+      } catch {
+        // ignore storage errors
+      }
     };
     
     const isDrumBankValue = (value) => value && DRUM_BANK_VALUES.has(value);
@@ -7683,7 +7867,7 @@ class InteractiveSoundApp {
       drumGridState.built = false;
       ensureDrumGridBuilt(metrics, bankValue);
       if (!drumGridState.barTokens || !drumGridState.barTokens.length) {
-        const currentPattern = getStrudelEditorValue('modal-pattern');
+      const currentPattern = getStrudelEditorValue('modal-pattern');
         const tokens = tokenizePattern(currentPattern);
         initializeBarTokensFromSequence(metrics, tokens || []);
       } else {
@@ -8045,16 +8229,7 @@ class InteractiveSoundApp {
         return;
       }
 
-      // If there's a pattern but it can't be tokenized (not a drum pattern), enable pattern editor
-      if (trimmedPattern && (!tokens || tokens.length === 0)) {
-        console.log('📝 Pattern cannot be tokenized, enabling pattern editor');
-        setPatternEditorEnabled(true);
-        hideDrumGrid();
-        applyPatternEditorState();
-        return;
-      }
-
-      // Show drum grid for drum banks
+      // Show drum grid for drum banks (even if pattern can't be tokenized - user chose step editor)
       console.log('🎹 Showing drum grid for drum bank');
       // Use time signature from modal select if available, otherwise fall back to currentTimeSignature
       const modalTimeSigSelect = document.getElementById('modal-time-signature-select');
@@ -8089,6 +8264,100 @@ class InteractiveSoundApp {
         populateDrumGridFromPattern(modalPatternTextarea.value, metrics);
       });
     }
+
+    const applyPresetPattern = (preset) => {
+      if (!preset) return;
+      const elementId = this.currentEditingElementId;
+      if (elementId) {
+        const titleInput = document.getElementById('modal-title');
+        if (titleInput) {
+          titleInput.value = preset.label;
+        }
+        const modalElementId = document.getElementById('modal-element-id');
+        if (modalElementId) {
+          modalElementId.textContent = getChannelDisplayLabel(elementId);
+        }
+        updateElementTitleDisplay(elementId, preset.label);
+        if (typeof this.saveElementConfig === 'function') {
+          const existingConfig = this.loadElementConfig?.(elementId) || {};
+          const mergedConfig = { ...existingConfig, title: preset.label };
+          this.saveElementConfig(elementId, mergedConfig, true);
+        }
+      }
+
+      const targetBank = typeof preset.bank === 'string' ? preset.bank : '';
+      const resolveNoteMode = () => {
+        if (typeof preset.useNoteNames === 'boolean') {
+          return preset.useNoteNames;
+        }
+        const patternText = preset.pattern || '';
+        return patternText.includes('note(') || patternText.includes('note("');
+      };
+
+      const applyPattern = () => {
+        if (preset.pattern) {
+          const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+          if (keepNotesCheckbox) {
+            keepNotesCheckbox.checked = resolveNoteMode();
+          }
+          setStrudelEditorValue('modal-pattern', preset.pattern.trim());
+          updatePreviewButtonState();
+        }
+        if (targetBank && isDrumBankValue(targetBank)) {
+          setPatternEditorEnabled(false);
+          refreshDrumGridForCurrentState();
+        } else {
+          setPatternEditorEnabled(true);
+          hideDrumGrid();
+          applyPatternEditorState();
+        }
+        if (modalPatternTextarea) {
+          modalPatternTextarea.focus();
+        }
+      };
+
+      const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+      if (keepNotesCheckbox) {
+        keepNotesCheckbox.checked = resolveNoteMode();
+      }
+
+      if (bankSelect) {
+        const normalizedBank = targetBank || '';
+        if (bankSelect.value !== normalizedBank) {
+          bankSelect.value = normalizedBank;
+          bankSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          setTimeout(applyPattern, 60);
+          return;
+        }
+      }
+      applyPattern();
+    };
+
+    resetPresetsSection();
+
+    const renderPresetButtons = (container, presets) => {
+      if (!container || !Array.isArray(presets)) return;
+      container.innerHTML = '';
+      presets.forEach((preset) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'modal-preset-button';
+        button.innerHTML = `<strong>${preset.label}</strong>${preset.description ? `<span>${preset.description}</span>` : ''}`;
+        button.addEventListener('click', () => applyPresetPattern(preset));
+        container.appendChild(button);
+      });
+    };
+
+    if (presetsToggle && presetsContent) {
+      presetsToggle.addEventListener('click', () => {
+        const expanded = presetsToggle.getAttribute('aria-expanded') === 'true';
+        presetsToggle.setAttribute('aria-expanded', (!expanded).toString());
+        presetsContent.hidden = expanded;
+      });
+    }
+
+    renderPresetButtons(drumPresetsContainer, DRUM_PATTERN_PRESETS);
+    renderPresetButtons(tonalPresetsContainer, TONAL_PATTERN_PRESETS);
 
     if (patternEditorSelect) {
       patternEditorSelect.addEventListener('change', (event) => {
@@ -8205,7 +8474,7 @@ class InteractiveSoundApp {
             const nameWithoutExt = fileName.replace(/\.[^/.]+$/, '');
             titleInput.value = nameWithoutExt;
           }
-        } else {
+      } else {
           // Show Pattern Bank when file is cleared
           // Time Signature visibility is controlled by editor state (step vs code editor)
           if (patternBankGroup) {
@@ -8217,8 +8486,8 @@ class InteractiveSoundApp {
     }
     
     // Key/Scale dropdowns - apply to pattern when changed
-    const modalKeySelect = document.getElementById('modal-key-select');
-    const modalScaleSelect = document.getElementById('modal-scale-select');
+      const modalKeySelect = document.getElementById('modal-key-select');
+      const modalScaleSelect = document.getElementById('modal-scale-select');
     const scaleChordSuggestionEls = {
       container: document.getElementById('modal-scale-chord-suggestions'),
       title: document.getElementById('modal-scale-chord-title'),
@@ -8679,6 +8948,53 @@ class InteractiveSoundApp {
       return !inStr && depth === 0;
     };
     
+    // Simple helper to ONLY update .bank() or .s() modifier without touching anything else
+    const updateBankOrSoundModifier = (pattern, bankOrSound, isDrumBank = false) => {
+      if (!pattern || !pattern.trim()) {
+        return pattern; // Don't modify empty patterns
+      }
+      
+      let updated = pattern.trim();
+      
+      if (isDrumBank) {
+        // For drum banks: update/replace .bank() modifier only
+        const bankRegex = /\.\s*bank\s*\(\s*["'][^"']*["']\s*\)/gi;
+        if (bankRegex.test(updated)) {
+          // Replace existing .bank() modifier
+          updated = updated.replace(bankRegex, `.bank("${bankOrSound}")`);
+        } else {
+          // Add .bank() modifier at the end (before any closing parens if pattern is wrapped)
+          // Find the last method call or end of pattern
+          updated = `${updated}.bank("${bankOrSound}")`;
+        }
+      } else {
+        // For synth sounds: update/replace .s() modifier only
+        const soundRegex = /\.\s*(s|sound)\s*\(\s*["'][^"']*["']\s*\)/gi;
+        if (soundRegex.test(updated)) {
+          // Replace existing .s() or .sound() modifier
+          updated = updated.replace(soundRegex, `.s("${bankOrSound}")`);
+        } else {
+          // Add .s() modifier at the end
+          updated = `${updated}.s("${bankOrSound}")`;
+        }
+      }
+      
+      return updated;
+    };
+    
+    const normalizeEditorPattern = (value) => {
+      if (!value || !value.trim()) {
+        return '';
+      }
+      const trimmed = value.trim();
+      const strudelPatternRegex = /(\.\s*(bank|s|sound)\s*\()|(\b(note|n|stack|sound)\s*\()/i;
+      if (strudelPatternRegex.test(trimmed)) {
+        return trimmed;
+      }
+      const converted = drumDisplayToPattern(trimmed);
+      return converted ? converted.trim() : '';
+    };
+    
     // Upsert .scale() and .s() modifiers; when pattern empty, use (silence) as neutral base
     const upsertPatternModifiers = (pattern, nextKey, nextScale, nextBank) => {
       const original = pattern || '';
@@ -8813,7 +9129,28 @@ class InteractiveSoundApp {
       const hasLetterNotes = /\b(note|n)\s*\(\s*["'][^"']*[a-g][#b]?\s/.test(patternValue);
       const hasExplicitNotes = hasNoteNames || hasChordNames || hasLetterNotes || hasChordModifier;
       const isNumericPattern = hasNoteFunction && !hasExplicitNotes && !hasChordModifier;
+
+      if (hasExplicitNotes && !isNumericPattern) {
+        console.log('ℹ️ Pattern uses explicit note names – skipping key/scale rewrite');
+        return;
+      }
       
+      if (hasNoteFunction && containsNumericNotePattern(patternValue) && !hasExplicitNotes && !hasChordModifier) {
+        const scaleModifier = buildScaleModifier(keyToPass, scaleToPass);
+        if (!scaleModifier) {
+          console.log('ℹ️ Numeric pattern: no scale selected, skipping rewrite');
+          return;
+        }
+        let upserted = insertScaleModifier(patternValue, scaleModifier);
+        // Remove any existing .scale() before inserting
+        upserted = upserted.replace(/\.\s*scale\s*\([^)]*\)/gi, '');
+        upserted = insertScaleModifier(upserted, scaleModifier);
+        setStrudelEditorValue('modal-pattern', upserted);
+        syncLastSemitonePattern(upserted, true);
+        console.log(`ℹ️ Numeric pattern preserved; appended scale modifier ${scaleModifier}`);
+        return;
+      }
+
       if (useNoteNames && hasNoteNames && !hasChordModifier) {
         const numericPattern = soundManager.convertNoteNamesToSemitones(patternValue);
         const conversionKey = keyToPass || 'C';
@@ -8849,7 +9186,7 @@ class InteractiveSoundApp {
       if (!hasChordModifier && isNumericPattern) {
         // Apply key/scale to pattern immediately
         console.log(`🎼 applyKeyScaleToPattern: keyValue="${keyValue}", scaleValue="${scaleValue}", pattern="${patternValue.substring(0, 50)}..."`);
-
+        
         // Convert pattern to new scale - preserve existing notes, convert them to new scale
         let convertedPattern = patternValue;
         if (scaleToPass && (keyToPass || scaleToPass)) {
@@ -8979,7 +9316,7 @@ class InteractiveSoundApp {
             lastRemovedScaleModifier = latestScale;
           }
         }
-
+        
         if (patternWithScale) {
           if (!useNoteNames && containsNumericNotePattern(patternWithScale)) {
             patternWithScale = normalizeNumericPatternForScale(patternWithScale, keyToPass, scaleToPass);
@@ -9015,9 +9352,10 @@ class InteractiveSoundApp {
           const fallbackScale = mappingScale || 'chromatic';
           const numericPattern = soundManager.convertNoteNamesToScaleDegrees(patternValue, fallbackKey, fallbackScale);
           const normalizedPattern = normalizeNumericPatternForScale(numericPattern || patternValue, keyToPass, scaleToPass);
-          const upserted = upsertPatternModifiers(normalizedPattern || patternValue, keyToPass, scaleToPass, null);
-          if (isLikelyValidPattern(upserted)) {
-            setStrudelEditorValue('modal-pattern', upserted);
+            const cleanedPattern = (normalizedPattern || patternValue).replace(/\.\s*scale\s*\([^)]*\)/gi, '');
+            const upserted = insertScaleModifier(cleanedPattern, buildScaleModifier(keyToPass, scaleToPass));
+            if (isLikelyValidPattern(upserted)) {
+              setStrudelEditorValue('modal-pattern', upserted);
             if (keyToPass) { soundManager.currentKey = keyToPass; }
             if (scaleToPass) { soundManager.currentScale = scaleToPass; }
             const ta = document.getElementById('modal-pattern');
@@ -9075,6 +9413,8 @@ class InteractiveSoundApp {
     let semitoneSnapshotLocked = false;
     let lastCanonicalNumericPattern = null;
     let lastNoteNamesSnapshot = null;
+    let lastNoteToNumericSnapshot = null;
+    let lastNoteToNumericConverted = null;
 
     const buildScaleModifier = (keyValue, scaleValue) => {
       const hasKey = keyValue && keyValue.trim() !== '';
@@ -9085,6 +9425,18 @@ class InteractiveSoundApp {
       const keyPart = hasKey ? keyValue.trim().toLowerCase() : 'c';
       const scalePart = hasScale ? scaleValue.trim() : 'major';
       return `.scale('${keyPart}:${scalePart}')`;
+    };
+
+    const getFirstNoteNameFromPattern = (pattern) => {
+      if (!pattern || typeof pattern !== 'string') return null;
+      const match = pattern.match(/\bnote\s*\(\s*["']([^"']+)["']/i);
+      if (!match || !match[1]) return null;
+      const content = match[1];
+      const tokenMatch = content.match(/([a-gA-G])([#b]?)/);
+      if (!tokenMatch) return null;
+      const letter = tokenMatch[1].toUpperCase();
+      const accidental = tokenMatch[2] ? tokenMatch[2] : '';
+      return `${letter}${accidental}`;
     };
 
     const syncLastSemitonePattern = (pattern, force = false) => {
@@ -9186,7 +9538,7 @@ class InteractiveSoundApp {
         // Convert semitones to note names
         if (hasNumericNotes && !hasNoteNames) {
           if (!semitoneSnapshotLocked) {
-            lastSemitonePattern = pattern;
+          lastSemitonePattern = pattern;
           }
           semitoneSnapshotLocked = true;
           // First, try to extract scale from pattern's .scale() modifier
@@ -9232,17 +9584,27 @@ class InteractiveSoundApp {
             keyValue = patternScale.key;
             scaleValue = patternScale.scale;
           } else {
-            const modalKeySelect = document.getElementById('modal-key-select');
-            const modalScaleSelect = document.getElementById('modal-scale-select');
-            keyValue = modalKeySelect ? (modalKeySelect.value || 'C') : 'C';
-            scaleValue = modalScaleSelect ? (modalScaleSelect.value || 'chromatic') : 'chromatic';
+            const firstNote = getFirstNoteNameFromPattern(pattern);
+            if (firstNote) {
+              keyValue = firstNote;
+              scaleValue = 'chromatic';
+            } else {
+              const modalKeySelect = document.getElementById('modal-key-select');
+              const modalScaleSelect = document.getElementById('modal-scale-select');
+              keyValue = modalKeySelect ? (modalKeySelect.value || 'C') : 'C';
+              scaleValue = modalScaleSelect ? (modalScaleSelect.value || 'chromatic') : 'chromatic';
+            }
           }
-          const converted = soundManager.convertNoteNamesToScaleDegrees(pattern, keyValue || 'C', scaleValue || 'chromatic');
+          let converted = soundManager.convertNoteNamesToScaleDegrees(pattern, keyValue || 'C', scaleValue || 'chromatic');
           if (converted && converted !== pattern) {
+            const inferredScale = buildScaleModifier(keyValue || 'C', scaleValue || 'chromatic');
+            if (inferredScale) {
+              converted = insertScaleModifier(converted, inferredScale);
+            }
             console.log(`🔄 Converted note names to scale degrees: ${converted.substring(0, 80)}...`);
             syncLastSemitonePattern(converted, true);
             lastCanonicalNumericPattern = converted;
-            return converted;
+          return converted;
           }
           return pattern;
         }
@@ -9260,7 +9622,10 @@ class InteractiveSoundApp {
         
         // Convert pattern format based on toggle state
         let convertedPattern;
-        if (!useNoteNames && lastNoteNamesSnapshot && patternValue === lastNoteNamesSnapshot && lastCanonicalNumericPattern) {
+        if (useNoteNames && lastNoteToNumericSnapshot && lastNoteToNumericConverted && patternValue === lastNoteToNumericConverted) {
+          convertedPattern = lastNoteToNumericSnapshot;
+          console.log('🔁 Restoring original note-name pattern from snapshot');
+        } else if (!useNoteNames && lastNoteNamesSnapshot && patternValue === lastNoteNamesSnapshot && lastCanonicalNumericPattern) {
           convertedPattern = lastCanonicalNumericPattern;
           console.log('🔁 Restoring canonical numeric pattern from snapshot');
         } else {
@@ -9304,15 +9669,26 @@ class InteractiveSoundApp {
             lastCanonicalNumericPattern = patternValue;
             lastNoteNamesSnapshot = convertedPattern;
             semitoneSnapshotLocked = true;
+            lastNoteToNumericSnapshot = null;
+            lastNoteToNumericConverted = null;
           } else {
             lastNoteNamesSnapshot = null;
             semitoneSnapshotLocked = false;
+            if (patternValue && containsNoteCall(patternValue)) {
+              lastNoteToNumericSnapshot = patternValue;
+              lastNoteToNumericConverted = convertedPattern;
+            } else {
+              lastNoteToNumericSnapshot = null;
+              lastNoteToNumericConverted = null;
+            }
             syncLastSemitonePattern(convertedPattern, true);
           }
           console.log(`🔄 Converted pattern ${useNoteNames ? 'to note names' : 'to semitones'}: ${convertedPattern.substring(0, 100)}...`);
         } else if (!useNoteNames) {
           lastNoteNamesSnapshot = null;
           semitoneSnapshotLocked = false;
+          lastNoteToNumericSnapshot = null;
+          lastNoteToNumericConverted = null;
           syncLastSemitonePattern(patternValue, true);
         }
         
@@ -9383,7 +9759,7 @@ class InteractiveSoundApp {
           }
           if (balanced && depth === 0) {
             unwrapped = unwrapped.slice(1, -1).trim();
-          } else {
+      } else {
             break;
           }
         }
@@ -9532,7 +9908,10 @@ class InteractiveSoundApp {
       bankSelect.addEventListener('change', async (e) => {
         const bankValue = e.target.value;
         console.log('📦 Bank select changed to:', bankValue);
-        ensurePatternBankOptions(bankValue);
+        // Don't rebuild options on change - they're already there, just preserve selection
+        if (bankSelect.value !== bankValue) {
+          bankSelect.value = bankValue;
+        }
         const elementId = this.currentEditingElementId;
         
         // If bank is selected, clear file input and show Pattern Bank
@@ -9609,26 +9988,24 @@ class InteractiveSoundApp {
           });
           console.log(`📝 Saved title "Default" for ${elementId}`);
           
-          // Remove any existing .bank() modifier and create pattern without .bank()
+          // Remove any existing .bank() modifier ONLY, preserve everything else
           let currentPattern = getStrudelEditorValue('modal-pattern').trim();
           // Convert display to Strudel format for processing
-          let strudelPattern = drumDisplayToPattern(currentPattern);
+          let strudelPattern = normalizeEditorPattern(currentPattern);
           
-          if (strudelPattern) {
-            // Remove any existing .bank() modifier
-            strudelPattern = strudelPattern.replace(/\.bank\(["'][^"']*["']\)/g, '');
+          if (strudelPattern && strudelPattern.trim() !== '') {
+            // Remove only .bank() modifier, preserve everything else
+            strudelPattern = strudelPattern.replace(/\.\s*bank\s*\(\s*["'][^"']*["']\s*\)/gi, '');
+            // Clean up any double dots
+            strudelPattern = strudelPattern.replace(/\.+/g, '.').replace(/\.\s*\./g, '.').trim();
             strudelPattern = strudelPattern.replace(/\.+$/, '').trim();
             // Keep in Strudel format (don't convert to drum display)
             setStrudelEditorValue('modal-pattern', strudelPattern);
             patternTextarea.placeholder = '';
-            console.log(`📝 Removed .bank() modifier for Default`);
+            console.log(`📝 Removed .bank() modifier only, preserving pattern: ${strudelPattern.substring(0, 80)}...`);
           } else {
-            // If no pattern, create a basic one without .bank() using s() format
-            strudelPattern = `s("bd")`;
-            // Keep in Strudel format
-            setStrudelEditorValue('modal-pattern', strudelPattern);
+            // If no pattern, don't modify it
             patternTextarea.placeholder = '';
-            console.log(`📝 Created default pattern without .bank()`);
           }
         } else {
           // Check if this is a synth sound (not a drum bank)
@@ -9676,47 +10053,30 @@ class InteractiveSoundApp {
             });
             console.log(`📝 Saved title "${displayName}" for ${elementId}`);
             
-            // Update pattern to use synth waveform
+            // Update pattern to use synth waveform - add/replace .s() modifier
             let currentPattern = getStrudelEditorValue('modal-pattern').trim();
             // Convert display to Strudel format for processing
-            let strudelPattern = drumDisplayToPattern(currentPattern);
+            let strudelPattern = normalizeEditorPattern(currentPattern);
             
-            // Remove any existing .bank(), .s(), or .sound() modifiers
-            strudelPattern = strudelPattern.replace(/\.bank\(["'][^"']*["']\)/g, '');
-            strudelPattern = strudelPattern.replace(/\.s\(["'][^"']*["']\)/g, '');
-            strudelPattern = strudelPattern.replace(/\.sound\(["'][^"']*["']\)/g, '');
-            strudelPattern = strudelPattern.replace(/\.+$/, '').trim();
-            
-            // Update pattern to include synth sound
+            // Always add/replace the .s() modifier, even if pattern is empty (create minimal pattern)
             if (strudelPattern && strudelPattern.trim() !== '') {
-              console.log(`🎹 BANK CHANGE: Processing existing pattern: ${strudelPattern}`);
-              
-              // Preserve existing notes as-is; just upsert .s("..."), preserving .scale() if present
-              strudelPattern = upsertPatternModifiers(strudelPattern, null, null, canonicalBankValue);
-              console.log(`🎹 BANK CHANGE: Upserted .s("${canonicalBankValue}") on existing pattern`);
+              // Pattern exists - update it
+              console.log(`🎹 BANK CHANGE: Updating .s() modifier only, preserving pattern: ${strudelPattern.substring(0, 80)}...`);
+              strudelPattern = updateBankOrSoundModifier(strudelPattern, canonicalBankValue, false);
+              console.log(`🎹 BANK CHANGE: Updated pattern: ${strudelPattern.substring(0, 80)}...`);
             } else {
-              // If editor is empty, upsert .s("...") on (silence) so selection is reflected
-              const updated = upsertPatternModifiers('', null, null, canonicalBankValue);
-              if (isLikelyValidPattern(updated)) {
-                strudelPattern = updated;
-                console.log(`🎹 BANK CHANGE: Inserted synth on (silence): ${strudelPattern}`);
-                } else {
-                console.warn('⚠️ Generated synth pattern failed quick syntax check; leaving editor blank');
-                strudelPattern = '';
-              }
+              // No pattern - create minimal pattern with .s()
+              strudelPattern = `note("c3").s("${canonicalBankValue}")`;
+              console.log(`🎹 BANK CHANGE: Created minimal pattern with .s("${canonicalBankValue}")`);
             }
-            
-            if (strudelPattern && strudelPattern.trim() !== '') {
-            console.log(`🎹 BANK CHANGE: Setting textarea to: ${strudelPattern}`);
-            // Keep in Strudel format (don't convert to drum display)
             setStrudelEditorValue('modal-pattern', strudelPattern);
-            // Clear placeholder when pattern is set
             patternTextarea.placeholder = '';
-            } else {
-              // Keep editor blank and show helpful placeholder
-              if (patternTextarea) {
-                patternTextarea.placeholder = 'Add a pattern, e.g., note("c3 e3 g3").s("piano") or n("0 2 4").scale("c:major")';
-              }
+            
+            // Set toggle switch to "note names" mode for synths/waveforms
+            const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+            if (keepNotesCheckbox) {
+              keepNotesCheckbox.checked = true;
+              console.log(`🎹 Set note names toggle to ON for synth/waveform`);
             }
             
             // Update checkbox visibility after pattern update
@@ -9842,194 +10202,74 @@ class InteractiveSoundApp {
               
               // Always update pattern to use the new bank or synth
               let currentPattern = getStrudelEditorValue('modal-pattern').trim();
+              console.log(`📝 Bank change: currentPattern="${currentPattern.substring(0, 100)}..."`);
+              let strudelPattern = normalizeEditorPattern(currentPattern);
+              console.log(`📝 Bank change: normalizedPattern="${strudelPattern.substring(0, 100)}..."`);
               
-              // Check if this is a synth (sawtooth, square, triangle, sine, etc.)
-              const isSynth = ['sawtooth', 'square', 'triangle', 'sine'].includes(bankValue);
+              // Determine if this is a drum bank or synth/waveform
+              const isDrumBank = DRUM_BANK_VALUES.has(bankValue);
+              const isSynthOrWaveform = OSCILLATOR_SYNTHS.includes(bankValue.toLowerCase()) || 
+                                        SAMPLE_SYNTHS.includes(bankValue.toLowerCase()) ||
+                                        ['sawtooth', 'square', 'triangle', 'sine'].includes(bankValue.toLowerCase());
               
-              if (isSynth) {
-                // Handle synths - use .synth() or synth() function
-                console.log(`📝 Handling synth: ${bankValue}`);
-                
-                // Convert display to Strudel format for processing
-                let currentDisplay = getStrudelEditorValue('modal-pattern').trim();
-                let strudelPattern = drumDisplayToPattern(currentDisplay);
-                
-                // Remove any existing .bank() or .synth() modifiers
-                strudelPattern = strudelPattern.replace(/\.bank\(["'][^"']*["']\)/g, '');
-                strudelPattern = strudelPattern.replace(/\.synth\(["'][^"']*["']\)/g, '');
-                strudelPattern = strudelPattern.replace(/\.s\(["'][^"']*["']\)/g, '');
-                strudelPattern = strudelPattern.replace(/\.+$/, '').trim();
-                
+              console.log(`📝 Bank change: isDrumBank=${isDrumBank}, isSynthOrWaveform=${isSynthOrWaveform}, bankValue="${bankValue}"`);
+              
+              // Always add/replace the modifier, even if pattern is empty (create minimal pattern)
+              if (isDrumBank) {
+                // For drum banks: add/replace .bank() modifier
                 if (strudelPattern && strudelPattern.trim() !== '') {
-                  // Check if current pattern is a drum pattern (sound() or s() or has .bank())
-                  const isDrumPattern = strudelPattern.includes('sound(') || strudelPattern.includes('s(') || strudelPattern.match(/\.bank\(["'][^"']+["']\)/);
-                  
-                  if (isDrumPattern) {
-                    // Converting from drum to synth - replace entirely with synth pattern
-                    strudelPattern = `note("c3").s("${bankValue}")`;
-                    console.log(`📝 Converted from drum to synth pattern with waveform: ${bankValue}`);
-                  }
-                  // If pattern uses note(), add .s() modifier  
-                  else if (containsNoteCall(strudelPattern)) {
-                    // Remove any existing .s() or .synth() modifiers first
-                    strudelPattern = strudelPattern.replace(/\.s\(["'][^"']*["']\)/g, '');
-                    strudelPattern = strudelPattern.replace(/\.synth\(["'][^"']*["']\)/g, '');
-                    strudelPattern = strudelPattern.replace(/\.+$/, '').trim();
-                    strudelPattern = `${strudelPattern}.s("${bankValue}")`;
-                    console.log(`📝 Added .s("${bankValue}") to note() pattern`);
-                  }
-                  // If pattern doesn't use sound() or note(), create a note() pattern with synth
-                  else {
-                    strudelPattern = `note("c3").s("${bankValue}")`;
-                    console.log(`📝 Created note() pattern with synth: ${bankValue}`);
-                  }
-                  } else {
-                  // If no pattern, create a basic synth pattern
-                  strudelPattern = `note("c3").s("${bankValue}")`;
-                  console.log(`📝 Created default synth pattern: ${bankValue}`);
-                }
-            // Keep pattern in Strudel format (don't convert to drum display for synth patterns)
-            setStrudelEditorValue('modal-pattern', strudelPattern);
-            patternTextarea.placeholder = '';
-            
-            // Update checkbox visibility after pattern update
-            setTimeout(() => {
-              updateNoteConversionCheckboxVisibility();
-            }, 50);
-                console.log(`   Pattern: ${strudelPattern.substring(0, 80)}...`);
-              }
-              else if (bankValue && !bankValue.startsWith('github:')) {
-                // Predefined drum banks need .bank() modifier
-                // Built-in banks (TR-808, TR-909) don't need to be loaded - they're embedded in Strudel
-                // Only check bankLoaded for non-built-in banks
-                if (isBuiltInBank || bankLoaded) {
-                  // Built-in banks are always available, or bank loaded successfully - add .bank() modifier
-                  if (isBuiltInBank) {
-                    console.log(`📝 Using built-in bank: ${bankValue} (no load required)`);
-                  }
-                  let currentDisplay = patternTextarea.value.trim();
-                  
-                  // Check if the current pattern is in display format (contains parentheses with descriptions)
-                  const isDisplayFormat = currentDisplay.includes('(') && currentDisplay.includes(')') && 
-                                         (currentDisplay.match(/\([^)]+\)/g) || []).some(match => 
-                                           match.includes('drum') || match.includes('Kick') || match.includes('hi-hat')
-                                         );
-                  
-                  // Check if this is just an auto-generated default pattern (not user-edited)
-                  const isAutoDefault = currentDisplay && (
-                    currentDisplay.match(/^s\(["']bd["']\)\.bank\(["'][^"']+["']\)$/) ||
-                    currentDisplay.match(/^note\(["']c3["']\)\.s\(["'][^"']+["']\)$/)
-                  );
-                  
-                  let strudelPattern;
-                  
-                  // Strudel bank names are case-sensitive: use "RolandTR808", "RolandTR909", etc.
-                  // Keep them as-is, don't convert to lowercase
-                  const strudelBankName = bankValue;
-                  
-                  // If pattern is empty or auto-generated default, DO NOT create a default drum pattern
-                  // Leave editor blank and let the drum grid drive pattern generation
-                  if (!currentDisplay || currentDisplay === '' || isAutoDefault) {
-                    strudelPattern = '';
-                    console.log(`📝 Skipped default drum pattern for bank: ${strudelBankName}`);
-                  } else {
-                    // Convert display format to Strudel format if needed
-                    if (isDisplayFormat) {
-                      strudelPattern = drumDisplayToPattern(currentDisplay);
-                    } else {
-                      // Already in Strudel format (might have modifiers)
-                      strudelPattern = currentDisplay;
-                    }
-                    
-                    // Check if current pattern is a synth pattern (note() or has .s() or .synth())
-                    const isSynthPattern = containsNoteCall(strudelPattern) || strudelPattern.includes('n(') || 
-                                         strudelPattern.includes('.s(') || strudelPattern.includes('.synth(');
-                    
-                    if (isSynthPattern) {
-                      // Converting from synth to drum - replace entirely with drum pattern
-                      strudelPattern = `s("bd").bank("${strudelBankName}")`;
-                      console.log(`📝 Converted from synth to drum pattern with bank: ${strudelBankName} (from ${bankValue})`);
-                    } else {
-                      // Already a drum pattern - clean it up and add bank
-                      // Remove any existing .bank() modifier
-                      strudelPattern = strudelPattern.replace(/\.bank\(["'][^"']*["']\)/g, '');
-                      strudelPattern = strudelPattern.replace(/\.synth\(["'][^"']*["']\)/g, '');
-                      strudelPattern = strudelPattern.replace(/\.s\(["'][^"']*["']\)/g, '');
-                      
-                      // Remove any trailing dots or whitespace
-                      strudelPattern = strudelPattern.replace(/\.+$/, '').trim();
-                      
-                      // Extract just the sound() or s() part (before any modifiers like .gain())
-                      // Match s("...") or sound("...")
-                      const soundMatch = strudelPattern.match(/(s|sound)\(["'][^"']+["']\)/);
-                      if (soundMatch) {
-                        // Use just the sound part with bank (using lowercase Strudel bank name)
-                        strudelPattern = `${soundMatch[0]}.bank("${strudelBankName}")`;
-                      } else {
-                        // Fallback: create default
-                        strudelPattern = `s("bd").bank("${strudelBankName}")`;
-                      }
-                      console.log(`📝 Updated pattern to use bank: ${strudelBankName} (from ${bankValue})`);
-                    }
-                  }
-                  
-                  // Keep pattern in Strudel format (don't convert to drum display)
-                  setStrudelEditorValue('modal-pattern', strudelPattern);
-                  if (!strudelPattern) {
-                    // Show helpful placeholder when blank
-                    patternTextarea.placeholder = 'Use the drum grid to build a pattern, or type s("bd sd rim ...").bank("Bank")';
-                  } else {
-                  patternTextarea.placeholder = '';
-                  console.log(`   Pattern: ${strudelPattern.substring(0, 80)}...`);
-                  }
+                  // Pattern exists - update it
+                  const beforeUpdate = strudelPattern;
+                  strudelPattern = updateBankOrSoundModifier(strudelPattern, bankValue, true);
+                  console.log(`📝 Updated .bank("${bankValue}") modifier`);
+                  console.log(`   Before: ${beforeUpdate.substring(0, 80)}...`);
+                  console.log(`   After: ${strudelPattern.substring(0, 80)}...`);
                 } else {
-                  // Bank didn't load - don't use .bank(), use default samples instead
-                  console.warn(`⚠️ Bank "${bankValue}" not loaded - using default samples (no .bank() modifier)`);
-                  if (statusText) {
-                    statusText.textContent = `⚠️ Bank "${bankValue}" not available - using default samples`;
-                  }
-                  
-                  let currentDisplay = patternTextarea.value.trim();
-                  let strudelPattern = drumDisplayToPattern(currentDisplay);
-                  
-                  if (strudelPattern) {
-                    // Remove any existing .bank() or .synth() modifiers
-                    strudelPattern = strudelPattern.replace(/\.bank\(["'][^"']*["']\)/g, '');
-                    strudelPattern = strudelPattern.replace(/\.synth\(["']*["']\)/g, '');
-                    strudelPattern = strudelPattern.replace(/\.+$/, '').trim();
-                  } else {
-                    // Create basic pattern without .bank()
-                    strudelPattern = `sound("bd hh")`;
-                  }
-                  // Keep in Strudel format (don't convert to drum display)
-                  setStrudelEditorValue('modal-pattern', strudelPattern);
-                  patternTextarea.placeholder = '';
-                  console.log(`📝 Updated pattern to use default samples (bank unavailable)`);
-                  console.log(`   Pattern: ${strudelPattern.substring(0, 80)}...`);
+                  // No pattern - create minimal pattern with .bank()
+                  strudelPattern = `s("bd").bank("${bankValue}")`;
+                  console.log(`📝 Created minimal pattern with .bank("${bankValue}")`);
                 }
-              } else if (bankValue && bankValue.startsWith('github:')) {
-                // GitHub banks might not need .bank() - they load as default samples
-                // But if pattern has .bank() or .synth(), remove them since GitHub banks are default
-                let currentDisplay = patternTextarea.value.trim();
-                let strudelPattern = drumDisplayToPattern(currentDisplay);
+                setStrudelEditorValue('modal-pattern', strudelPattern);
+                patternTextarea.placeholder = '';
+              } else if (isSynthOrWaveform) {
+                // For synths/waveforms: add/replace .s() modifier
+                const canonicalBankValue = normalizeSynthBankName(bankValue);
+                if (strudelPattern && strudelPattern.trim() !== '') {
+                  // Pattern exists - update it
+                  const beforeUpdate = strudelPattern;
+                  strudelPattern = updateBankOrSoundModifier(strudelPattern, canonicalBankValue, false);
+                  console.log(`📝 Updated .s("${canonicalBankValue}") modifier`);
+                  console.log(`   Before: ${beforeUpdate.substring(0, 80)}...`);
+                  console.log(`   After: ${strudelPattern.substring(0, 80)}...`);
+                } else {
+                  // No pattern - create minimal pattern with .s()
+                  strudelPattern = `note("c3").s("${canonicalBankValue}")`;
+                  console.log(`📝 Created minimal pattern with .s("${canonicalBankValue}")`);
+                }
+                setStrudelEditorValue('modal-pattern', strudelPattern);
+                patternTextarea.placeholder = '';
                 
-                if (strudelPattern) {
-                  strudelPattern = strudelPattern.replace(/\.bank\(["'][^"']*["']\)/g, '');
-                  strudelPattern = strudelPattern.replace(/\.synth\(["'][^"']*["']\)/g, '');
-                  strudelPattern = strudelPattern.replace(/\.+$/, '').trim();
-                  // Keep in Strudel format (don't convert to drum display)
-                  setStrudelEditorValue('modal-pattern', strudelPattern);
-                  patternTextarea.placeholder = '';
-                  console.log(`📝 Updated pattern for GitHub bank (removed .bank()/.synth() if present)`);
-                } else {
-                  // If no pattern and GitHub bank, create a basic one without .bank()
-                  strudelPattern = `s("bd")`;
-                  // Keep in Strudel format
-                  setStrudelEditorValue('modal-pattern', strudelPattern);
-                  patternTextarea.placeholder = '';
-                  console.log(`📝 Created default pattern for GitHub bank`);
+                // Set toggle switch to "note names" mode for synths/waveforms
+                const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
+                if (keepNotesCheckbox) {
+                  keepNotesCheckbox.checked = true;
+                  console.log(`📝 Set note names toggle to ON for synth/waveform`);
+                }
+              } else {
+                // Not a drum bank or synth - just show placeholder
+                if (isDrumBank) {
+                  patternTextarea.placeholder = 'Use the drum grid to build a pattern, or type s("bd sd rim ...").bank("Bank")';
+                } else if (isSynthOrWaveform) {
+                  patternTextarea.placeholder = 'Add a pattern, e.g., note("c3 e3 g3").s("sawtooth")';
                 }
               }
+              
+              console.log(`📝 Final pattern in editor: ${getStrudelEditorValue('modal-pattern').substring(0, 100)}...`);
+              
+              // Update checkbox visibility after pattern update
+              setTimeout(() => {
+                updateNoteConversionCheckboxVisibility();
+              }, 50);
             } catch (error) {
               console.error('Error loading bank:', error);
             }
@@ -10047,7 +10287,7 @@ class InteractiveSoundApp {
               match.includes('drum') || match.includes('Kick') || match.includes('hi-hat')
             ))) {
           // Pattern is in display format - convert it
-          finalPattern = drumDisplayToPattern(displayPattern);
+          finalPattern = normalizeEditorPattern(displayPattern);
         } else {
           // Pattern is already in Strudel format or empty
           finalPattern = displayPattern;
@@ -10119,18 +10359,21 @@ class InteractiveSoundApp {
           console.log(`📦 Pre-evaluated pattern for ${elementId} (silent, ready for manual trigger)`);
         }
 
-        // When switching to a drum bank, disable pattern editor to show drum grid
+        // When switching to a drum bank, only show drum grid if user already opted into it (e.g., via presets)
         const isDrum = bankValue && DRUM_BANK_VALUES.has(bankValue);
         console.log('📦 Bank change: isDrum=', isDrum, 'bankValue=', bankValue);
         if (isDrum) {
-          console.log('📦 Switching to drum bank, using step editor');
-          setPatternEditorEnabled(false);
-          // Force rebuild of drum grid with new bank instruments
-          drumGridState.built = false;
-          // Show drum grid immediately - no save required
-          setTimeout(() => {
+          console.log('📦 Drum bank selected – preserving current editor mode');
+          if (!drumGridState.patternEditorEnabled) {
+            // User is already in step mode (e.g., from a preset/demo) – rebuild grid
+            drumGridState.built = false;
+            setTimeout(() => {
+              refreshDrumGridForCurrentState();
+            }, 0);
+          } else {
+            // Stay in code editor and just refresh UI state
             refreshDrumGridForCurrentState();
-          }, 0);
+          }
         } else {
           console.log('📦 Not a drum bank, using code editor');
           setPatternEditorEnabled(true);
@@ -10175,7 +10418,7 @@ class InteractiveSoundApp {
           pattern = displayPattern;
         } else {
           // Convert from drum display format
-          pattern = drumDisplayToPattern(displayPattern);
+          pattern = normalizeEditorPattern(displayPattern);
         }
 
         // Preserve the format as written: if pattern uses note names, keep note names; if semitones, keep semitones
@@ -10479,7 +10722,7 @@ class InteractiveSoundApp {
         </div>
         
         <div class="element-action-buttons">
-          <button class="config-button">Configure Sound</button>
+        <button class="config-button">Configure Sound</button>
           <div class="history-button-row">
             <button class="history-button" type="button" data-history-target="channel">Load</button>
             <button class="history-button history-button--primary" type="button" data-history-save="channel">Save</button>

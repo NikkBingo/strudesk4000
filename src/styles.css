@@ -1978,6 +1978,88 @@ header h1 {
   font-size: 0.85rem;
 }
 
+.modal-presets {
+  margin-top: 16px;
+  border: 1px solid rgba(102, 126, 234, 0.25);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
+.modal-presets-toggle {
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: #4c51bf;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.modal-presets-toggle-icon {
+  transition: transform 0.2s ease;
+}
+
+.modal-presets-toggle[aria-expanded="true"] .modal-presets-toggle-icon {
+  transform: rotate(180deg);
+}
+
+.modal-presets-content {
+  border-top: 1px solid rgba(102, 126, 234, 0.15);
+  padding: 12px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-presets-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-presets-heading {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #4c51bf;
+}
+
+.modal-presets-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.modal-preset-button {
+  flex: 1 1 160px;
+  min-width: 140px;
+  border-radius: 8px;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  background: rgba(102, 126, 234, 0.08);
+  color: #1f2937;
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.85rem;
+}
+
+.modal-preset-button:hover {
+  border-color: rgba(102, 126, 234, 0.6);
+  background: rgba(102, 126, 234, 0.12);
+  transform: translateY(-1px);
+}
+
+.modal-preset-button span {
+  display: block;
+  font-size: 0.75rem;
+  color: #475569;
+  margin-top: 4px;
+}
+
 .pattern-label-row {
   display: flex;
   align-items: center;
