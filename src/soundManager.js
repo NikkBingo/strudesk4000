@@ -805,6 +805,20 @@ class SoundManager {
             if (soundManagerInstance && soundManagerInstance._routingBypass === true) {
               return this.__originalConnect.call(this, destination, outputIndex, inputIndex);
             }
+
+            // If either the source or destination belongs to a different AudioContext than our shared one,
+            // skip the interception completely and allow the native connection. This avoids cross-context errors
+            // (e.g., Strudel's room() reverb uses its own Offline/secondary contexts).
+            const sourceContext = this.context;
+            const destinationContext = destination?.context;
+            const isSourceOurContext = sourceContext && sourceContext === audioContextInstance;
+            const isDestinationOurContext = destinationContext && destinationContext === audioContextInstance;
+            const destinationIsReal = destination === realDestination || destination === audioContextInstance.destination;
+            const destinationHasNoContext = destination && !destinationContext && destinationIsReal;
+
+            if (!isSourceOurContext || (!(isDestinationOurContext || destinationHasNoContext))) {
+              return this.__originalConnect.call(this, destination, outputIndex, inputIndex);
+            }
             
             // CRITICAL DEBUG: Log ALL connection attempts when master is active
             // This helps us see if Strudel is creating nodes and connecting them
@@ -6688,6 +6702,14 @@ class SoundManager {
             }
             console.log(`  ✅ Removed ${removed} extra closing paren(s)`);
           }
+        }
+      }
+
+      if (this.masterPattern && window.__patternHistory?.saveMasterVersion) {
+        try {
+          window.__patternHistory.saveMasterVersion(this.masterPattern);
+        } catch (historyError) {
+          console.warn('⚠️ Unable to record master history entry:', historyError);
         }
       }
       

@@ -180,6 +180,295 @@ const DRUM_BANK_INSTRUMENTS = {
   ]
 };
 
+let interactiveSoundAppInstance = null;
+
+const CHANNEL_HISTORY_LIMIT = 25;
+const MASTER_HISTORY_LIMIT = 25;
+const CHANNEL_HISTORY_PREFIX = 'strudel_channel_history:';
+const MASTER_HISTORY_KEY = 'strudel_master_history';
+
+const safeStorage = {
+  get(key) {
+    try {
+      return window.localStorage.getItem(key);
+    } catch (error) {
+      console.warn('Pattern history storage get failed:', error);
+      return null;
+    }
+  },
+  set(key, value) {
+    try {
+      window.localStorage.setItem(key, value);
+    } catch (error) {
+      console.warn('Pattern history storage set failed:', error);
+    }
+  }
+};
+
+const patternHistoryStore = (() => {
+  const lastChannelSnapshots = new Map();
+  let lastMasterSnapshot = null;
+
+  const parseHistory = (raw) => {
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writeHistory = (key, entries) => {
+    safeStorage.set(key, JSON.stringify(entries));
+  };
+
+  const saveChannelVersion = (elementId, pattern) => {
+    const trimmed = (pattern || '').trim();
+    if (!elementId || !trimmed) return;
+    if (lastChannelSnapshots.get(elementId) === trimmed) return;
+
+    const storageKey = `${CHANNEL_HISTORY_PREFIX}${elementId}`;
+    let history = parseHistory(safeStorage.get(storageKey));
+    if (history.length && history[0].pattern === trimmed) {
+      lastChannelSnapshots.set(elementId, trimmed);
+      return;
+    }
+
+    const entry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      pattern: trimmed,
+      createdAt: Date.now()
+    };
+    history.unshift(entry);
+    if (history.length > CHANNEL_HISTORY_LIMIT) {
+      history = history.slice(0, CHANNEL_HISTORY_LIMIT);
+    }
+    writeHistory(storageKey, history);
+    lastChannelSnapshots.set(elementId, trimmed);
+  };
+
+  const getChannelVersions = (elementId) => {
+    if (!elementId) return [];
+    return parseHistory(safeStorage.get(`${CHANNEL_HISTORY_PREFIX}${elementId}`));
+  };
+
+  const markChannelSnapshot = (elementId, pattern) => {
+    if (!elementId) return;
+    lastChannelSnapshots.set(elementId, (pattern || '').trim());
+  };
+
+  const saveMasterVersion = (pattern) => {
+    const trimmed = (pattern || '').trim();
+    if (!trimmed || trimmed === lastMasterSnapshot) {
+      lastMasterSnapshot = trimmed;
+      return;
+    }
+    let history = parseHistory(safeStorage.get(MASTER_HISTORY_KEY));
+    if (history.length && history[0].pattern === trimmed) {
+      lastMasterSnapshot = trimmed;
+      return;
+    }
+    const entry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      pattern: trimmed,
+      createdAt: Date.now()
+    };
+    history.unshift(entry);
+    if (history.length > MASTER_HISTORY_LIMIT) {
+      history = history.slice(0, MASTER_HISTORY_LIMIT);
+    }
+    writeHistory(MASTER_HISTORY_KEY, history);
+    lastMasterSnapshot = trimmed;
+  };
+
+  const getMasterVersions = () => {
+    return parseHistory(safeStorage.get(MASTER_HISTORY_KEY));
+  };
+
+  const markMasterSnapshot = (pattern) => {
+    lastMasterSnapshot = (pattern || '').trim();
+  };
+
+  return {
+    saveChannelVersion,
+    getChannelVersions,
+    markChannelSnapshot,
+    saveMasterVersion,
+    getMasterVersions,
+    markMasterSnapshot
+  };
+})();
+
+window.__patternHistory = patternHistoryStore;
+
+const createPatternHistoryModal = () => {
+  const overlay = document.getElementById('pattern-history-modal');
+  if (!overlay) {
+    return {
+      openChannelHistory: () => {},
+      openMasterHistory: () => {},
+      close: () => {}
+    };
+  }
+
+  const titleEl = document.getElementById('pattern-history-title');
+  const listEl = document.getElementById('pattern-history-list');
+  const closeBtn = document.getElementById('pattern-history-close');
+  let context = null;
+  let currentEntries = [];
+
+  const escapeHtml = (value) => {
+    return value.replace(/[&<>"']/g, (char) => {
+      switch (char) {
+        case '&': return '&amp;';
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '"': return '&quot;';
+        case "'": return '&#039;';
+        default: return char;
+      }
+    });
+  };
+
+  const formatTimestamp = (value) => {
+    try {
+      return new Date(value).toLocaleString();
+    } catch {
+      return '';
+    }
+  };
+
+  const closeModal = () => {
+    overlay.classList.remove('is-open');
+    overlay.setAttribute('aria-hidden', 'true');
+    context = null;
+    currentEntries = [];
+  };
+
+  const openModal = () => {
+    overlay.classList.add('is-open');
+    overlay.setAttribute('aria-hidden', 'false');
+  };
+
+  const renderEntries = (entries) => {
+    if (!entries || entries.length === 0) {
+      listEl.innerHTML = '<p class="pattern-history-empty">No saved versions yet.</p>';
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    entries.forEach((entry, index) => {
+      const row = document.createElement('div');
+      row.className = 'pattern-history-entry';
+      const snippet = entry.pattern.length > 240 ? `${entry.pattern.slice(0, 240)}…` : entry.pattern;
+      const displayIndex = (index + 1).toString().padStart(2, '0');
+      row.innerHTML = `
+        <div class="pattern-history-meta">
+          <span class="pattern-history-index">#${displayIndex}</span>
+          <p class="pattern-history-date">${formatTimestamp(entry.createdAt)}</p>
+        </div>
+        <pre class="pattern-history-snippet">${escapeHtml(snippet)}</pre>
+        <div class="pattern-history-actions">
+          <button type="button" class="pattern-history-load" data-version-id="${entry.id}">Load</button>
+        </div>
+      `;
+      fragment.appendChild(row);
+    });
+    listEl.innerHTML = '';
+    listEl.appendChild(fragment);
+  };
+
+  listEl.addEventListener('click', (event) => {
+    const loadButton = event.target.closest('.pattern-history-load');
+    if (!loadButton || !interactiveSoundAppInstance) return;
+    const entry = currentEntries.find((item) => item.id === loadButton.dataset.versionId);
+    if (!entry) return;
+
+    if (context?.type === 'channel') {
+      interactiveSoundAppInstance.applyChannelHistoryEntry(context.elementId, entry.pattern);
+    } else if (context?.type === 'master') {
+      interactiveSoundAppInstance.applyMasterHistoryEntry(entry.pattern);
+    }
+    closeModal();
+  });
+
+  closeBtn?.addEventListener('click', closeModal);
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      closeModal();
+    }
+  });
+
+  const openChannelHistory = (elementId) => {
+    if (!elementId) return;
+    context = { type: 'channel', elementId };
+    titleEl.textContent = `Channel ${elementId} history`;
+    openModal();
+    listEl.innerHTML = '<p class="pattern-history-empty">Loading…</p>';
+    currentEntries = patternHistoryStore.getChannelVersions(elementId);
+    renderEntries(currentEntries);
+  };
+
+  const openMasterHistory = () => {
+    context = { type: 'master' };
+    titleEl.textContent = 'Master history';
+    openModal();
+    listEl.innerHTML = '<p class="pattern-history-empty">Loading…</p>';
+    currentEntries = patternHistoryStore.getMasterVersions();
+    renderEntries(currentEntries);
+  };
+
+  return {
+    openChannelHistory,
+    openMasterHistory,
+    close: closeModal
+  };
+};
+
+let patternHistoryModalInstance = null;
+
+const historyButtonHandler = (event) => {
+  if (!patternHistoryModalInstance) return;
+  const saveBtn = event.target.closest('[data-history-save]');
+  if (saveBtn) {
+    event.preventDefault();
+    const target = saveBtn.dataset.historySave;
+    if (target === 'channel') {
+      const element = saveBtn.closest('.sound-element');
+      const elementId = element?.getAttribute('data-sound-id');
+      if (elementId && interactiveSoundAppInstance) {
+        interactiveSoundAppInstance.saveChannelWithEffects?.(elementId);
+      }
+    } else if (target === 'master') {
+      if (interactiveSoundAppInstance) {
+        interactiveSoundAppInstance.saveMasterHistoryEntry?.();
+      }
+    }
+    return;
+  }
+  const channelBtn = event.target.closest('[data-history-target="channel"]');
+  if (channelBtn) {
+    event.preventDefault();
+    const element = channelBtn.closest('.sound-element');
+    const elementId = element?.getAttribute('data-sound-id');
+    if (elementId) {
+      patternHistoryModalInstance.openChannelHistory(elementId);
+    }
+    return;
+  }
+  const masterBtn = event.target.closest('#load-master-history-btn');
+  if (masterBtn) {
+    event.preventDefault();
+    patternHistoryModalInstance.openMasterHistory();
+  }
+};
+
+const initializePatternHistoryUI = () => {
+  patternHistoryModalInstance = createPatternHistoryModal();
+  document.addEventListener('click', historyButtonHandler);
+};
+
 // Default drum grid rows (fallback)
 const DRUM_GRID_ROWS = [
   { key: 'bd', label: 'BD', sample: 'bd' },
@@ -545,10 +834,12 @@ const NUMERIC_TAG_PARAMS = {
   'delay': { min: 0, max: 1, step: 0.01, default: 0, unit: '' },
   'delaytime': { min: 0, max: 1, step: 0.01, default: 0.25, unit: 's' },
   'delayfeedback': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
-  'room': { min: 0, max: 1, step: 0.01, default: 0, unit: '' },
-  'roomsize': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
+  'room': { min: 0, max: 5, step: 0.01, default: 0, unit: '' },
+  'roomsize': { min: 0, max: 4, step: 0.01, default: 0.5, unit: '' },
   'roomfade': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
-  'roomlp': { min: 20, max: 20000, step: 10, default: 20000, unit: 'Hz' },
+  'roomlp': { min: 20, max: 20000, step: 10, default: 20, unit: 'Hz' },
+  'roomdim': { min: 0, max: 1, step: 0.01, default: 0, unit: '' },
+  'iresponse': { min: 0, max: 1, step: 0.01, default: 0, unit: '' },
   'phaser': { min: 0, max: 1, step: 0.01, default: 0, unit: '' },
   'phaserdepth': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
   'phasercenter': { min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
@@ -1702,6 +1993,7 @@ function drawSpiralSegment(ctx, options) {
 
 class InteractiveSoundApp {
   constructor() {
+    interactiveSoundAppInstance = this;
     this.activeElements = new Set();
     this.initialized = false;
     this.currentEditingElementId = null;
@@ -4577,15 +4869,21 @@ class InteractiveSoundApp {
         key: 'delay', 
         label: 'Delay',
         params: [
-          { key: 'delaytime', label: 'Delay Time' },
-          { key: 'delayfeedback', label: 'Delay Feedback' }
+          { key: 'delay', label: 'Delay Mix' },
+          { key: 'delayfeedback', label: 'Delay Feedback' },
+          { key: 'delaytime', label: 'Delay Time' }
         ]
       },
       { 
         key: 'room', 
         label: 'Reverb',
         params: [
-          { key: 'roomsize', label: 'Room Size' }
+          { key: 'room', label: 'Room Mix' },
+          { key: 'roomsize', label: 'Room Size' },
+          { key: 'roomlp', label: 'Low-pass' },
+          { key: 'roomdim', label: 'Dimension' },
+          { key: 'roomfade', label: 'Fade' },
+          { key: 'iresponse', label: 'Impulse Response' }
         ]
       }
     ];
@@ -4873,39 +5171,52 @@ class InteractiveSoundApp {
     const filters = this.elementFilters?.[elementId] || {};
     const synthesis = this.elementSynthesis?.[elementId] || {};
     
+    // Helper to check whether a value differs from its default (so we only emit necessary modifiers)
+    const effectValueChanged = (key, value) => {
+      if (value === undefined) return false;
+      const config = NUMERIC_TAG_PARAMS[key];
+      if (!config) return true;
+      return value !== config.default;
+    };
+    const formatEffectValue = (key, value) => {
+      if (value === undefined) return '';
+      const config = NUMERIC_TAG_PARAMS[key];
+      if (config?.unit === 'Hz' || key === 'roomlp') {
+        return Math.round(value);
+      }
+      return value.toFixed(2);
+    };
+
     // Build modifiers string
     let modifiers = [];
     
     // Add effects
-    if (effects.delaytime !== undefined) {
-      modifiers.push(`.delay(${effects.delaytime.toFixed(2)})`);
+    if (effectValueChanged('delay', effects.delay)) {
+      modifiers.push(`.delay(${formatEffectValue('delay', effects.delay)})`);
     }
-    if (effects.delayfeedback !== undefined) {
-      modifiers.push(`.delayfeedback(${effects.delayfeedback.toFixed(2)})`);
+    if (effectValueChanged('delayfeedback', effects.delayfeedback)) {
+      modifiers.push(`.delayfeedback(${formatEffectValue('delayfeedback', effects.delayfeedback)})`);
     }
-    if (effects.roomsize !== undefined) {
-      modifiers.push(`.room(${effects.roomsize.toFixed(2)})`);
+    if (effectValueChanged('delaytime', effects.delaytime)) {
+      modifiers.push(`.delaytime(${formatEffectValue('delaytime', effects.delaytime)})`);
     }
-    // Phaser effect - apply all parameters
-    if (effects.phaserdepth !== undefined) {
-      modifiers.push(`.phaser(${effects.phaserdepth.toFixed(2)})`);
+    if (effectValueChanged('room', effects.room)) {
+      modifiers.push(`.room(${formatEffectValue('room', effects.room)})`);
     }
-    if (effects.phasercenter !== undefined) {
-      modifiers.push(`.phasercenter(${effects.phasercenter.toFixed(2)})`);
+    if (effectValueChanged('roomsize', effects.roomsize)) {
+      modifiers.push(`.roomsize(${formatEffectValue('roomsize', effects.roomsize)})`);
     }
-    if (effects.phasersweep !== undefined) {
-      modifiers.push(`.phasersweep(${effects.phasersweep.toFixed(2)})`);
+    if (effectValueChanged('roomlp', effects.roomlp) && effects.roomlp < NUMERIC_TAG_PARAMS.roomlp.default) {
+      modifiers.push(`.roomlp(${formatEffectValue('roomlp', effects.roomlp)})`);
     }
-    
-    // Tremolo effect - apply all parameters
-    if (effects.tremolodepth !== undefined) {
-      modifiers.push(`.tremolo(${effects.tremolodepth.toFixed(2)})`);
+    if (effectValueChanged('roomdim', effects.roomdim)) {
+      modifiers.push(`.roomdim(${formatEffectValue('roomdim', effects.roomdim)})`);
     }
-    if (effects.tremoloskew !== undefined) {
-      modifiers.push(`.tremoloskew(${effects.tremoloskew.toFixed(2)})`);
+    if (effectValueChanged('roomfade', effects.roomfade)) {
+      modifiers.push(`.roomfade(${formatEffectValue('roomfade', effects.roomfade)})`);
     }
-    if (effects.tremolophase !== undefined) {
-      modifiers.push(`.tremolophase(${effects.tremolophase.toFixed(2)})`);
+    if (effectValueChanged('iresponse', effects.iresponse)) {
+      modifiers.push(`.iresponse(${formatEffectValue('iresponse', effects.iresponse)})`);
     }
     
     // Add filters
@@ -4979,6 +5290,66 @@ class InteractiveSoundApp {
         await soundManager.cachePatternForElement(elementId, finalPattern);
       }
     }
+  }
+
+  applyChannelHistoryEntry(elementId, pattern) {
+    if (!elementId || !pattern) {
+      return;
+    }
+    const trimmed = pattern.trim();
+    const existingConfig = this.loadElementConfig(elementId) || {};
+    patternHistoryStore.markChannelSnapshot(elementId, trimmed);
+    this.saveElementConfig(elementId, { ...existingConfig, pattern: trimmed }, true);
+    
+    if (this.currentEditingElementId !== elementId) {
+      this.openModal(elementId);
+    }
+    
+    setTimeout(() => {
+      setStrudelEditorValue('modal-pattern', trimmed);
+    }, 50);
+    
+    this.uiController?.updateStatus?.(`Loaded history for ${elementId}. Save to apply.`);
+  }
+
+  applyMasterHistoryEntry(pattern) {
+    if (!pattern) {
+      return;
+    }
+    const trimmed = pattern.trim();
+    setStrudelEditorValue('master-pattern', trimmed);
+    soundManager.masterPattern = trimmed;
+    patternHistoryStore.markMasterSnapshot(trimmed);
+    this.updateMasterPatternDisplay();
+    this.uiController?.updateStatus?.('Loaded master pattern history entry.');
+  }
+
+  saveChannelWithEffects(elementId) {
+    const savedConfig = this.loadElementConfig(elementId);
+    if (!savedConfig || !savedConfig.pattern) {
+      this.uiController?.updateStatus?.('Nothing to save for this channel.');
+      return;
+    }
+    const finalPattern = this.getPatternWithEffects(elementId, savedConfig.pattern);
+    const updatedConfig = { ...savedConfig, pattern: finalPattern };
+    this.saveElementConfig(elementId, updatedConfig, false);
+    patternHistoryStore.markChannelSnapshot(elementId, finalPattern);
+    this.uiController?.updateStatus?.(`Saved channel ${elementId} with effects.`);
+  }
+
+  saveMasterHistoryEntry() {
+    const masterTextarea = document.getElementById('master-pattern');
+    const pattern = masterTextarea ? masterTextarea.value : '';
+    const trimmed = (pattern || '').trim();
+    if (!trimmed) {
+      this.uiController?.updateStatus?.('Master pattern is empty.');
+      return;
+    }
+    patternHistoryStore.saveMasterVersion(trimmed);
+    patternHistoryStore.markMasterSnapshot(trimmed);
+    soundManager.masterPattern = trimmed;
+    this.updateMasterPatternDisplay();
+    this.uiController?.updateStatus?.('Saved master pattern version.');
   }
   
   /**
@@ -6082,6 +6453,7 @@ class InteractiveSoundApp {
           console.log(`🔁 Updated pattern to use canonical synth names before saving`);
           config.pattern = normalizedPattern;
         }
+        patternHistoryStore.saveChannelVersion(elementId, config.pattern);
       }
 
       localStorage.setItem(`element-config-${elementId}`, JSON.stringify(config));
@@ -10050,7 +10422,13 @@ class InteractiveSoundApp {
           </div>
         </div>
         
-        <button class="config-button">Configure Sound</button>
+        <div class="element-action-buttons">
+          <button class="config-button">Configure Sound</button>
+          <div class="history-button-row">
+            <button class="history-button" type="button" data-history-target="channel">Load</button>
+            <button class="history-button history-button--primary" type="button" data-history-save="channel">Save</button>
+          </div>
+        </div>
       </div>
     `;
 
@@ -10178,9 +10556,11 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     const app = new InteractiveSoundApp();
     app.init();
+    initializePatternHistoryUI();
   });
 } else {
   const app = new InteractiveSoundApp();
   app.init();
+  initializePatternHistoryUI();
 }
 

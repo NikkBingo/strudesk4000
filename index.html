@@ -22,6 +22,7 @@
   <!-- Strudel is loaded via Vite from local packages to avoid version conflicts -->
 </head>
 <body>
+  <div class="bubble-background" aria-hidden="true"></div>
   <div class="container">
     <header>
       <h1>Strudesk 4000</h1>
@@ -94,7 +95,13 @@
           </div>
         </div>
         
-        <button class="config-button">Configure Sound</button>
+        <div class="element-action-buttons">
+          <button class="config-button">Configure Sound</button>
+          <div class="history-button-row">
+            <button class="history-button" type="button" data-history-target="channel">Load</button>
+            <button class="history-button history-button--primary" type="button" data-history-save="channel">Save</button>
+          </div>
+        </div>
       </div>
       <div class="sound-element" data-sound-id="element-2">
         <input type="range" class="gain-slider" min="0" max="1" step="0.01" value="0.8" orient="vertical" />
@@ -151,7 +158,13 @@
           </div>
         </div>
         
-        <button class="config-button">Configure Sound</button>
+        <div class="element-action-buttons">
+          <button class="config-button">Configure Sound</button>
+          <div class="history-button-row">
+            <button class="history-button" type="button" data-history-target="channel">Load</button>
+            <button class="history-button history-button--primary" type="button" data-history-save="channel">Save</button>
+          </div>
+        </div>
       </div>
       <div class="sound-element" data-sound-id="element-3">
         <input type="range" class="gain-slider" min="0" max="1" step="0.01" value="0.8" orient="vertical" />
@@ -208,7 +221,13 @@
           </div>
         </div>
         
-        <button class="config-button">Configure Sound</button>
+        <div class="element-action-buttons">
+          <button class="config-button">Configure Sound</button>
+          <div class="history-button-row">
+            <button class="history-button" type="button" data-history-target="channel">Load</button>
+            <button class="history-button history-button--primary" type="button" data-history-save="channel">Save</button>
+          </div>
+        </div>
       </div>
       <div class="sound-element" data-sound-id="element-4">
         <input type="range" class="gain-slider" min="0" max="1" step="0.01" value="0.8" orient="vertical" />
@@ -265,7 +284,13 @@
           </div>
         </div>
         
-        <button class="config-button">Configure Sound</button>
+        <div class="element-action-buttons">
+          <button class="config-button">Configure Sound</button>
+          <div class="history-button-row">
+            <button class="history-button" type="button" data-history-target="channel">Load</button>
+            <button class="history-button history-button--primary" type="button" data-history-save="channel">Save</button>
+          </div>
+        </div>
       </div>
       <!-- Add Element Button -->
       <button class="add-element-button" id="add-element-btn" title="Add New Element">
@@ -362,9 +387,13 @@
           placeholder="Combined pattern will appear here..."
           rows="15"
         ></textarea>
-        <div class="master-pattern-controls">
-          <button id="play-master-btn" class="play-master-button" title="Play Master">▶</button>
-    </div>
+        <div class="master-history-controls">
+          <div class="history-button-row history-button-row--inline history-button-row--center">
+            <button id="load-master-history-btn" class="history-button" type="button">Load</button>
+            <button id="play-master-btn" class="play-master-button" title="Play Master">▶</button>
+            <button id="save-master-history-btn" class="history-button history-button--primary" type="button" data-history-save="master">Save</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -396,6 +425,11 @@
                 <option value="">Default</option>
                 <option value="RolandTR808">Roland TR-808</option>
                 <option value="RolandTR909">Roland TR-909</option>
+                <option value="RolandTR707">Roland TR-707</option>
+                <option value="RhythmAce">Rhythm Ace</option>
+                <option value="AkaiLinn">Akai Linn</option>
+                <option value="ViscoSpaceDrum">Visco Space Drum</option>
+                <option value="CasioRZ1">Casio RZ-1</option>
               </optgroup>
               <optgroup label="Basic Waveforms">
                 <option value="sine">Sine</option>
@@ -759,7 +793,36 @@
     })();
   </script>
 
+  <script>
+    (function initBubbleBackground() {
+      const bubbleRoot = document.querySelector('.bubble-background');
+      if (!bubbleRoot) return;
+      const styles = getComputedStyle(document.documentElement);
+      const bubbleCount = parseInt(styles.getPropertyValue('--bubble-count'), 10) || 12;
+      bubbleRoot.innerHTML = '';
+      for (let i = 0; i < bubbleCount; i++) {
+        const bubble = document.createElement('span');
+        bubble.style.setProperty('--x', Math.random().toString());
+        bubble.style.setProperty('--size', Math.random().toString());
+        bubble.style.setProperty('--speed', Math.random().toString());
+        bubble.style.setProperty('--delay', Math.random().toString());
+        bubbleRoot.appendChild(bubble);
+      }
+    })();
+  </script>
+
   <script type="module" src="/src/main.js"></script>
+  <div class="pattern-history-modal" id="pattern-history-modal" aria-hidden="true">
+    <div class="pattern-history-dialog">
+      <div class="pattern-history-header">
+        <h3 id="pattern-history-title">Pattern History</h3>
+        <button type="button" id="pattern-history-close" class="history-close-button" aria-label="Close history">&times;</button>
+      </div>
+      <div id="pattern-history-list" class="pattern-history-list">
+        <p class="pattern-history-empty">No saved versions yet.</p>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
 
