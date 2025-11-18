@@ -480,6 +480,15 @@
                     <option value="locrian #2">Locrian ♮2</option>
                     <option value="altered">Altered Scale (Super-Locrian)</option>
                   </optgroup>
+                  <optgroup label="Harmonic Major Modes">
+                    <option value="harmonic major">Harmonic Major</option>
+                    <option value="dorian b5">Dorian ♭5</option>
+                    <option value="phrygian b4">Phrygian ♭4</option>
+                    <option value="lydian b3">Lydian ♭3</option>
+                    <option value="mixolydian b2">Mixolydian ♭2</option>
+                    <option value="lydian augmented #2">Lydian Augmented ♯2</option>
+                    <option value="locrian bb7">Locrian ♭♭7</option>
+                  </optgroup>
                   <optgroup label="Harmonic Minor Modes">
                     <option value="harmonic minor">Harmonic Minor</option>
                     <option value="locrian #6">Locrian ♮6</option>
@@ -488,15 +497,6 @@
                     <option value="phrygian dominant">Phrygian Dominant</option>
                     <option value="lydian #2">Lydian ♯2</option>
                     <option value="ultralocrian">Ultralocrian</option>
-                  </optgroup>
-                    <optgroup label="Harmonic Major Modes">
-                    <option value="harmonic major">Harmonic Major</option>
-                    <option value="dorian b5">Dorian ♭5</option>
-                    <option value="phrygian b4">Phrygian ♭4</option>
-                    <option value="lydian b3">Lydian ♭3</option>
-                    <option value="mixolydian b2">Mixolydian ♭2</option>
-                    <option value="lydian augmented #2">Lydian Augmented ♯2</option>
-                    <option value="locrian bb7">Locrian ♭♭7</option>
                   </optgroup>
                   <optgroup label="Pentatonic Modes (Major Pentatonic)">
                     <option value="major pentatonic">Major Pentatonic</option>
@@ -523,18 +523,14 @@
             </div>
             <div class="scale-chord-suggestions" id="modal-scale-chord-suggestions" aria-live="polite">
               <div class="scale-chord-suggestions__header">
-                <p id="modal-scale-chord-title">Select a key and scale to view chord ideas.</p>
+                <p id="modal-scale-chord-title">Select a key and scale to view chord progressions.</p>
                 <p id="modal-scale-characteristic" class="scale-chord-suggestions__characteristic"></p>
               </div>
-              <div class="scale-chord-suggestions__lists">
-                <div class="scale-chord-suggestions__column">
-                  <div class="scale-chord-suggestions__label">Suitable chords</div>
-                  <ul id="modal-scale-chord-list"></ul>
-                </div>
-                <div class="scale-chord-suggestions__column">
-                  <div class="scale-chord-suggestions__label">Common voicings</div>
-                  <ul id="modal-scale-voicing-list"></ul>
-                </div>
+              <div class="scale-chord-suggestions__dropdown-wrapper">
+                <label for="modal-chord-progression-select" class="scale-chord-suggestions__label">Chord Progressions:</label>
+                <select id="modal-chord-progression-select" class="scale-chord-suggestions__select">
+                  <option value="">Select a progression...</option>
+                </select>
               </div>
             </div>
           </div>
