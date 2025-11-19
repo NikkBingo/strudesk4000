@@ -42,6 +42,178 @@ const DRUM_BANK_VALUES = new Set([
   'CasioRZ1'
 ]);
 
+const VCSL_SAMPLE_MANIFEST_URL = 'https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json';
+const VCSL_OPTION_PREFIX = 'vcsl:';
+let cachedVcslInstrumentOptions = null;
+let vcslInstrumentFetchPromise = null;
+
+const SPECIAL_SAMPLE_BANK_GROUP_LABEL = 'World Instruments';
+const VCSL_OPTGROUP_LABEL = 'VCSL Instruments';
+const VCSL_FAMILY_ORDER = ['Chordophones', 'Aerophones', 'Membranophones', 'Electrophones', 'Idiophones'];
+
+let cachedVcslManifest = null;
+let cachedNormalizedVcslManifest = null;
+const SPECIAL_SAMPLE_BANKS = [
+  { value: 'mridangam', label: 'Mridangam Percussion Set' },
+  { value: 'vcsl', label: 'VCSL Vocal Set' }
+];
+const SPECIAL_SAMPLE_BANK_VALUES = new Set(SPECIAL_SAMPLE_BANKS.map(bank => bank.value.toLowerCase()));
+
+const parseBankSelectionValue = (rawValue) => {
+  if (!rawValue || typeof rawValue !== 'string') {
+    return { rawValue: '', bankValue: '', isVcslInstrument: false, vcslInstrument: '' };
+  }
+  if (rawValue.startsWith(VCSL_OPTION_PREFIX)) {
+    const instrument = rawValue.slice(VCSL_OPTION_PREFIX.length);
+    return {
+      rawValue,
+      bankValue: 'vcsl',
+      isVcslInstrument: true,
+      vcslInstrument: instrument
+    };
+  }
+  return { rawValue, bankValue: rawValue, isVcslInstrument: false, vcslInstrument: '' };
+};
+
+const formatVcslInstrumentLabel = (name) => {
+  if (!name) return '';
+  return name
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const extractSamplePathFromEntry = (entry) => {
+  if (!entry) return '';
+  if (typeof entry === 'string') return entry;
+  if (Array.isArray(entry)) {
+    return typeof entry[0] === 'string' ? entry[0] : '';
+  }
+  if (typeof entry === 'object') {
+    const firstValue = Object.values(entry)[0];
+    if (typeof firstValue === 'string') return firstValue;
+    if (Array.isArray(firstValue) && typeof firstValue[0] === 'string') {
+      return firstValue[0];
+    }
+  }
+  return '';
+};
+
+const classifyVcslInstrumentCategory = (samplePath, name) => {
+  const target = (samplePath || name || '').toLowerCase();
+  const percussionRegex = /(membranophone|idiophone|drum|percussion|bongo|cajon|shaker|triangle|tambourine|clave|cowbell|snare|kick|timpani|gong|cymbal)/i;
+  if (percussionRegex.test(target)) {
+    return 'drums';
+  }
+  return 'world';
+};
+
+const resolveSamplePath = (path, baseUrl) => {
+  if (!path) return path;
+  if (!baseUrl) return path;
+  try {
+    return new URL(path, baseUrl).toString();
+  } catch {
+    return path;
+  }
+};
+
+const normalizeSampleManifestEntry = (entry, baseUrl) => {
+  if (typeof entry === 'string') {
+    return resolveSamplePath(entry, baseUrl);
+  }
+  if (Array.isArray(entry)) {
+    return entry.map((value) => normalizeSampleManifestEntry(value, baseUrl));
+  }
+  if (entry && typeof entry === 'object') {
+    const result = {};
+    Object.entries(entry).forEach(([key, value]) => {
+      result[key] = normalizeSampleManifestEntry(value, baseUrl);
+    });
+    return result;
+  }
+  return entry;
+};
+
+const normalizeSampleManifest = (manifest) => {
+  if (!manifest || typeof manifest !== 'object') return manifest;
+  const baseUrl = manifest._base || '';
+  const normalized = {};
+  Object.entries(manifest).forEach(([key, value]) => {
+    if (key === '_base') return;
+    normalized[key] = normalizeSampleManifestEntry(value, baseUrl);
+  });
+  return normalized;
+};
+
+const getVcslInstrumentFamily = (samplePath) => {
+  if (!samplePath || typeof samplePath !== 'string') return 'Other';
+  const match = samplePath.match(/^([^/]+)/);
+  if (!match) return 'Other';
+  try {
+    const decoded = decodeURIComponent(match[1]);
+    return decoded.charAt(0).toUpperCase() + decoded.slice(1);
+  } catch {
+    return match[1];
+  }
+};
+
+const getVcslFamilyOrder = (family) => {
+  const index = VCSL_FAMILY_ORDER.indexOf(family);
+  return index === -1 ? VCSL_FAMILY_ORDER.length + 1 : index;
+};
+
+const loadVcslInstrumentOptions = async () => {
+  if (cachedVcslInstrumentOptions) {
+    return cachedVcslInstrumentOptions;
+  }
+  if (vcslInstrumentFetchPromise) {
+    return vcslInstrumentFetchPromise;
+  }
+  vcslInstrumentFetchPromise = fetch(VCSL_SAMPLE_MANIFEST_URL)
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`Failed to load VCSL instruments: ${response.status}`);
+      }
+      const manifest = await response.json();
+      cachedVcslManifest = manifest;
+      cachedNormalizedVcslManifest = normalizeSampleManifest(manifest);
+      const entries = Object.entries(manifest || {})
+        .filter(([name]) => name && name !== '_base');
+      const options = entries.map(([name, entry]) => {
+        const samplePath = extractSamplePathFromEntry(entry);
+        const family = getVcslInstrumentFamily(samplePath);
+        const category = classifyVcslInstrumentCategory(samplePath, family);
+        return {
+          value: name,
+          optionValue: `${VCSL_OPTION_PREFIX}${name}`,
+          label: `VCSL · ${formatVcslInstrumentLabel(name)}`,
+          category,
+          samplePath,
+          family,
+          familyOrder: getVcslFamilyOrder(family)
+        };
+      }).sort((a, b) => {
+        if (a.familyOrder !== b.familyOrder) {
+          return a.familyOrder - b.familyOrder;
+        }
+        return a.label.localeCompare(b.label);
+      });
+      cachedVcslInstrumentOptions = options;
+      return options;
+    })
+    .catch((error) => {
+      console.warn('⚠️ Unable to load VCSL instrument list:', error);
+      cachedVcslInstrumentOptions = [];
+      return [];
+    })
+    .finally(() => {
+      vcslInstrumentFetchPromise = null;
+    });
+  return vcslInstrumentFetchPromise;
+};
+
 const DRUM_BANK_DISPLAY_NAMES = {
   RolandTR808: 'Roland TR-808',
   RolandTR909: 'Roland TR-909',
@@ -220,6 +392,13 @@ const DRUM_PATTERN_PRESETS = [
     bank: '',
     description: 'chooseCycles randomizes BD / HH / SD each cycle',
     pattern: 's(chooseCycles("bd","hh","sd")).bank("RolandTR808").fast(8)'
+  },
+  {
+    id: 'mridangam-pulse',
+    label: 'Mridangam Percussion Set',
+    bank: '',
+    description: 'Classical tha · dhi · thom · nam motif on the mridangam bank',
+    pattern: 'sound("tha dhi thom nam").bank("mridangam").pace(4).gain(.9)'
   }
 ];
 
@@ -252,7 +431,14 @@ const TONAL_PATTERN_PRESETS = [
     label: 'Simple Backing Track',
     bank: '',
     description: 'Together with layer, struct and voicings, this can be used to create a basic backing track',
-    pattern: 'note("<C^7 A7b13 Dm7 G7>*2").layer(\n  x => x.voicings("lefthand").struct("[~ x]*2").note(),\n  x => x.rootNotes(2).note().s("sawtooth").cutoff(800)\n)'
+    pattern: '"<C^7 A7b13 Dm7 G7>*2".layer(\n  x => x.voicings("lefthand").struct("[~ x]*2").note(),\n  x => x.rootNotes(2).note().s("sawtooth").cutoff(800)\n)'
+  },
+  {
+    id: 'vcsl-vocal-bed',
+    label: 'VCSL World Textures',
+    bank: '',
+    description: 'Layered Ball Whistle + Bongo textures from the VCSL set',
+    pattern: 'sound("<ballwhistle ~ bongo ~>*2").bank("vcsl").slow(2).room(.35).shape(.2)'
   }
 ];
 
@@ -3106,7 +3292,7 @@ class InteractiveSoundApp {
     }
     
     const ctxExpression = "(window.__strudelVisualizerCtx || (document.getElementById('master-punchcard-canvas') && document.getElementById('master-punchcard-canvas').getContext && document.getElementById('master-punchcard-canvas').getContext('2d')))";
-
+    
     if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart') {
       patternWithVisualizer = basePattern;
     } else if (this.selectedVisualizer === 'spectrum') {
@@ -3124,7 +3310,7 @@ class InteractiveSoundApp {
       if (this.masterPunchcardCanvas) {
         this.masterPunchcardCanvas.style.display = 'none';
       }
-        patternWithVisualizer = `${basePattern}.pianoroll({
+        patternWithVisualizer = `${basePattern}.pianoroll({ 
           cycles: 4,
           playhead: 0.5,
           fill: true,
@@ -3155,8 +3341,8 @@ class InteractiveSoundApp {
       const checkRegex = new RegExp(`\\.\\s*_?${this.selectedVisualizer}\\s*\\(`);
       hasVisualizer = checkRegex.test(patternWithVisualizer);
       if (!hasVisualizer) {
-        console.error(`❌ Visualizer "${this.selectedVisualizer}" not found in pattern! Pattern:`, patternWithVisualizer);
-      } else {
+      console.error(`❌ Visualizer "${this.selectedVisualizer}" not found in pattern! Pattern:`, patternWithVisualizer);
+            } else {
         console.log(`✅ Visualizer "${this.selectedVisualizer}" found in pattern`);
       }
     } else if (usesInternalVisualizer) {
@@ -3263,7 +3449,7 @@ class InteractiveSoundApp {
     if (activeVisualizer !== 'scope' && activeVisualizer !== 'barchart') {
       this.stopVisualizerAnimation();
     }
-
+    
     if (useScope || useSpectrum || useSpiral || usePitchwheel || usePianoroll || useBarchart) {
       if ((this.selectedVisualizer || 'punchcard') === 'punchcard' && useScope) {
         this.watchForExternalVisualizerCanvas('scope');
@@ -6843,6 +7029,11 @@ class InteractiveSoundApp {
     
     const bankSelect = document.getElementById('modal-pattern-bank');
 
+    const removeExistingSpecialtyOptions = () => {
+      if (!bankSelect) return;
+      bankSelect.querySelectorAll('option[data-source="specialty-vcsl"]').forEach((option) => option.remove());
+    };
+
     const ensurePatternBankOptions = (selectedValue = bankSelect ? bankSelect.value : '') => {
       if (!bankSelect) {
         return;
@@ -6862,6 +7053,14 @@ class InteractiveSoundApp {
       
       let synthsGroup = Array.from(bankSelect.children).find(
         (child) => child.tagName === 'OPTGROUP' && child.label && child.label.toLowerCase().includes('synth')
+      );
+      
+      let specialtyGroup = Array.from(bankSelect.children).find(
+        (child) => child.tagName === 'OPTGROUP' && child.label === SPECIAL_SAMPLE_BANK_GROUP_LABEL
+      );
+      
+      let vcslGroup = Array.from(bankSelect.children).find(
+        (child) => child.tagName === 'OPTGROUP' && child.label === VCSL_OPTGROUP_LABEL
       );
 
       // Create groups if they don't exist, in the correct order
@@ -6892,6 +7091,22 @@ class InteractiveSoundApp {
           bankSelect.appendChild(synthsGroup);
         }
       }
+      
+      if (!specialtyGroup) {
+        specialtyGroup = document.createElement('optgroup');
+        specialtyGroup.label = SPECIAL_SAMPLE_BANK_GROUP_LABEL;
+        if (synthsGroup.nextSibling) {
+          bankSelect.insertBefore(specialtyGroup, synthsGroup.nextSibling);
+        } else {
+          bankSelect.appendChild(specialtyGroup);
+        }
+      }
+      
+      if (!vcslGroup) {
+        vcslGroup = document.createElement('optgroup');
+        vcslGroup.label = VCSL_OPTGROUP_LABEL;
+        bankSelect.appendChild(vcslGroup);
+      }
 
       // Only rebuild the Drums group, preserve other groups
       drumsGroup.innerHTML = '';
@@ -6912,6 +7127,35 @@ class InteractiveSoundApp {
         drumsGroup.appendChild(option);
       });
 
+      // Populate specialty/world/vocal sample banks (base entries)
+      specialtyGroup.innerHTML = '';
+      vcslGroup.innerHTML = '';
+      SPECIAL_SAMPLE_BANKS.forEach(({ value, label }) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        if (value.toLowerCase() === 'vcsl') {
+          vcslGroup.appendChild(option);
+        } else {
+          specialtyGroup.appendChild(option);
+        }
+      });
+      removeExistingSpecialtyOptions();
+      if (Array.isArray(cachedVcslInstrumentOptions) && cachedVcslInstrumentOptions.length > 0) {
+        cachedVcslInstrumentOptions.forEach((entry) => {
+          const option = document.createElement('option');
+          option.value = entry.optionValue;
+          option.textContent = entry.label;
+          option.dataset.source = 'specialty-vcsl';
+          option.dataset.instrument = entry.value;
+          vcslGroup.appendChild(option);
+        });
+      } else if (!vcslInstrumentFetchPromise) {
+        loadVcslInstrumentOptions().then(() => {
+          ensurePatternBankOptions(selectedValue);
+        }).catch(() => {});
+      }
+      
       // Don't add non-drum banks to drums group - they belong in their own groups
       // The other groups are preserved from the HTML, so options stay in place
 
@@ -7539,8 +7783,12 @@ class InteractiveSoundApp {
         const saved = this.loadElementConfig ? this.loadElementConfig(elementId) : null;
         // Populate bank
         const bankValue = saved?.bank || '';
-        ensurePatternBankOptions(bankValue);
-        if (bankSelect) bankSelect.value = bankValue;
+        const savedVcslInstrument = saved?.vcslInstrument || '';
+        const selectValue = bankValue === 'vcsl' && savedVcslInstrument
+          ? `${VCSL_OPTION_PREFIX}${savedVcslInstrument}`
+          : bankValue;
+        ensurePatternBankOptions(selectValue);
+        if (bankSelect) bankSelect.value = selectValue;
         // Populate pattern editor (keep blank if no pattern saved)
         const pattern = saved?.pattern || '';
         setStrudelEditorValue('modal-pattern', pattern || '');
@@ -7619,7 +7867,8 @@ class InteractiveSoundApp {
         }
 
         // Ensure pattern includes bank if one is selected
-        const bankValue = bankSelect ? bankSelect.value : '';
+        const bankSelection = bankSelect ? parseBankSelectionValue(bankSelect.value) : { bankValue: '', isVcslInstrument: false };
+        const bankValue = bankSelection.bankValue;
         console.log('🎵 Preview: Original pattern:', patternValue);
         console.log('🎵 Preview: Bank value:', bankValue);
         
@@ -7874,7 +8123,10 @@ class InteractiveSoundApp {
       }
     };
     
-    const isDrumBankValue = (value) => value && DRUM_BANK_VALUES.has(value);
+    const isDrumBankValue = (value) => {
+      const parsed = parseBankSelectionValue(value);
+      return parsed.bankValue && DRUM_BANK_VALUES.has(parsed.bankValue);
+    };
     
     const setDrumGridSubtitle = (metrics) => {
       if (!drumGridTimesigLabel) return;
@@ -9971,13 +10223,29 @@ class InteractiveSoundApp {
     // Bank dropdown - load bank when changed
     if (bankSelect && !bankSelect.dataset.listenerAttached) {
       bankSelect.addEventListener('change', async (e) => {
-        const bankValue = e.target.value;
-        console.log('📦 Bank select changed to:', bankValue);
+        const rawSelectionValue = e.target.value;
+        const parsedSelection = parseBankSelectionValue(rawSelectionValue);
+        const bankValue = parsedSelection.bankValue;
+        console.log('📦 Bank select changed to:', rawSelectionValue);
         // Don't rebuild options on change - they're already there, just preserve selection
-        if (bankSelect.value !== bankValue) {
-          bankSelect.value = bankValue;
+        if (bankSelect.value !== rawSelectionValue) {
+          bankSelect.value = rawSelectionValue;
         }
         const elementId = this.currentEditingElementId;
+        const saveConfigWithSelection = (overrides = {}, skipMasterSave = true) => {
+          if (!elementId) return;
+          const currentConfig = this.loadElementConfig(elementId) || {};
+          const updatedConfig = {
+            ...currentConfig,
+            ...overrides
+          };
+          if (parsedSelection.isVcslInstrument) {
+            updatedConfig.vcslInstrument = parsedSelection.vcslInstrument;
+          } else if ('vcslInstrument' in updatedConfig) {
+            delete updatedConfig.vcslInstrument;
+          }
+          this.saveElementConfig(elementId, updatedConfig, skipMasterSave);
+        };
         
         // If bank is selected, clear file input and show Pattern Bank
         // Time Signature visibility is controlled by editor state (step vs code editor)
@@ -10045,12 +10313,10 @@ class InteractiveSoundApp {
           updateElementTitleDisplay(elementId, 'Default');
           
           // Save title immediately when Default is selected
-          const currentConfig = this.loadElementConfig(elementId) || {};
-          this.saveElementConfig(elementId, {
-            ...currentConfig,
+          saveConfigWithSelection({
             title: 'Default',
             bank: undefined
-          });
+          }, false);
           console.log(`📝 Saved title "Default" for ${elementId}`);
           
           // Remove any existing .bank() modifier ONLY, preserve everything else
@@ -10073,6 +10339,44 @@ class InteractiveSoundApp {
             patternTextarea.placeholder = '';
           }
         } else {
+          if (parsedSelection.isVcslInstrument) {
+            const instrumentName = parsedSelection.vcslInstrument;
+            const instrumentLabel = formatVcslInstrumentLabel(instrumentName);
+            const titleInput = document.getElementById('modal-title');
+            if (statusText) {
+              statusText.textContent = `🎙️ VCSL Instrument: ${instrumentLabel}`;
+            }
+            if (titleInput) {
+              titleInput.value = instrumentLabel;
+            }
+            const modalElementId = document.getElementById('modal-element-id');
+            if (modalElementId) {
+              modalElementId.textContent = getChannelDisplayLabel(elementId);
+            }
+            updateElementTitleDisplay(elementId, instrumentLabel);
+            saveConfigWithSelection({
+              title: instrumentLabel,
+              bank: 'vcsl'
+            }, true);
+            
+            let currentPattern = getStrudelEditorValue('modal-pattern').trim();
+            let strudelPattern = normalizeEditorPattern(currentPattern);
+            const soundRegex = /sound\s*\(\s*["'][^"']*["']\s*\)/i;
+            if (!strudelPattern || strudelPattern.trim() === '') {
+              strudelPattern = `sound("${instrumentName}").bank("vcsl")`;
+            } else if (soundRegex.test(strudelPattern)) {
+              strudelPattern = strudelPattern.replace(soundRegex, `sound("${instrumentName}")`);
+              strudelPattern = updateBankOrSoundModifier(strudelPattern, 'vcsl', true);
+            } else {
+              strudelPattern = `sound("${instrumentName}").bank("vcsl")`;
+            }
+            setStrudelEditorValue('modal-pattern', strudelPattern);
+            patternTextarea.placeholder = '';
+            setTimeout(() => {
+              updateNoteConversionCheckboxVisibility();
+            }, 50);
+            return;
+          }
           // Check if this is a synth sound (not a drum bank)
           const canonicalBankValue = normalizeSynthBankName(bankValue);
           const synthSounds = [...OSCILLATOR_SYNTHS, ...SAMPLE_SYNTHS];
@@ -10110,9 +10414,7 @@ class InteractiveSoundApp {
             updateElementTitleDisplay(elementId, displayName);
             
             // Save title immediately when synth is selected
-            const currentConfig = this.loadElementConfig(elementId) || {};
-            this.saveElementConfig(elementId, {
-              ...currentConfig,
+            saveConfigWithSelection({
               title: displayName,
               bank: bankValue
             });
@@ -10172,12 +10474,35 @@ class InteractiveSoundApp {
               'insect', 'wind', 'east', 'crow', 'space', 'numbers',
               'superpiano', 'jazz'
             ];
-            const isBuiltInBank = builtInDrumBanks.includes(bankValue) || builtInSynthSounds.includes(bankValue.toLowerCase());
+            const lowerBankValue = bankValue?.toLowerCase() || '';
+            const isSpecialSampleBank = SPECIAL_SAMPLE_BANK_VALUES.has(lowerBankValue);
+            const isBuiltInBank = builtInDrumBanks.includes(bankValue) || builtInSynthSounds.includes(lowerBankValue);
             
             let bankLoaded = false;
             // Built-in banks are embedded and work directly - just mark as loaded
             // Non-built-in banks need to be loaded via loadBank()
-            if (isBuiltInBank) {
+            if (isSpecialSampleBank) {
+              try {
+                bankLoaded = await soundManager.loadBank(lowerBankValue);
+                if (bankLoaded) {
+                  console.log(`✅ Specialty sample bank loaded: ${lowerBankValue}`);
+                  if (statusText) {
+                    statusText.textContent = `✅ Bank loaded: ${lowerBankValue}`;
+                  }
+                } else {
+                  console.log(`⚠️ Specialty sample bank "${lowerBankValue}" may not be fully loaded`);
+                  if (statusText) {
+                    statusText.textContent = `⚠️ Bank "${lowerBankValue}" may not be available`;
+                  }
+                }
+              } catch (error) {
+                console.error(`Error loading specialty bank ${lowerBankValue}:`, error);
+                bankLoaded = false;
+                if (statusText) {
+                  statusText.textContent = `⚠️ Error loading bank: ${lowerBankValue}`;
+                }
+              }
+            } else if (isBuiltInBank) {
               bankLoaded = true;
               console.log(`✅ Built-in bank/waveform: ${bankValue} (no loading required)`);
               if (statusText) {
@@ -10211,11 +10536,14 @@ class InteractiveSoundApp {
               // Always update title and pattern regardless of load success
               const titleInput = document.getElementById('modal-title');
               let bankDisplayName;
+              const specialtyMatch = SPECIAL_SAMPLE_BANKS.find(sampleBank => sampleBank.value === lowerBankValue);
               if (bankValue.startsWith('github:')) {
                 bankDisplayName = bankValue.replace('github:tidalcycles/', '');
               } else if (DRUM_BANK_VALUES.has(bankValue)) {
                 // Use proper display name for drum banks
                 bankDisplayName = getDrumBankDisplayName(bankValue);
+              } else if (specialtyMatch) {
+                bankDisplayName = specialtyMatch.label;
               } else {
                 bankDisplayName = bankValue;
               }
@@ -10273,29 +10601,37 @@ class InteractiveSoundApp {
               
               // Determine if this is a drum bank or synth/waveform
               const isDrumBank = DRUM_BANK_VALUES.has(bankValue);
-              const isSynthOrWaveform = OSCILLATOR_SYNTHS.includes(bankValue.toLowerCase()) || 
-                                        SAMPLE_SYNTHS.includes(bankValue.toLowerCase()) ||
-                                        ['sawtooth', 'square', 'triangle', 'sine'].includes(bankValue.toLowerCase());
+              const isSynthOrWaveform = OSCILLATOR_SYNTHS.includes(lowerBankValue) || 
+                                        SAMPLE_SYNTHS.includes(lowerBankValue) ||
+                                        ['sawtooth', 'square', 'triangle', 'sine'].includes(lowerBankValue);
               
-              console.log(`📝 Bank change: isDrumBank=${isDrumBank}, isSynthOrWaveform=${isSynthOrWaveform}, bankValue="${bankValue}"`);
+              console.log(`📝 Bank change: isDrumBank=${isDrumBank}, isSynthOrWaveform=${isSynthOrWaveform}, isSpecialSampleBank=${isSpecialSampleBank}, bankValue="${bankValue}"`);
               
               // Always add/replace the modifier, even if pattern is empty (create minimal pattern)
-              if (isDrumBank) {
+              if (isDrumBank || isSpecialSampleBank) {
+                const appliedBankValue = isSpecialSampleBank ? lowerBankValue : bankValue;
                 // For drum banks: add/replace .bank() modifier
                 if (strudelPattern && strudelPattern.trim() !== '') {
                   // Pattern exists - update it
                   const beforeUpdate = strudelPattern;
-                  strudelPattern = updateBankOrSoundModifier(strudelPattern, bankValue, true);
-                  console.log(`📝 Updated .bank("${bankValue}") modifier`);
+                  strudelPattern = updateBankOrSoundModifier(strudelPattern, appliedBankValue, true);
+                  console.log(`📝 Updated .bank("${appliedBankValue}") modifier`);
                   console.log(`   Before: ${beforeUpdate.substring(0, 80)}...`);
                   console.log(`   After: ${strudelPattern.substring(0, 80)}...`);
                 } else {
                   // No pattern - create minimal pattern with .bank()
-                  strudelPattern = `s("bd").bank("${bankValue}")`;
-                  console.log(`📝 Created minimal pattern with .bank("${bankValue}")`);
+                  if (isSpecialSampleBank) {
+                    const defaultWorldPattern = appliedBankValue === 'mridangam'
+                      ? 'sound("tha dhi thom nam")'
+                      : 'sound("ahh ~ ohh")';
+                    strudelPattern = `${defaultWorldPattern}.bank("${appliedBankValue}")`;
+                  } else {
+                    strudelPattern = `s("bd").bank("${appliedBankValue}")`;
+                  }
+                  console.log(`📝 Created minimal pattern with .bank("${appliedBankValue}")`);
                 }
-                setStrudelEditorValue('modal-pattern', strudelPattern);
-                patternTextarea.placeholder = '';
+            setStrudelEditorValue('modal-pattern', strudelPattern);
+            patternTextarea.placeholder = '';
               } else if (isSynthOrWaveform) {
                 // For synths/waveforms: add/replace .s() modifier
                 const canonicalBankValue = normalizeSynthBankName(bankValue);
@@ -10306,13 +10642,13 @@ class InteractiveSoundApp {
                   console.log(`📝 Updated .s("${canonicalBankValue}") modifier`);
                   console.log(`   Before: ${beforeUpdate.substring(0, 80)}...`);
                   console.log(`   After: ${strudelPattern.substring(0, 80)}...`);
-                } else {
+                  } else {
                   // No pattern - create minimal pattern with .s()
                   strudelPattern = `note("c3").s("${canonicalBankValue}")`;
                   console.log(`📝 Created minimal pattern with .s("${canonicalBankValue}")`);
                 }
-                setStrudelEditorValue('modal-pattern', strudelPattern);
-                patternTextarea.placeholder = '';
+                  setStrudelEditorValue('modal-pattern', strudelPattern);
+                  patternTextarea.placeholder = '';
                 
                 // Set toggle switch to "note names" mode for synths/waveforms
                 const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
@@ -10320,13 +10656,9 @@ class InteractiveSoundApp {
                   keepNotesCheckbox.checked = true;
                   console.log(`📝 Set note names toggle to ON for synth/waveform`);
                 }
-              } else {
+                } else {
                 // Not a drum bank or synth - just show placeholder
-                if (isDrumBank) {
-                  patternTextarea.placeholder = 'Use the drum grid to build a pattern, or type s("bd sd rim ...").bank("Bank")';
-                } else if (isSynthOrWaveform) {
-                  patternTextarea.placeholder = 'Add a pattern, e.g., note("c3 e3 g3").s("sawtooth")';
-                }
+                patternTextarea.placeholder = 'Add a pattern, e.g., sound("bd").bank("CustomBank")';
               }
               
               console.log(`📝 Final pattern in editor: ${getStrudelEditorValue('modal-pattern').substring(0, 100)}...`);
@@ -10431,10 +10763,10 @@ class InteractiveSoundApp {
           console.log('📦 Drum bank selected – preserving current editor mode');
           if (!drumGridState.patternEditorEnabled) {
             // User is already in step mode (e.g., from a preset/demo) – rebuild grid
-            drumGridState.built = false;
-            setTimeout(() => {
-              refreshDrumGridForCurrentState();
-            }, 0);
+          drumGridState.built = false;
+          setTimeout(() => {
+            refreshDrumGridForCurrentState();
+          }, 0);
           } else {
             // Stay in code editor and just refresh UI state
             refreshDrumGridForCurrentState();

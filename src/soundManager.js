@@ -14,6 +14,46 @@ let webModule = null;
 let tonalModule = null;
 let samplerModule = null;
 
+const resolveSampleManifestPath = (path, baseUrl) => {
+  if (!path) return path;
+  if (!baseUrl) return path;
+  try {
+    return new URL(path, baseUrl).toString();
+  } catch {
+    return path;
+  }
+};
+
+const normalizeSampleManifestEntry = (entry, baseUrl) => {
+  if (typeof entry === 'string') {
+    return resolveSampleManifestPath(entry, baseUrl);
+  }
+  if (Array.isArray(entry)) {
+    return entry.map((value) => normalizeSampleManifestEntry(value, baseUrl));
+  }
+  if (entry && typeof entry === 'object') {
+    const result = {};
+    Object.entries(entry).forEach(([key, value]) => {
+      result[key] = normalizeSampleManifestEntry(value, baseUrl);
+    });
+    return result;
+  }
+  return entry;
+};
+
+const normalizeSampleManifest = (manifest) => {
+  if (!manifest || typeof manifest !== 'object') return manifest;
+  const baseUrl = manifest._base || '';
+  const normalized = {};
+  Object.entries(manifest).forEach(([key, value]) => {
+    if (key === '_base') return;
+    normalized[key] = normalizeSampleManifestEntry(value, baseUrl);
+  });
+  return normalized;
+};
+
+const DOUGH_SAMPLES_BASE_URL = 'https://raw.githubusercontent.com/felixroos/dough-samples/main';
+
 async function getStrudelModules() {
   // Create promise only once - this ensures all calls use the same module instances
   // Vite will pre-bundle these, and we cache them to prevent duplicate imports
@@ -535,6 +575,9 @@ class SoundManager {
     this.masterPlaybackTempo = this.currentTempo;
     this.masterOnlyPlayback = true; // Route all playback (including preview) through master
     this.previewElementIds = new Set(); // Track preview elements routed through master
+    this.sampleNameToSpecialtyBank = new Map(); // Map sample name -> specialty bank
+
+    this.specialtyManifests = new Map(); // Cache normalized specialty sample manifests
 
     // Cache for scale conversion context
     this._cachedScaleContext = null;
@@ -4456,8 +4499,9 @@ class SoundManager {
     }
 
     for (const [elementId, trackData] of this.trackedPatterns.entries()) {
-      if (!trackData || !trackData.rawPattern) continue;
-      const normalizedPattern = trackData.rawPattern;
+      if (!trackData) continue;
+      const normalizedPattern = trackData.pattern || trackData.rawPattern;
+      if (!normalizedPattern) continue;
       const convertedPattern = this.convertPatternForScale(normalizedPattern);
       trackData.pattern = convertedPattern || normalizedPattern;
     }
@@ -5391,7 +5435,7 @@ class SoundManager {
       if (samplesFunc && typeof samplesFunc === 'function') {
         try {
           console.log('📦 Loading default Strudel samples from dough-samples CDN...');
-          const ds = "https://raw.githubusercontent.com/felixroos/dough-samples/main/";
+          const ds = DOUGH_SAMPLES_BASE_URL;
           
           // Track which samples loaded successfully
           const loadResults = {
@@ -5789,6 +5833,19 @@ class SoundManager {
       throw new Error('Strudel not initialized');
     }
     
+    if (!bankName || typeof bankName !== 'string') {
+      console.warn('Cannot load bank: invalid name', bankName);
+      return false;
+    }
+    
+    bankName = bankName.trim();
+    if (!bankName) {
+      console.warn('Cannot load bank: empty name after trimming');
+      return false;
+    }
+    
+    const bankNameLower = bankName.toLowerCase();
+    
     // Early check: skip only oscillator waveforms (they're always available, don't need loading)
     // Sample-based synths like "piano", "gtr", "wood", etc. need to be loaded via samples()
     const builtInOscillatorSynths = new Set([
@@ -5930,6 +5987,57 @@ class SoundManager {
       'gtr'
     ];
     
+    const specialtySampleSources = {
+      mridangam: `${DOUGH_SAMPLES_BASE_URL}/mridangam.json`,
+      vcsl: `${DOUGH_SAMPLES_BASE_URL}/vcsl.json`
+    };
+    
+    if (specialtySampleSources[bankNameLower]) {
+      const samplesFunc = window.strudel?.samples || globalThis.samples;
+      if (!samplesFunc || typeof samplesFunc !== 'function') {
+        console.warn(`⚠️ samples() function not available for specialty bank "${bankNameLower}"`);
+        return false;
+      }
+      try {
+        console.log(`📦 Loading specialty sample bank "${bankNameLower}" from dough-samples`);
+        let normalizedManifest = this.specialtyManifests.get(bankNameLower);
+        if (!normalizedManifest) {
+          const response = await fetch(specialtySampleSources[bankNameLower]);
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          const manifest = await response.json();
+          normalizedManifest = normalizeSampleManifest(manifest);
+          this.specialtyManifests.set(bankNameLower, normalizedManifest);
+        }
+        const manifestWithAliases = { ...normalizedManifest };
+        const entryNames = Object.keys(normalizedManifest || {});
+        entryNames.forEach((entryName) => {
+          const aliasName = `${bankNameLower}_${entryName}`;
+          if (!manifestWithAliases[aliasName]) {
+            manifestWithAliases[aliasName] = normalizedManifest[entryName];
+          }
+        });
+        await samplesFunc(manifestWithAliases);
+        entryNames.forEach((entryName) => {
+          const lower = entryName.toLowerCase();
+          this.sampleNameToSpecialtyBank.set(lower, bankNameLower);
+          this.sampleNameToSpecialtyBank.set(`${bankNameLower}_${lower}`, bankNameLower);
+          this.loadedBanks.add(lower);
+          this.loadedBanks.add(entryName);
+          this.loadedBanks.add(`${bankNameLower}_${lower}`);
+          this.loadedBanks.add(`${bankNameLower}_${entryName}`);
+        });
+        this.loadedBanks.add(bankNameLower);
+        this.loadedBanks.add(bankName);
+        console.log(`✅ Specialty bank "${bankNameLower}" loaded`);
+        return true;
+      } catch (error) {
+        console.warn(`⚠️ Failed to load specialty bank "${bankNameLower}":`, error.message || error);
+        return false;
+      }
+    }
+    
     // Check if this is a local custom drum bank
     if (localDrumBanks[bankName]) {
       console.log(`📦 Loading local custom bank "${bankName}" from assets folder...`);
@@ -5982,7 +6090,6 @@ class SoundManager {
     }
     
     // Normalize bank name (e.g., "wood" -> "jazz") before checking
-    const bankNameLower = bankName.toLowerCase();
     let normalizedBankName = bankNameLower;
     if (SYNTH_NAME_ALIASES[bankNameLower]) {
       normalizedBankName = SYNTH_NAME_ALIASES[bankNameLower];
@@ -6198,6 +6305,20 @@ class SoundManager {
         // Mark as "loaded" so we don't try again
         this.loadedBanks.add(nameLower);
         this.loadedBanks.add(name); // Also add original case
+        continue;
+      }
+      const specialtyBankName = this.sampleNameToSpecialtyBank?.get(nameLower);
+      if (specialtyBankName) {
+        console.log(`⏭️ "${name}" is provided by specialty bank "${specialtyBankName}"`);
+        if (!this.loadedBanks.has(specialtyBankName)) {
+          try {
+            await this.loadBank(specialtyBankName);
+          } catch (error) {
+            console.warn(`⚠️ Could not ensure specialty bank "${specialtyBankName}" for "${name}":`, error);
+          }
+        }
+        this.loadedBanks.add(nameLower);
+        this.loadedBanks.add(name);
         continue;
       }
       
@@ -6454,7 +6575,7 @@ class SoundManager {
           continue;
         }
         
-        const sourcePattern = trackData.rawPattern || trackData.pattern || '';
+        const sourcePattern = trackData.pattern || trackData.rawPattern || '';
         if (!sourcePattern || sourcePattern.trim() === '') {
           console.log(`  ⏭️ Skipping ${elementId} (empty pattern)`);
           continue;
@@ -6490,31 +6611,35 @@ class SoundManager {
         // Normalize quotes: replace fancy quotes with straight quotes
         patternCode = patternCode.replace(/[""]/g, '"').replace(/['']/g, "'");
         
-        // Strip extra wrapping parentheses (e.g., (((pattern))) -> pattern)
-        // This prevents double/triple wrapping when adding modifiers
-        // Only strip if pattern is fully wrapped with no method chaining after
-        while (patternCode.startsWith('(') && patternCode.endsWith(')')) {
-          // Check if the outer parentheses are balanced and wrap the entire pattern
-          let depth = 0;
-          let isProperlyWrapped = true;
-          
-          for (let i = 0; i < patternCode.length; i++) {
-            if (patternCode[i] === '(') depth++;
-            else if (patternCode[i] === ')') depth--;
+        const isSafeToStrip = () => {
+          const containsChannelComment = /\/\*\s*Channel\s+\d+\s*\*\//i.test(patternCode);
+          const containsStackCall = /\bstack\s*\(/i.test(patternCode);
+          if (containsChannelComment || containsStackCall) {
+            return false;
+          }
+          return true;
+        };
+        
+        if (isSafeToStrip()) {
+          while (patternCode.startsWith('(') && patternCode.endsWith(')')) {
+            let depth = 0;
+            let isProperlyWrapped = true;
             
-            // If depth reaches 0 before the end, the outer parens aren't the only wrapping
-            if (depth === 0 && i < patternCode.length - 1) {
-              isProperlyWrapped = false;
+            for (let i = 0; i < patternCode.length; i++) {
+              if (patternCode[i] === '(') depth++;
+              else if (patternCode[i] === ')') depth--;
+              
+              if (depth === 0 && i < patternCode.length - 1) {
+                isProperlyWrapped = false;
+                break;
+              }
+            }
+            
+            if (isProperlyWrapped && depth === 0) {
+              patternCode = patternCode.slice(1, -1).trim();
+            } else {
               break;
             }
-          }
-          
-          // If properly wrapped (depth reaches 0 exactly at the end), strip one layer
-          if (isProperlyWrapped && depth === 0) {
-            patternCode = patternCode.slice(1, -1).trim();
-          } else {
-            // Not properly wrapped, stop stripping
-            break;
           }
         }
         
