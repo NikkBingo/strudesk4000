@@ -2188,7 +2188,7 @@ class InteractiveSoundApp {
     this.externalVisualizerObserver = null;
     this.externalVisualizerType = null;
     this.scopeAnimationFrame = null;
-    this.spectrumAnimationFrame = null;
+    this.barchartAnimationFrame = null;
     this.scopeDataArray = null;
     this.spectrumDataArray = null;
     this.activeVisualizerLoop = null;
@@ -2797,6 +2797,7 @@ class InteractiveSoundApp {
     // Setup visualizer dropdown
     this.selectedVisualizer = 'scope'; // default
     const visualizerSelect = document.getElementById('visualizer-select');
+    this.visualizerSelect = visualizerSelect;
     if (visualizerSelect) {
       visualizerSelect.value = this.selectedVisualizer;
       visualizerSelect.addEventListener('change', async (e) => {
@@ -2916,7 +2917,6 @@ class InteractiveSoundApp {
       this.scopeSpectrumCopyLoop = null;
     this.teardownExternalVisualizerCanvas();
     this.stopVisualizerAnimation();
-    this.externalVisualizerType = null;
     
     // Clean up any existing pianoroll canvases from previous sessions
     if (this.selectedVisualizer !== 'pianoroll') {
@@ -3004,9 +3004,9 @@ class InteractiveSoundApp {
     let patternWithVisualizer = basePattern;
     const canvasId = 'master-punchcard-canvas';
     
-    // Setup analyser for visualizers that need audio data (scope, spectrum)
+    // Setup analyser for visualizers that need audio data (scope, bar, spectrum)
     // MUST be done BEFORE pattern evaluation so visualizers can find it
-    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
+    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
       // Ensure analyser is set up and connected BEFORE pattern evaluation
       soundManager.setupVisualizerAnalyser();
       // Wait a bit longer to ensure analyser is fully connected and ready
@@ -3064,8 +3064,8 @@ class InteractiveSoundApp {
         canvasElement.style.width = `${displayWidth}px`;
         canvasElement.style.height = `${displayHeight}px`;
         
-        // For scope/spectrum, ensure canvas is ready and accessible
-        if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
+        // For scope/barchart/spectrum, ensure canvas is ready and accessible
+        if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
           // Force a reflow to ensure canvas is rendered
           canvasElement.offsetHeight;
           console.log(`✅ Canvas "${canvasId}" is ready for ${this.selectedVisualizer}:`, {
@@ -3081,7 +3081,7 @@ class InteractiveSoundApp {
       console.error(`❌ Canvas "${canvasId}" not found!`);
     }
     
-    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum') {
+    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
       if (canvasElement && canvasElement.id !== canvasId) {
         canvasElement.id = canvasId;
       }
@@ -3105,19 +3105,26 @@ class InteractiveSoundApp {
       }
     }
     
-    const analyserId = canvasId; // Analyser ID matches canvas ID
-    
-    if (this.selectedVisualizer === 'scope') {
+    const ctxExpression = "(window.__strudelVisualizerCtx || (document.getElementById('master-punchcard-canvas') && document.getElementById('master-punchcard-canvas').getContext && document.getElementById('master-punchcard-canvas').getContext('2d')))";
+
+    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart') {
       patternWithVisualizer = basePattern;
     } else if (this.selectedVisualizer === 'spectrum') {
-      patternWithVisualizer = basePattern;
+      patternWithVisualizer = `${basePattern}._spectrum({
+        id: '${canvasId}',
+        ctx: ${ctxExpression},
+        thickness: 3,
+        speed: 1,
+        min: -80,
+        max: 0
+      })`;
     } else if (this.selectedVisualizer === 'pianoroll') {
+      this.externalVisualizerType = 'pianoroll';
+      this.watchForExternalVisualizerCanvas('pianoroll');
       if (this.masterPunchcardCanvas) {
         this.masterPunchcardCanvas.style.display = 'none';
       }
-      this.externalVisualizerType = 'pianoroll';
-      this.watchForExternalVisualizerCanvas('pianoroll');
-        patternWithVisualizer = `${basePattern}.pianoroll({ 
+        patternWithVisualizer = `${basePattern}.pianoroll({
           cycles: 4,
           playhead: 0.5,
           fill: true,
@@ -3126,12 +3133,8 @@ class InteractiveSoundApp {
           strokeActive: true,
           autorange: true,
           colorizeInactive: true,
-          background: 'transparent'
+          background: '#05060a'
         })`;
-    } else if (this.selectedVisualizer === 'barchart') {
-      // barchart doesn't exist in Strudel - use spectrum as alternative (shows frequency bars)
-      console.warn('⚠️ barchart visualizer not available in Strudel, using spectrum instead');
-      patternWithVisualizer = `${basePattern}.spectrum({ id: '${canvasId}' })`;
     }
     // For 'punchcard', we don't add any visualizer method - it's just the default rendering
     
@@ -3145,14 +3148,15 @@ class InteractiveSoundApp {
     }
     
     // Verify visualizer is in the pattern
-    const usesInternalVisualizer = this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'spectrum';
+    const usesInternalVisualizer = this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart';
     const requiresPatternVisualizer = !usesInternalVisualizer && this.selectedVisualizer !== 'punchcard';
     let hasVisualizer = true;
     if (requiresPatternVisualizer) {
-      hasVisualizer = patternWithVisualizer.includes(`.${this.selectedVisualizer}(`);
+      const checkRegex = new RegExp(`\\.\\s*_?${this.selectedVisualizer}\\s*\\(`);
+      hasVisualizer = checkRegex.test(patternWithVisualizer);
       if (!hasVisualizer) {
-      console.error(`❌ Visualizer "${this.selectedVisualizer}" not found in pattern! Pattern:`, patternWithVisualizer);
-            } else {
+        console.error(`❌ Visualizer "${this.selectedVisualizer}" not found in pattern! Pattern:`, patternWithVisualizer);
+      } else {
         console.log(`✅ Visualizer "${this.selectedVisualizer}" found in pattern`);
       }
     } else if (usesInternalVisualizer) {
@@ -3164,8 +3168,14 @@ class InteractiveSoundApp {
     
     if (this.selectedVisualizer === 'scope') {
       this.startScopeVisualizerLoop();
-    } else if (this.selectedVisualizer === 'spectrum') {
-      this.startSpectrumVisualizerLoop();
+    } else if (this.selectedVisualizer === 'barchart') {
+      this.startBarchartVisualizerLoop();
+    } else if (this.selectedVisualizer === 'pianoroll') {
+      this.watchForExternalVisualizerCanvas('pianoroll');
+      if (this.masterPunchcardCanvas) {
+        this.masterPunchcardCanvas.style.display = 'none';
+      }
+      this.hideMasterPunchcardPlaceholder();
     }
     
     // Refresh the punchcard display
@@ -3189,6 +3199,36 @@ class InteractiveSoundApp {
 
   async refreshMasterPunchcard(reason = 'auto') {
     if (!this.masterPunchcardContainer) return;
+    
+    const patternCode = soundManager.getMasterPatternCode();
+    if (!patternCode || patternCode.trim() === '') {
+      this.showMasterPunchcardPlaceholder();
+      return;
+    }
+    
+    const useSpiral = this.shouldUseSpiralVisualizer(patternCode);
+    const useScope = !useSpiral && this.shouldUseScopeVisualizer(patternCode);
+    const useSpectrum = !useSpiral && !useScope && this.shouldUseSpectrumVisualizer(patternCode);
+    const usePitchwheel = !useSpiral && !useScope && !useSpectrum && this.shouldUsePitchwheelVisualizer(patternCode);
+    const usePianoroll = !useSpiral && !useScope && !useSpectrum && !usePitchwheel && this.shouldUsePianorollVisualizer(patternCode);
+    const useBarchart = !useSpiral && !useScope && !useSpectrum && !usePitchwheel && !usePianoroll && this.shouldUseBarchartVisualizer(patternCode);
+    
+    if (useSpectrum && this.selectedVisualizer !== 'spectrum' &&
+        (!this.selectedVisualizer || ['scope', 'punchcard', 'barchart'].includes(this.selectedVisualizer))) {
+      this.selectedVisualizer = 'spectrum';
+      if (this.visualizerSelect) {
+        this.visualizerSelect.value = 'spectrum';
+      }
+    }
+    
+    if (usePianoroll && this.selectedVisualizer !== 'pianoroll' &&
+        (!this.selectedVisualizer || ['scope', 'punchcard', 'barchart', 'spectrum'].includes(this.selectedVisualizer))) {
+      this.selectedVisualizer = 'pianoroll';
+      if (this.visualizerSelect) {
+        this.visualizerSelect.value = 'pianoroll';
+      }
+    }
+    
     const activeVisualizer = this.selectedVisualizer || 'punchcard';
     if (activeVisualizer === 'scope') {
       this.prepareCanvasForExternalVisualizer();
@@ -3197,49 +3237,52 @@ class InteractiveSoundApp {
       this.masterPunchcardIsRendering = false;
       return;
     }
-    if (activeVisualizer === 'spectrum') {
+    if (activeVisualizer === 'barchart') {
       this.prepareCanvasForExternalVisualizer();
-      this.startSpectrumVisualizerLoop();
+      this.startBarchartVisualizerLoop();
       this.hideMasterPunchcardPlaceholder();
       this.masterPunchcardIsRendering = false;
       return;
     }
-    if (activeVisualizer !== 'scope' && activeVisualizer !== 'spectrum') {
+    if (activeVisualizer === 'spectrum') {
+      this.prepareCanvasForExternalVisualizer();
+      this.watchForExternalVisualizerCanvas('spectrum');
+      this.hideMasterPunchcardPlaceholder();
+      this.masterPunchcardIsRendering = false;
+      return;
+    }
+    if (activeVisualizer === 'pianoroll') {
+      this.watchForExternalVisualizerCanvas('pianoroll');
+      if (this.masterPunchcardCanvas) {
+        this.masterPunchcardCanvas.style.display = 'none';
+      }
+      this.hideMasterPunchcardPlaceholder();
+      this.masterPunchcardIsRendering = false;
+      return;
+    }
+    if (activeVisualizer !== 'scope' && activeVisualizer !== 'barchart') {
       this.stopVisualizerAnimation();
+    }
+
+    if (useScope || useSpectrum || useSpiral || usePitchwheel || usePianoroll || useBarchart) {
+      if ((this.selectedVisualizer || 'punchcard') === 'punchcard' && useScope) {
+        this.watchForExternalVisualizerCanvas('scope');
+      }
+      if (usePianoroll) {
+        this.watchForExternalVisualizerCanvas('pianoroll');
+        if (this.masterPunchcardCanvas) {
+          this.masterPunchcardCanvas.style.display = 'none';
+        }
+      }
+      this.prepareCanvasForExternalVisualizer();
+      this.hideMasterPunchcardPlaceholder();
+      this.masterPunchcardIsRendering = false;
+      return;
     }
     
     // Avoid overlapping renders; queue another refresh if needed
     if (this.masterPunchcardIsRendering) {
       this.masterPunchcardPendingRefresh = true;
-      return;
-    }
-    
-    const patternCode = soundManager.getMasterPatternCode();
-    if (!patternCode || patternCode.trim() === '') {
-      this.showMasterPunchcardPlaceholder();
-      return;
-    }
-    const useSpiral = this.shouldUseSpiralVisualizer(patternCode);
-    const useScope = !useSpiral && this.shouldUseScopeVisualizer(patternCode);
-    const useSpectrum = !useSpiral && !useScope && this.shouldUseSpectrumVisualizer(patternCode);
-    const usePitchwheel = !useSpiral && !useScope && !useSpectrum && this.shouldUsePitchwheelVisualizer(patternCode);
-    const usePianoroll = !useSpiral && !useScope && !useSpectrum && !usePitchwheel && this.shouldUsePianorollVisualizer(patternCode);
-    const useBarchart = !useSpiral && !useScope && !useSpectrum && !usePitchwheel && !usePianoroll && this.shouldUseBarchartVisualizer(patternCode);
-    
-    if (useScope || useSpectrum || useSpiral || usePitchwheel || usePianoroll || useBarchart) {
-      if ((this.selectedVisualizer || 'punchcard') === 'punchcard') {
-        if (useScope) {
-          this.watchForExternalVisualizerCanvas('scope');
-        } else if (useSpectrum) {
-          this.watchForExternalVisualizerCanvas('spectrum');
-        } else if (usePianoroll) {
-          this.watchForExternalVisualizerCanvas('pianoroll');
-        }
-      }
-      // External visualizers (scope, spectrum, spiral) rely on Strudel rendering directly
-      this.prepareCanvasForExternalVisualizer();
-      this.hideMasterPunchcardPlaceholder();
-      this.masterPunchcardIsRendering = false;
       return;
     }
     
@@ -3310,6 +3353,10 @@ class InteractiveSoundApp {
     this.masterPunchcardCanvas.style.width = '100%';
     this.masterPunchcardCanvas.style.height = '100%';
     this.masterPunchcardCanvas.style.display = 'block';
+    const darkVisualizers = ['scope', 'barchart', 'spectrum'];
+    this.masterPunchcardCanvas.style.background = darkVisualizers.includes(this.selectedVisualizer)
+      ? '#05060a'
+      : 'rgba(255, 255, 255, 0.9)';
     
     let ctx;
     try {
@@ -3375,9 +3422,9 @@ class InteractiveSoundApp {
       cancelAnimationFrame(this.scopeAnimationFrame);
       this.scopeAnimationFrame = null;
     }
-    if (this.spectrumAnimationFrame) {
-      cancelAnimationFrame(this.spectrumAnimationFrame);
-      this.spectrumAnimationFrame = null;
+    if (this.barchartAnimationFrame) {
+      cancelAnimationFrame(this.barchartAnimationFrame);
+      this.barchartAnimationFrame = null;
     }
     this.activeVisualizerLoop = null;
   }
@@ -3467,8 +3514,8 @@ class InteractiveSoundApp {
     draw();
   }
 
-  startSpectrumVisualizerLoop() {
-    if (this.activeVisualizerLoop === 'spectrum') {
+  startBarchartVisualizerLoop() {
+    if (this.activeVisualizerLoop === 'barchart') {
       return;
     }
     const canvas = this.masterPunchcardCanvas;
@@ -3485,9 +3532,9 @@ class InteractiveSoundApp {
     if (!this.spectrumDataArray || this.spectrumDataArray.length !== bufferLength) {
       this.spectrumDataArray = new Uint8Array(bufferLength);
     }
-    this.activeVisualizerLoop = 'spectrum';
+    this.activeVisualizerLoop = 'barchart';
     const draw = () => {
-      if (this.selectedVisualizer !== 'spectrum') {
+      if (this.selectedVisualizer !== 'barchart') {
         this.stopVisualizerAnimation();
         return;
       }
@@ -3520,10 +3567,11 @@ class InteractiveSoundApp {
         context.fillStyle = gradient;
         context.fillRect(x + barWidth * 0.15, y, barWidth * 0.7, barHeight);
       }
-      this.spectrumAnimationFrame = requestAnimationFrame(draw);
+      this.barchartAnimationFrame = requestAnimationFrame(draw);
     };
     draw();
   }
+
 
   teardownExternalVisualizerCanvas() {
     if (this.externalVisualizerObserver) {
