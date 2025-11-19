@@ -3628,6 +3628,18 @@ class SoundManager {
           console.log('✅ Draw module imported from CDN');
         }
         
+        const patternProto = (coreModule?.Pattern?.prototype) ||
+          (typeof Pattern !== 'undefined' ? Pattern.prototype : null) ||
+          (globalThis.Pattern ? globalThis.Pattern.prototype : null);
+        if (patternProto) {
+          if (!patternProto._spectrum && patternProto.spectrum) {
+            patternProto._spectrum = patternProto.spectrum;
+          }
+          if (!patternProto._pianoroll && patternProto.pianoroll) {
+            patternProto._pianoroll = patternProto.pianoroll;
+          }
+        }
+        
         if (drawModule && replInstance && replInstance.evaluate) {
           // Import @strudel/draw in REPL context - this will add spiral, pitchwheel, etc. to Pattern.prototype
           // Use CDN URL since REPL can't resolve module specifiers
@@ -3640,6 +3652,14 @@ class SoundManager {
                 // Export getDrawContext for use in visualizers
                 if (draw.getDrawContext) {
                   globalThis.getDrawContext = draw.getDrawContext
+                }
+                if (typeof Pattern !== 'undefined') {
+                  if (!Pattern.prototype._spectrum && Pattern.prototype.spectrum) {
+                    Pattern.prototype._spectrum = Pattern.prototype.spectrum;
+                  }
+                  if (!Pattern.prototype._pianoroll && Pattern.prototype.pianoroll) {
+                    Pattern.prototype._pianoroll = Pattern.prototype.pianoroll;
+                  }
                 }
               })()
             `);
