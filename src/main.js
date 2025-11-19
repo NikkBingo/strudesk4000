@@ -398,7 +398,7 @@ const DRUM_PATTERN_PRESETS = [
     label: 'Mridangam Percussion Set',
     bank: '',
     description: 'Classical tha · dhi · thom · nam motif on the mridangam bank',
-    pattern: 'sound("tha dhi thom nam").bank("mridangam").pace(4).gain(.9)'
+    pattern: '"tha dhi thom nam".drop("0 -1 -2 -3").sound().bank("mridangam")'
   }
 ];
 
@@ -7208,11 +7208,18 @@ class InteractiveSoundApp {
     const tonalPresetsContainer = document.getElementById('modal-tonal-presets');
     const previewButton = document.getElementById('modal-preview-btn');
 
+    const updatePresetsSectionState = (expanded) => {
+      if (!presetsToggle || !presetsContent) return;
+      presetsToggle.setAttribute('aria-expanded', expanded.toString());
+      presetsContent.classList.toggle('is-open', expanded);
+      presetsContent.setAttribute('aria-hidden', (!expanded).toString());
+    };
+
     const resetPresetsSection = () => {
-      if (presetsToggle && presetsContent) {
-        presetsToggle.setAttribute('aria-expanded', 'false');
-        presetsContent.hidden = true;
+      if (presetsContent && presetsContent.hasAttribute('hidden')) {
+        presetsContent.removeAttribute('hidden');
       }
+      updatePresetsSectionState(false);
     };
 
     const updatePreviewButtonState = () => {
@@ -8651,8 +8658,8 @@ class InteractiveSoundApp {
     if (presetsToggle && presetsContent) {
       presetsToggle.addEventListener('click', () => {
         const expanded = presetsToggle.getAttribute('aria-expanded') === 'true';
-        presetsToggle.setAttribute('aria-expanded', (!expanded).toString());
-        presetsContent.hidden = expanded;
+        const nextExpanded = !expanded;
+        updatePresetsSectionState(nextExpanded);
       });
     }
 
@@ -10339,6 +10346,18 @@ class InteractiveSoundApp {
             patternTextarea.placeholder = '';
           }
         } else {
+          const appendSegment = (pattern, segment) => {
+            if (!pattern || pattern.trim() === '') {
+              return segment;
+            }
+            let updated = pattern.trim();
+            if (!updated.endsWith('.') && !segment.startsWith('.')) {
+              updated += '.';
+            }
+            updated += segment;
+            return updated.replace(/\.\.+/g, '.').replace(/\.\s+\./g, '.').trim();
+          };
+
           if (parsedSelection.isVcslInstrument) {
             const instrumentName = parsedSelection.vcslInstrument;
             const instrumentLabel = formatVcslInstrumentLabel(instrumentName);
@@ -10362,14 +10381,19 @@ class InteractiveSoundApp {
             let currentPattern = getStrudelEditorValue('modal-pattern').trim();
             let strudelPattern = normalizeEditorPattern(currentPattern);
             const soundRegex = /sound\s*\(\s*["'][^"']*["']\s*\)/i;
-            if (!strudelPattern || strudelPattern.trim() === '') {
-              strudelPattern = `sound("${instrumentName}").bank("vcsl")`;
-            } else if (soundRegex.test(strudelPattern)) {
-              strudelPattern = strudelPattern.replace(soundRegex, `sound("${instrumentName}")`);
-              strudelPattern = updateBankOrSoundModifier(strudelPattern, 'vcsl', true);
+            const normalizedPattern = strudelPattern && strudelPattern.trim() !== '' ? strudelPattern : '';
+            if (normalizedPattern) {
+              if (soundRegex.test(normalizedPattern)) {
+                strudelPattern = normalizedPattern.replace(soundRegex, `sound("${instrumentName}")`);
+              } else if (normalizedPattern.includes('.s(')) {
+                strudelPattern = normalizedPattern.replace(/\.s\s*\(\s*["'][^"']*["']\s*\)/i, `.sound("${instrumentName}")`);
+              } else {
+                strudelPattern = appendSegment(normalizedPattern, `sound("${instrumentName}")`);
+              }
             } else {
-              strudelPattern = `sound("${instrumentName}").bank("vcsl")`;
+              strudelPattern = `sound("${instrumentName}")`;
             }
+            strudelPattern = updateBankOrSoundModifier(strudelPattern, 'vcsl', true);
             setStrudelEditorValue('modal-pattern', strudelPattern);
             patternTextarea.placeholder = '';
             setTimeout(() => {
