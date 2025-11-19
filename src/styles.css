@@ -2009,10 +2009,20 @@ header h1 {
 
 .modal-presets-content {
   border-top: 1px solid rgba(102, 126, 234, 0.15);
-  padding: 12px 14px 16px;
+  padding: 0 14px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.28s ease, opacity 0.24s ease, padding 0.28s ease;
+}
+
+.modal-presets-content.is-open {
+  padding: 12px 14px 16px;
+  max-height: 900px; /* plenty for both groups */
+  opacity: 1;
 }
 
 .modal-presets-group {
