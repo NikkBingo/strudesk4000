@@ -1,3 +1,8 @@
+<!--
+  Strudesk 4000
+  Copyright 2025 eKommissar. All Rights Reserved.
+-->
+
 # Strudel Interactive Sound Page
 
 An interactive web page where sounds play based on pointer position - both when hovering over elements and when the pointer is near elements (proximity-based). Supports both synthesized sounds (via Web Audio API) and pre-recorded audio files.
