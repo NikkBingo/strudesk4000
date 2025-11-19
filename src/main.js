@@ -9883,25 +9883,42 @@ class InteractiveSoundApp {
           
           patternBody = patternBody.replace(/^,+/, '').replace(/,+$/, '').trim();
           if (!patternBody) continue;
+
+          const channelBlock = match[0]?.trim() || patternBody;
           
           const elementId = `element-${channelNumber}`;
-          const trackData = soundManager.trackedPatterns?.get(elementId);
-          const strippedPatternBody = stripMasterInjectedModifiers(patternBody, trackData);
+          const existingTrackData = soundManager.trackedPatterns?.get(elementId);
+          const strippedPatternBody = stripMasterInjectedModifiers(patternBody, existingTrackData);
+          const normalizedChannelPattern = strippedPatternBody || patternBody;
           
           const existingConfig = this.loadElementConfig(elementId) || {};
           const newConfig = {
             ...existingConfig,
-            pattern: strippedPatternBody || patternBody
+            pattern: normalizedChannelPattern
           };
           
           this.saveElementConfig(elementId, newConfig, true);
           
-          if (soundManager.trackedPatterns?.has(elementId)) {
-            const trackData = soundManager.trackedPatterns.get(elementId);
-            if (trackData) {
-              trackData.pattern = strippedPatternBody || patternBody;
-              trackData.rawPattern = strippedPatternBody || patternBody;
-            }
+          if (soundManager.trackedPatterns) {
+            const gain = existingTrackData?.gain ??
+              (typeof soundManager.getElementGain === 'function'
+                ? soundManager.getElementGain(elementId)
+                : 0.8);
+            const pan = existingTrackData?.pan ??
+              (typeof soundManager.getElementPan === 'function'
+                ? soundManager.getElementPan(elementId)
+                : 0);
+            const muted = existingTrackData?.muted ?? false;
+            const soloed = existingTrackData?.soloed ?? false;
+            
+            soundManager.trackedPatterns.set(elementId, {
+              rawPattern: channelBlock,
+              pattern: normalizedChannelPattern,
+              gain,
+              pan,
+              muted,
+              soloed
+            });
           }
 
           if (this.currentEditingElementId === elementId) {
