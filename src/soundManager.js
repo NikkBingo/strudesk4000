@@ -579,6 +579,11 @@ class SoundManager {
 
     this.specialtyManifests = new Map(); // Cache normalized specialty sample manifests
 
+    // Master pattern live refresh helpers
+    this._pendingMasterPatternRefreshReason = null;
+    this._masterPatternRefreshTimer = null;
+    this._masterPatternEvalPromise = Promise.resolve();
+
     // Cache for scale conversion context
     this._cachedScaleContext = null;
     this._cachedScaleKey = '';
@@ -939,6 +944,8 @@ class SoundManager {
             // Route through master chain if element routing not available
             // This ensures we catch Strudel's output even if it connects before trackedPatterns is set
             const shouldIntercept = (isMasterDestination || isAnyAudioContextDestination) && !isAnalyserNode;
+            const masterPlaybackActive = soundManagerInstance.masterActive && soundManagerInstance.trackedPatterns.size > 0;
+            const isMultiChannelMaster = masterPlaybackActive;
             
             if (shouldIntercept) {
               // Debug logging for master destination connections
@@ -959,11 +966,42 @@ class SoundManager {
                 soundManagerInstance._nodeTypeConnectLogged.add(nodeType);
               }
               
+              // If master playback is active, always route through master chain
+              if (masterPlaybackActive) {
+                const masterNode = masterPanNode || masterGainNode;
+                if (masterNode) {
+                  // Ensure masterPan -> masterGain connection
+                  if (masterPanNode && masterGainNode) {
+                    try {
+                      masterPanNode.connect(masterGainNode);
+                    } catch (e) {
+                      if (!e.message.includes('already')) {
+                        console.warn(`⚠️ Master chain connect error: ${e.message}`);
+                      }
+                    }
+                  }
+                  
+                  // Ensure masterGain -> destination connection
+                  if (masterGainNode && soundManagerInstance._realDestination) {
+                    try {
+                      masterGainNode.connect(soundManagerInstance._realDestination);
+                    } catch (e) {
+                      if (!e.message.includes('already')) {
+                        console.warn(`⚠️ Master destination connect error: ${e.message}`);
+                      }
+                    }
+                  }
+                  
+                  this.__punchcardMasterRouted = true;
+                  this.__punchcardMasterConnectionNode = masterNode;
+                  return this.__originalConnect.call(this, masterNode, outputIndex, inputIndex);
+                }
+              }
+              
               let elementId = null;
               
-              // PRIORITY 1: Check trackedPatterns first (for master pattern routing)
-              // CRITICAL: Only use element routing when masterActive is true
-              if (soundManagerInstance.masterActive && soundManagerInstance.trackedPatterns.size > 0) {
+              // Only attempt to route through element gain nodes when we can uniquely identify the element
+              if (!isMultiChannelMaster && soundManagerInstance.masterActive && soundManagerInstance.trackedPatterns.size > 0) {
                 const trackedElementIds = Array.from(soundManagerInstance.trackedPatterns.keys());
                 
                 if (trackedElementIds.length === 1) {
@@ -974,35 +1012,12 @@ class SoundManager {
                     soundManagerInstance._logRoute(`🎚️ currentEvaluatingSlot=${soundManagerInstance.currentEvaluatingSlot}, patternSlotToElementId mapping:`, Array.from(soundManagerInstance.patternSlotToElementId.entries()));
                     soundManagerInstance._singleElementMasterRoutingLogged = true;
                   }
-                } else {
-                  // Multiple elements - try to match by currentEvaluatingSlot first
-                  if (soundManagerInstance.currentEvaluatingSlot) {
-                    const slotElementId = soundManagerInstance.patternSlotToElementId.get(soundManagerInstance.currentEvaluatingSlot);
-                    if (slotElementId && trackedElementIds.includes(slotElementId)) {
-                      elementId = slotElementId;
-                      soundManagerInstance._logRoute(`🎚️ Multi-element master: routing via currentEvaluatingSlot ${soundManagerInstance.currentEvaluatingSlot} -> ${elementId}`);
-                    }
-                  }
-                  
-                  // If no match by slot, check all tracked slots
-                  if (!elementId) {
-                    for (const [slotName, elemId] of soundManagerInstance.patternSlotToElementId.entries()) {
-                      if (trackedElementIds.includes(elemId)) {
-                        try {
-                          const slotValue = globalThis[slotName];
-                          // Check if this slot has an active pattern (not silence) and is tracked
-                          if (slotValue && slotValue !== globalThis.silence && 
-                              slotValue._Pattern) {
-                            // This element is part of the master stack - route through its gain node
-                            elementId = elemId;
-                            soundManagerInstance._logRoute(`🎚️ Found element from tracked slot: ${elementId} (slot: ${slotName})`);
-                            break;
-                          }
-                        } catch (e) {
-                          // Ignore errors
-                        }
-                      }
-                    }
+                } else if (soundManagerInstance.currentEvaluatingSlot) {
+                  // Multiple elements but we have a current evaluating slot (e.g., editing a single element)
+                  const slotElementId = soundManagerInstance.patternSlotToElementId.get(soundManagerInstance.currentEvaluatingSlot);
+                  if (slotElementId && trackedElementIds.includes(slotElementId)) {
+                    elementId = slotElementId;
+                    soundManagerInstance._logRoute(`🎚️ Multi-element evaluate: routing via currentEvaluatingSlot ${soundManagerInstance.currentEvaluatingSlot} -> ${elementId}`);
                   }
                 }
               }
@@ -1275,89 +1290,18 @@ class SoundManager {
                   elementId = null;
                 }
               } else {
-                // For stack() patterns evaluated on d0, element slots aren't active
-                // Try to route through element gain nodes first if we can identify the element
-                // Otherwise fall back to master chain
-                const isStackPattern = soundManagerInstance.masterActive && soundManagerInstance.trackedPatterns.size > 1;
+                // For stack() patterns evaluated on d0, element slots aren't reliable.
+                // Route them through the master chain so per-element gain is applied via pattern modifiers.
+                const isStackPattern = masterPlaybackActive;
                 
                 if (isStackPattern) {
-                  // For stack patterns, try to route through element gain nodes in round-robin fashion
-                  // This ensures each pattern in the stack routes through its corresponding element
-                  // We use a simple round-robin based on connection order
-                  if (!soundManagerInstance._stackConnectionCount) {
-                    soundManagerInstance._stackConnectionCount = new Map();
+                  if (!soundManagerInstance._stackMasterRoutingLogged) {
+                    console.log(`🎚️ Stack() pattern: Routing through master chain (${soundManagerInstance.trackedPatterns.size} elements)`);
+                    soundManagerInstance._stackMasterRoutingLogged = true;
                   }
-                  
-                  // Get tracked element IDs in order
-                  const trackedElementIds = Array.from(soundManagerInstance.trackedPatterns.keys());
-                  
-                  // Count connections per element (round-robin)
-                  let connectionCount = soundManagerInstance._stackConnectionCount.get('total') || 0;
-                  const elementIndex = connectionCount % trackedElementIds.length;
-                  const elementId = trackedElementIds[elementIndex];
-                  soundManagerInstance._stackConnectionCount.set('total', connectionCount + 1);
-                  
-                  // Try to route through this element's gain node
-                  const elementNodes = soundManagerInstance.getElementAudioNodes(elementId);
-                  if (elementNodes && elementNodes.gainNode) {
-                    const panNode = elementNodes.panNode;
-                    
-                    // CRITICAL: Ensure panNode is connected to master chain
-                    // Use tracking Set to avoid repeated disconnections
-                    if (panNode) {
-                      try {
-                        if (!soundManagerInstance._panNodeConnectedToMaster) {
-                          soundManagerInstance._panNodeConnectedToMaster = new Set();
-                        }
-                        
-                        const connectionKey = `${elementId}-${soundManagerInstance.masterPanNode ? 'pan' : 'gain'}`;
-                        if (!soundManagerInstance._panNodeConnectedToMaster.has(connectionKey)) {
-                          if (soundManagerInstance.masterPanNode) {
-                            try {
-                              panNode.connect(soundManagerInstance.masterPanNode);
-                              soundManagerInstance._panNodeConnectedToMaster.add(connectionKey);
-                            } catch (e) {
-                              if (e.message.includes('already connected') || e.message.includes('already been connected')) {
-                                soundManagerInstance._panNodeConnectedToMaster.add(connectionKey);
-                              } else {
-                                throw e;
-                              }
-                            }
-                          } else if (soundManagerInstance.masterGainNode) {
-                            try {
-                              panNode.connect(soundManagerInstance.masterGainNode);
-                              soundManagerInstance._panNodeConnectedToMaster.add(connectionKey);
-                            } catch (e) {
-                              if (e.message.includes('already connected') || e.message.includes('already been connected')) {
-                                soundManagerInstance._panNodeConnectedToMaster.add(connectionKey);
-                              } else {
-                                throw e;
-                              }
-                            }
-                          }
-                        }
-                      } catch (e) {
-                        console.warn(`⚠️ Stack pattern: Failed to connect ${elementId} panNode:`, e.message);
-                      }
-                    }
-                    
-                    if (!soundManagerInstance._stackElementRoutingLogged) {
-                      soundManagerInstance._stackElementRoutingLogged = new Set();
-                    }
-                    if (!soundManagerInstance._stackElementRoutingLogged.has(elementId)) {
-                      console.log(`🎚️ Stack() pattern: Routing ${elementId} audio through element gain node (round-robin, ${trackedElementIds.length} elements)`);
-                      soundManagerInstance._stackElementRoutingLogged.add(elementId);
-                    }
-                    return this.__originalConnect.call(this, elementNodes.gainNode, outputIndex, inputIndex);
-                  }
-                  
-                  // Fallback: route through master chain if element routing fails
-                  if (masterPanNode) {
-                    if (!soundManagerInstance._stackMasterRoutingLogged) {
-                      console.log(`🎚️ Stack() pattern: Routing through master chain (fallback, ${trackedElementIds.length} elements)`);
-                      soundManagerInstance._stackMasterRoutingLogged = true;
-                    }
-                    return this.__originalConnect.call(this, masterPanNode, outputIndex, inputIndex);
+                  const masterNode = masterPanNode || masterGainNode;
+                  if (masterNode) {
+                    return this.__originalConnect.call(this, masterNode, outputIndex, inputIndex);
                   }
                 }
                 
@@ -1428,7 +1372,7 @@ class SoundManager {
               
               // Final fallback: only allow routing through master chain when no element routing is possible
               // Limit this to cases where there are no tracked patterns yet (e.g., initialization) or master is inactive
-              const allowMasterFallback = (soundManagerInstance.trackedPatterns.size === 0) || !soundManagerInstance.masterActive;
+              const allowMasterFallback = masterPlaybackActive || (soundManagerInstance.trackedPatterns.size === 0) || !soundManagerInstance.masterActive;
               const masterNode = allowMasterFallback ? (masterPanNode || masterGainNode) : null;
               if (masterNode) {
                 // Skip fallback if this source is already routed through an element chain
@@ -1833,18 +1777,37 @@ class SoundManager {
    * Apply element-specific gain and pan to a Strudel pattern
    * Returns modified pattern string with .gain(), .pan(), and tempo control applied
    */
-  applyElementGainPanToPattern(pattern, elementId) {
+  applyElementGainPanToPattern(pattern, elementId, options = {}) {
+    const {
+      applyGainInPattern = true,
+      applyPanInPattern = true,
+      applyTempoInPattern = true
+    } = options;
     const gain = this.elementGainValues.get(elementId) || 0.8;
     const pan = this.elementPanValues.get(elementId) || 0;
     const tempo = this.currentTempo || 120;
     
+    // Remove existing pan/postgain modifiers to avoid double application
+    let modifiedPattern = pattern;
+    // Remove existing .postgain() modifiers (match any value inside)
+    modifiedPattern = modifiedPattern.replace(/\.postgain\s*\([^)]*\)/g, '');
+    // Remove existing .pan() modifiers (match any value inside)
+    modifiedPattern = modifiedPattern.replace(/\.pan\s*\([^)]*\)/g, '');
+    // Clean up any double dots that might result
+    modifiedPattern = modifiedPattern.replace(/\.\.+/g, '.').trim();
+    modifiedPattern = modifiedPattern.replace(/\.+$/, '').trim();
+    
     // Apply gain, pan, and tempo modifiers by chaining directly (no parentheses)
     // Note: Strudel's gain is 0-1, pan is -1 to 1 (0 = center)
-    // Chain modifiers directly without wrapping in parentheses to avoid evaluation issues
-    let modifiedPattern = `${pattern}.gain(${gain})`;
+    // When playing individually (not through master), gain is handled by Web Audio gain node,
+    // so we should NOT apply .gain() in the pattern to avoid double application.
+    // When playing through master, gain is applied in the pattern.
+    if (applyGainInPattern) {
+      modifiedPattern = `${modifiedPattern}.postgain(${gain})`;
+    }
     
     // Only add .pan() if pan value is not 0 (not center)
-    if (pan !== 0) {
+    if (applyPanInPattern && pan !== 0) {
       modifiedPattern += `.pan(${pan})`;
     }
     
@@ -1854,10 +1817,12 @@ class SoundManager {
     
     // Apply tempo adjustment - use .fast() or .slow() to control tempo
     // This is more reliable than .cpm() which might not exist
-    if (speedMultiplier > 1.0) {
-      modifiedPattern += `.fast(${speedMultiplier})`;
-    } else if (speedMultiplier < 1.0) {
-      modifiedPattern += `.slow(${1 / speedMultiplier})`;
+    if (applyTempoInPattern) {
+      if (speedMultiplier > 1.0) {
+        modifiedPattern += `.fast(${speedMultiplier})`;
+      } else if (speedMultiplier < 1.0) {
+        modifiedPattern += `.slow(${1 / speedMultiplier})`;
+      }
     }
     // If speedMultiplier === 1.0, no adjustment needed
     
@@ -1976,7 +1941,13 @@ class SoundManager {
     }
     
     // Apply element-specific gain and pan using Strudel's built-in functions
-    patternToEval = this.applyElementGainPanToPattern(patternToEval, elementId);
+    // Check if gain should be applied in pattern (default to true for master playback)
+    const applyGainInPattern = options.applyGainInPattern !== undefined 
+      ? options.applyGainInPattern 
+      : this.masterActive;
+    patternToEval = this.applyElementGainPanToPattern(patternToEval, elementId, {
+      applyGainInPattern
+    });
     
     // Validate final pattern
     if (!patternToEval || patternToEval.trim() === '') {
@@ -2227,7 +2198,11 @@ class SoundManager {
       }
       
       let patternToEval = elementConfig.pattern.replace(/\._scope\(\)/g, '');
-      patternToEval = this.applyElementGainPanToPattern(patternToEval, elementId);
+      // When playing individually (not through master), gain is handled by Web Audio gain node
+      // so we should NOT apply .gain() in the pattern to avoid double application
+      patternToEval = this.applyElementGainPanToPattern(patternToEval, elementId, { 
+        applyGainInPattern: false 
+      });
       
       // Reassign with updated gain/pan
       await window.strudel.evaluate(`${patternSlot} = ${patternToEval}`);
@@ -2295,7 +2270,11 @@ class SoundManager {
       }
       
       // Apply element-specific gain and pan
-      patternToEval = this.applyElementGainPanToPattern(patternToEval, elementId);
+      // When playing individually (not through master), gain is handled by Web Audio gain node
+      // so we should NOT apply .gain() in the pattern to avoid double application
+      patternToEval = this.applyElementGainPanToPattern(patternToEval, elementId, {
+        applyGainInPattern: this.masterActive
+      });
       
       // Update the pattern slot directly without stopping
       await window.strudel.evaluate(`${patternSlot} = ${patternToEval}`);
@@ -3031,14 +3010,21 @@ class SoundManager {
             console.log(`⚡ Using cached pattern for ${elementId} (instant trigger)`);
             
             // Re-apply gain/pan in case they changed (gain/pan are dynamic)
+            // When playing individually (not through master), gain is handled by Web Audio gain node
+            // so we should NOT apply .gain() in the pattern to avoid double application
             patternToEval = this.applyElementGainPanToPattern(
               cached.processedPattern.replace(/\.gain\([^)]*\)/g, '').replace(/\.pan\([^)]*\)/g, '').replace(/\.fast\([^)]*\)/g, '').replace(/\.slow\([^)]*\)/g, '').trim(),
-              elementId
+              elementId,
+              { applyGainInPattern: this.masterActive }
             );
           } else {
             // No cache or pattern changed - process pattern normally
             console.log(`📝 Processing pattern for ${elementId} (not cached)`);
-            patternToEval = await this.processPattern(pattern, elementId);
+            // When playing individually (not through master), gain is handled by Web Audio gain node
+            // so we should NOT apply .gain() in the pattern to avoid double application
+            patternToEval = await this.processPattern(pattern, elementId, {
+              applyGainInPattern: this.masterActive
+            });
             
             if (!patternToEval) {
               console.warn(`[${elementId}] Pattern processing failed - cannot evaluate`);
@@ -6392,10 +6378,30 @@ class SoundManager {
       const hasNoteNames = this.patternHasNoteNames(normalizedPattern);
       const hasNumericNotes = this.patternHasNumericNotePattern(normalizedPattern);
       
-      // Preserve the original format: store rawPattern as-is (what user wrote)
-      // Store pattern as the same format (no conversion) - master will preserve each track's format
-      // If pattern uses note names, keep as note names; if semitones, keep as semitones
-      const preparedPattern = normalizedPattern;  // Always preserve the original format
+      // Convert note() calls with semitones to n() when adding to master
+      let preparedPattern = normalizedPattern;
+      // Check if pattern contains note() calls (not just n())
+      const hasNoteCalls = /\bnote\s*\(/i.test(normalizedPattern);
+      if (hasNoteCalls) {
+        // Replace note( with n( for numeric note patterns only
+        // Match note( followed by quoted content
+        const noteCallRegex = /\bnote\s*\(\s*(["'])([^"']*)\1/gi;
+        let converted = false;
+        preparedPattern = preparedPattern.replace(noteCallRegex, (match, quote, content) => {
+          // Check if content is numeric (semitones) - same logic as patternHasNumericNotePattern
+          const cleanedContent = content.replace(/[<>\[\]\{\}\|,]/g, ' ').trim();
+          if (cleanedContent && !/[a-gA-G]/.test(cleanedContent) && /^[\d\s~\-\/]+$/.test(cleanedContent)) {
+            // Convert to n()
+            converted = true;
+            return `n(${quote}${content}${quote}`;
+          }
+          return match; // Keep as note() if it contains note names
+        });
+        
+        if (converted) {
+          console.log(`🔄 Converted note() with semitones to n() for ${elementId}`);
+        }
+      }
       
       this.trackedPatterns.set(elementId, {
         rawPattern: normalizedPattern,  // Original pattern as written
@@ -6504,6 +6510,9 @@ class SoundManager {
       // so the displayed code shows the current gain value
       this.updateMasterPattern(this.soloedElements, this.mutedElements);
       
+      // Schedule a master refresh so the new gain value is heard during playback
+      this.scheduleMasterPatternRefresh(`gain change: ${elementId}`);
+      
       return { success: true };
     }
     return { success: false, reason: 'Element not tracked in master' };
@@ -6523,9 +6532,52 @@ class SoundManager {
       // so the displayed code shows the current pan value
       this.updateMasterPattern(this.soloedElements, this.mutedElements);
       
+      // Schedule a master refresh so the new pan value is heard during playback
+      this.scheduleMasterPatternRefresh(`pan change: ${elementId}`);
+      
       return { success: true };
     }
     return { success: false, reason: 'Element not tracked in master' };
+  }
+
+  /**
+   * Queue a master pattern re-evaluation so rapid slider moves don't spam Strudel
+   */
+  scheduleMasterPatternRefresh(reason = 'unspecified') {
+    this._pendingMasterPatternRefreshReason = reason;
+    if (this._masterPatternRefreshTimer) {
+      return;
+    }
+    this._masterPatternRefreshTimer = setTimeout(() => {
+      this._masterPatternRefreshTimer = null;
+      this._performScheduledMasterPatternRefresh();
+    }, 60);
+  }
+
+  async _performScheduledMasterPatternRefresh() {
+    if (!this.masterPattern || this.masterPattern.trim() === '') {
+      this._pendingMasterPatternRefreshReason = null;
+      return;
+    }
+
+    if (!this.masterActive) {
+      console.log(`🔁 Master refresh skipped (not active). Pending reason: ${this._pendingMasterPatternRefreshReason || 'unspecified'}`);
+      this._pendingMasterPatternRefreshReason = null;
+      return;
+    }
+
+    const reason = this._pendingMasterPatternRefreshReason || 'unspecified';
+    this._pendingMasterPatternRefreshReason = null;
+
+    this._masterPatternEvalPromise = this._masterPatternEvalPromise
+      .catch(() => {})
+      .then(() => this._reEvaluateMasterPattern(reason));
+
+    try {
+      await this._masterPatternEvalPromise;
+    } catch (error) {
+      console.warn(`⚠️ Master pattern refresh failed (${reason}):`, error);
+    }
   }
 
   formatMasterPatternWithTempoComment(pattern) {
@@ -6570,7 +6622,8 @@ class SoundManager {
         }
         
         // Skip if gain is 0 or very close to 0 (effectively muted)
-        if (trackData.gain <= 0.001) {
+        // Only skip if gain is truly 0, not just low values
+        if (trackData.gain <= 0) {
           console.log(`  ⏭️ Skipping ${elementId} (gain is ${trackData.gain})`);
           continue;
         }
@@ -6670,20 +6723,16 @@ class SoundManager {
         // Normalize synth aliases to ensure consistency across master pattern
         patternCode = replaceSynthAliasesInPattern(patternCode);
         
-        // Add gain/pan modifiers to pattern string for display purposes
-        // The actual gain/pan control is done via Web Audio API nodes for real-time response
-        // But we include them in the pattern code so users can see the current values
-        
-        // Add gain modifier if not default
-        if (trackData.gain !== 1) {
-          const basePattern = patternCode.trim();
-          patternCode = `${basePattern}.gain(${trackData.gain.toFixed(2)})`;
-        }
+        // Add gain/pan modifiers to pattern string
+        // Always apply gain to ensure smooth volume control (not just when !== 1)
+        // The Web Audio API gain nodes provide real-time control, but pattern-level gain
+        // ensures consistency and proper mixing when multiple channels are playing
+        const basePattern = patternCode.trim();
+        patternCode = `${basePattern}.postgain(${trackData.gain.toFixed(2)})`;
         
         // Add pan modifier if not centered
         if (trackData.pan !== 0) {
-          const basePattern = patternCode.trim();
-          patternCode = `${basePattern}.pan(${trackData.pan.toFixed(2)})`;
+          patternCode = `${patternCode}.pan(${trackData.pan.toFixed(2)})`;
         }
         
         // Apply global settings (scale) per pattern instead of entire stack
@@ -6715,7 +6764,8 @@ class SoundManager {
         const isWrapped = trimmedPattern.startsWith('(') && trimmedPattern.endsWith(')');
         patternCode = this.applyGlobalSettingsToPattern(patternCode, isWrapped, false, elementKey, elementScale);
 
-        if (trackData.gain === 1 && trackData.pan === 0) {
+        // Only unwrap if pan is 0 (gain is always applied now for smooth volume control)
+        if (trackData.pan === 0) {
           let normalizedPattern = patternCode.trim();
           const unwrapFullyWrapped = () => {
             while (normalizedPattern.startsWith('(') && normalizedPattern.endsWith(')')) {
@@ -6746,14 +6796,9 @@ class SoundManager {
         console.log(`  ✅ Added ${elementId}: ${patternCode.substring(0, 100)}...`);
       }
       
-    if (patterns.length === 0) {
+      if (patterns.length === 0) {
         this.masterPattern = '';
         console.log(`🔇 No active patterns - master pattern cleared`);
-      } else if (patterns.length === 1) {
-        const channelNumber = patternChannels[0] ?? 1;
-        const singlePatternBody = patterns[0];
-        this.masterPattern = `/* Channel ${channelNumber} */\n${singlePatternBody}`;
-        console.log(`🎵 Master pattern (single): ${this.masterPattern.substring(0, 120)}...`);
       } else {
         const formattedPatterns = patterns.map((pattern, index) => {
           const channelNumber = patternChannels[index] ?? (index + 1);
@@ -6845,25 +6890,6 @@ class SoundManager {
       const currentMaster = this.masterPattern;
       if (currentMaster && currentMaster.trim() !== '') {
         let modifiedMaster = this.convertPatternForScale(currentMaster) || currentMaster;
-        
-        const isStackPattern = /\bstack\s*\(/.test(modifiedMaster);
-        const channelCount = patterns.length;
-        
-        if (channelCount === 1 && isStackPattern) {
-          const innerMatch = modifiedMaster.match(/\bstack\s*\(\s*([\s\S]*?)\s*\)\s*$/);
-          if (innerMatch) {
-            const innerContent = innerMatch[1].trim();
-            const channelCommentMatch = innerContent.match(/\/\*\s*Channel\s*\d+\s*\*\/\s*([\s\S]*)/);
-            const channelPattern = channelCommentMatch ? channelCommentMatch[1].trim() : innerContent;
-            modifiedMaster = channelCommentMatch ? channelCommentMatch[0] : channelPattern;
-            modifiedMaster = modifiedMaster.replace(/\.gain\(\s*([^)]+)\s*\)\s*\)$/g, (match, gainValue) => {
-              return `).gain(${gainValue})`;
-            });
-          }
-        }
-        
-        // Note: Master mix modifiers (gain, pan, cpm) are already applied by applyMasterMixModifiers
-        // No need to add them again here
         
         this.masterPattern = this.formatMasterPatternWithTempoComment(modifiedMaster);
       }
@@ -7119,8 +7145,32 @@ class SoundManager {
   }
 
   /**
-   * Simplified master playback path (single Strudel slot)
+   * Re-evaluate the master pattern without stopping playback
+   * Used for live updates (e.g., gain/pan changes)
    */
+  async _reEvaluateMasterPattern(reason = 'manual') {
+    if (!this.masterPattern || this.masterPattern.trim() === '') {
+      console.log('⚠️ No master pattern to re-evaluate');
+      return { success: false, error: 'No pattern to re-evaluate' };
+    }
+
+    if (!window.strudel || typeof window.strudel.evaluate !== 'function') {
+      return { success: false, error: 'Strudel evaluate unavailable' };
+    }
+
+    const slot = this.masterSlot || 'd0';
+    const code = `${slot} = ${this.masterPattern.trim()}`;
+    try {
+      console.log(`🔄 Re-evaluating master pattern (${reason})...`);
+      await window.strudel.evaluate(code);
+      console.log(`✅ Master pattern re-evaluated (${reason})`);
+      return { success: true, slot };
+    } catch (error) {
+      console.error('❌ Failed to re-evaluate master pattern:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
   async _playMasterPatternSimple() {
     if (!this.masterPattern || this.masterPattern.trim() === '') {
       console.log('⚠️ No master pattern to play (master-only mode)');
@@ -7344,43 +7394,10 @@ class SoundManager {
         this._stackConnectionCount.set('total', 0);
       }
       
-      // Determine which slot to evaluate on
-      // For single-element masters, evaluate on the element's slot so routing can find it
-      // For multi-element masters, evaluate on the master slot
-      let evaluationSlot = this.masterSlot;
-      if (this.trackedPatterns.size === 1) {
-        const singleElementId = Array.from(this.trackedPatterns.keys())[0];
-        // Ensure pattern slot is assigned for this element
-        const assignedSlot = this.getPatternSlot(singleElementId);
-        // Find the slot for this element by searching patternSlotToElementId
-        let elementSlot = null;
-        for (const [slotName, elemId] of this.patternSlotToElementId.entries()) {
-          if (elemId === singleElementId) {
-            elementSlot = slotName;
-            break;
-          }
-        }
-        if (elementSlot) {
-          evaluationSlot = elementSlot;
-          this.currentEvaluatingSlot = elementSlot;
-          console.log(`🎚️ Single-element master: evaluating on element slot ${elementSlot} (${singleElementId}), mapping verified: ${this.patternSlotToElementId.get(elementSlot) === singleElementId}`);
-        } else {
-          // Fallback: use assigned slot if mapping not found
-          if (assignedSlot) {
-            evaluationSlot = assignedSlot;
-            this.currentEvaluatingSlot = assignedSlot;
-            // Ensure mapping exists
-            this.patternSlotToElementId.set(assignedSlot, singleElementId);
-            console.log(`🎚️ Single-element master: using assigned slot ${assignedSlot} (${singleElementId}), mapping created`);
-          } else {
-            this.currentEvaluatingSlot = this.masterSlot;
-            console.log(`🎚️ Single-element master: element slot not found, using master slot ${this.masterSlot}`);
-          }
-        }
-      } else {
-        this.currentEvaluatingSlot = this.masterSlot;
-        console.log(`🎚️ Multi-element master: using master slot ${this.masterSlot}`);
-      }
+      // Always evaluate on the master slot so master stack controls apply
+      const evaluationSlot = this.masterSlot;
+      this.currentEvaluatingSlot = evaluationSlot;
+      console.log(`🎚️ Master stack evaluation slot: ${evaluationSlot}`);
       
       // Ensure all tracked elements have audio nodes created (for gain/pan control)
       console.log(`🔧 Ensuring audio nodes exist for ${this.trackedPatterns.size} tracked elements...`);
@@ -8545,9 +8562,11 @@ class SoundManager {
       console.log(`🔍 Preview - Pattern type check: isNotePattern=${this.isNotePattern(pattern)}, contains s(${pattern.includes('s(')}, contains sound(${pattern.includes('sound(')}, contains note(${/\bnote\s*\(/i.test(pattern)})`);
       
       // Use processPattern to get the same processing as playStrudelPattern
+      // For preview, don't apply gain in pattern (gain is handled by Web Audio gain node)
       let processedPattern = await this.processPattern(pattern, elementId, {
         preserveBanks: true,
-        attemptBankLoad: true
+        attemptBankLoad: true,
+        applyGainInPattern: false
       });
       
       if (!processedPattern) {

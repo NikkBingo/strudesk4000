@@ -54,8 +54,7 @@ const VCSL_FAMILY_ORDER = ['Chordophones', 'Aerophones', 'Membranophones', 'Elec
 let cachedVcslManifest = null;
 let cachedNormalizedVcslManifest = null;
 const SPECIAL_SAMPLE_BANKS = [
-  { value: 'mridangam', label: 'Mridangam Percussion Set' },
-  { value: 'vcsl', label: 'VCSL Vocal Set' }
+  { value: 'mridangam', label: 'Mridangam Percussion Set' }
 ];
 const SPECIAL_SAMPLE_BANK_VALUES = new Set(SPECIAL_SAMPLE_BANKS.map(bank => bank.value.toLowerCase()));
 
@@ -439,6 +438,27 @@ const TONAL_PATTERN_PRESETS = [
     bank: '',
     description: 'Layered Ball Whistle + Bongo textures from the VCSL set',
     pattern: 'sound("<ballwhistle ~ bongo ~>*2").bank("vcsl").slow(2).room(.35).shape(.2)'
+  },
+  {
+    id: 'jazz-blues-in-f',
+    label: 'Jazz Blues in F',
+    bank: '',
+    description: 'Classic jazz-blues progression with layered voicings and struct patterns',
+    pattern: `let chords = chord(\`<
+
+F7 Bb7 F7 [Cm7 F7]
+
+Bb7 Bo F7 [Am7 D7]
+
+Gm7 C7 [F7 D7] [Gm7 C7]
+
+>\`)
+
+$: n("7 8 [10 9] 8").set(chords).voicing().dec(.2)
+
+$: chords.struct("- x - x").voicing().room(.5)
+
+$: n("0 - 1 -").set(chords).mode("root:g2").voicing()`
   }
 ];
 
@@ -1135,6 +1155,67 @@ const FILTER_GROUP_IDS = new Set(['filters-lp', 'filters-hp', 'filters-bp']);
 const DEFAULT_OPEN_FILTER_GROUP_IDS = new Set(['filters-lp', 'filters-hp', 'filters-bp']);
 const snippetGroupOpenState = new Map();
 
+// Non-linear frequency mapping functions for Hz sliders and visualizers
+// Distribution: 20-100Hz=25%, 100-500Hz=25%, 500-5000Hz=30%, 5000-20000Hz=20%
+function frequencyToPosition(hz) {
+  const minHz = 20;
+  const maxHz = 20000;
+  if (hz <= minHz) return 0;
+  if (hz >= maxHz) return 1;
+  
+  // Normalize to 0-1 range
+  const normalized = (hz - minHz) / (maxHz - minHz);
+  
+  // Map to non-linear distribution
+  if (hz <= 100) {
+    // 20-100Hz = 25% (0-0.25)
+    const range = 100 - 20;
+    const pos = (hz - 20) / range;
+    return pos * 0.25;
+  } else if (hz <= 500) {
+    // 100-500Hz = 25% (0.25-0.5)
+    const range = 500 - 100;
+    const pos = (hz - 100) / range;
+    return 0.25 + pos * 0.25;
+  } else if (hz <= 5000) {
+    // 500-5000Hz = 30% (0.5-0.8)
+    const range = 5000 - 500;
+    const pos = (hz - 500) / range;
+    return 0.5 + pos * 0.3;
+  } else {
+    // 5000-20000Hz = 20% (0.8-1.0)
+    const range = 20000 - 5000;
+    const pos = (hz - 5000) / range;
+    return 0.8 + pos * 0.2;
+  }
+}
+
+function positionToFrequency(position) {
+  const minHz = 20;
+  const maxHz = 20000;
+  if (position <= 0) return minHz;
+  if (position >= 1) return maxHz;
+  
+  // Map from non-linear distribution
+  if (position <= 0.25) {
+    // 0-0.25 -> 20-100Hz
+    const pos = position / 0.25;
+    return 20 + pos * (100 - 20);
+  } else if (position <= 0.5) {
+    // 0.25-0.5 -> 100-500Hz
+    const pos = (position - 0.25) / 0.25;
+    return 100 + pos * (500 - 100);
+  } else if (position <= 0.8) {
+    // 0.5-0.8 -> 500-5000Hz
+    const pos = (position - 0.5) / 0.3;
+    return 500 + pos * (5000 - 500);
+  } else {
+    // 0.8-1.0 -> 5000-20000Hz
+    const pos = (position - 0.8) / 0.2;
+    return 5000 + pos * (20000 - 5000);
+  }
+}
+
 // Mapping of tags with numeric parameters to their min/max/default values
 const NUMERIC_TAG_PARAMS = {
   // Filters
@@ -1402,9 +1483,7 @@ const PATTERN_SNIPPET_GROUPS = [
         'perlin',
         'irand',
         'brand',
-        'brandby',
-        'mousex',
-        'mousey'
+        'brandby'
       ].includes(key),
     className: 'snippet-group-signals'
   },
@@ -1608,8 +1687,19 @@ const PATTERN_SNIPPET_GROUPS = [
     order: 19,
     label: 'Device Motion',
     heading: 'Device Motion',
-    matcher: (key) => ['orientation', 'acceleration', 'accelerate', 'accelerationx', 'accelerationy', 'accelerationz', 'rotationx', 'rotationy', 'rotationz', 'gravityx', 'gravityy', 'gravityz'].some((token) => key.includes(token)),
+    matcher: (key) => {
+      const deviceKeys = ['orientation', 'acceleration', 'accelerate', 'accelerationx', 'accelerationy', 'accelerationz', 'rotationx', 'rotationy', 'rotationz', 'gravityx', 'gravityy', 'gravityz', 'mousex', 'mousey'];
+      return deviceKeys.some((token) => key.includes(token));
+    },
     className: 'snippet-group-device'
+  },
+  {
+    id: 'external-communication',
+    order: 20,
+    label: 'External Communication',
+    heading: 'External Communication',
+    matcher: (key) => ['osc', 'mqtt'].includes(key),
+    className: 'snippet-group-external-communication'
   },
   {
     id: 'other',
@@ -1625,6 +1715,325 @@ const SNIPPET_GROUP_LOOKUP = PATTERN_SNIPPET_GROUPS.reduce((acc, group) => {
   acc.set(group.id, group);
   return acc;
 }, new Map());
+
+// Tag suggestions: maps tag keys to arrays of suggested related tag keys
+const TAG_SUGGESTIONS = {
+  // Core functions
+  'sound': ['bank', 'note', 'chord', 'delay', 'room', 'phaser', 'gain', 'lpf', 'pan'],
+  's': ['bank', 'note', 'chord', 'delay', 'room', 'phaser', 'gain', 'lpf', 'pan'],
+  'note': ['chord', 'scale', 'voicing', 'transpose', 'scaletranspose', 'rootnotes', 'attack', 'decay', 'release', 'lpf', 'gain', 'pan'],
+  'stack': ['beat', 'sound', 'note', 'gain', 'pan'],
+  'beat': ['sound', 's', 'euclid', 'mask', 'slow', 'fast', 'rev', 'iter'],
+  'bank': ['sound', 's', 'gain', 'pan', 'slow', 'fast', 'euclid', 'mask', 'delay', 'room', 'crush', 'distort'],
+  
+  // Filters
+  'lpf': ['lpenv', 'lpattack', 'lpdecay', 'lpsustain', 'lprelease', 'lpq', 'ftype', 'hpf', 'bpf', 'gain'],
+  'hpf': ['hpattack', 'hpdecay', 'hpsustain', 'hprelease', 'hpq', 'lpf', 'bpf', 'gain'],
+  'bpf': ['bpattack', 'bpdecay', 'bpsustain', 'bprelease', 'bpq', 'bpg', 'lpf', 'hpf', 'gain'],
+  'lpenv': ['lpf', 'lpattack', 'lpdecay', 'lpsustain', 'lprelease', 'lpq'],
+  'lpattack': ['lpf', 'lpenv', 'lpdecay', 'lpsustain', 'lprelease'],
+  'lpdecay': ['lpf', 'lpenv', 'lpattack', 'lpsustain', 'lprelease'],
+  'lpsustain': ['lpf', 'lpenv', 'lpattack', 'lpdecay', 'lprelease'],
+  'lprelease': ['lpf', 'lpenv', 'lpattack', 'lpdecay', 'lpsustain'],
+  'lpq': ['lpf', 'lpenv'],
+  'hpq': ['hpf'],
+  'bpq': ['bpf', 'bpg'],
+  'bpg': ['bpf', 'bpq'],
+  'ftype': ['lpf'],
+  'vowel': ['lpf', 'ftype'],
+  
+  // Envelopes
+  'attack': ['decay', 'sustain', 'release', 'adsr', 'gain', 'lpf'],
+  'decay': ['attack', 'sustain', 'release', 'adsr', 'gain'],
+  'sustain': ['attack', 'decay', 'release', 'adsr', 'gain'],
+  'release': ['attack', 'decay', 'sustain', 'adsr', 'gain'],
+  'adsr': ['attack', 'decay', 'sustain', 'release', 'gain'],
+  'pattack': ['pdecay', 'prelease', 'penv', 'pcurve', 'panchor'],
+  'pdecay': ['pattack', 'prelease', 'penv', 'pcurve'],
+  'prelease': ['pattack', 'pdecay', 'penv', 'pcurve'],
+  'penv': ['pattack', 'pdecay', 'prelease', 'pcurve', 'panchor'],
+  'pcurve': ['penv', 'pattack', 'pdecay', 'prelease'],
+  'panchor': ['penv', 'pattack'],
+  
+  // Effects - show parameters when effect is selected
+  'delay': ['delaytime', 'delayfeedback'],
+  'delaytime': ['delay', 'delayfeedback'],
+  'delayfeedback': ['delay', 'delaytime'],
+  'room': ['roomsize', 'roomfade', 'roomlp', 'roomdim', 'iresponse'],
+  'roomsize': ['room', 'roomfade', 'roomlp', 'roomdim'],
+  'roomfade': ['room', 'roomsize', 'roomlp'],
+  'roomlp': ['room', 'roomsize', 'roomfade'],
+  'roomdim': ['room', 'roomsize'],
+  'iresponse': ['room', 'roomsize'],
+  'phaser': ['phaserdepth', 'phasercenter', 'phasersweep'],
+  'phaserdepth': ['phaser', 'phasercenter', 'phasersweep'],
+  'phasercenter': ['phaser', 'phaserdepth', 'phasersweep'],
+  'phasersweep': ['phaser', 'phaserdepth', 'phasercenter'],
+  'duckorbit': ['duckattack', 'duckdepth'],
+  'duckattack': ['duckorbit', 'duckdepth'],
+  'duckdepth': ['duckorbit', 'duckattack'],
+  
+  // Dynamics
+  'gain': ['velocity', 'compressor', 'postgain', 'pan', 'delay', 'room'],
+  'velocity': ['gain', 'attack', 'decay'],
+  'compressor': ['gain', 'postgain'],
+  'postgain': ['gain', 'compressor'],
+  'xfade': ['gain'],
+  
+  // Panning
+  'pan': ['jux', 'juxby', 'gain'],
+  'jux': ['juxby', 'pan'],
+  'juxby': ['jux', 'pan'],
+  
+  // Waveshaping
+  'crush': ['distort', 'coarse', 'gain'],
+  'distort': ['crush', 'coarse', 'gain'],
+  'coarse': ['crush', 'distort'],
+  
+  // Time modifiers - suggest other time modifiers for rhythmic patterns
+  'slow': ['fast', 'early', 'late', 'clip', 'legato', 'swing'],
+  'fast': ['slow', 'early', 'late', 'clip', 'legato'],
+  'early': ['late', 'slow', 'fast', 'clip'],
+  'late': ['early', 'slow', 'fast', 'clip'],
+  'clip': ['slow', 'fast', 'legato', 'early', 'late'],
+  'legato': ['clip', 'early', 'late', 'slow', 'fast'],
+  'euclid': ['euclidrot', 'euclidlegato', 'mask', 'beat', 'slow', 'fast'],
+  'euclidrot': ['euclid', 'euclidlegato', 'mask'],
+  'euclidlegato': ['euclid', 'euclidrot', 'mask'],
+  'rev': ['palindrome', 'iter', 'iterback'],
+  'palindrome': ['rev', 'iter', 'iterback'],
+  'iter': ['iterback', 'rev', 'palindrome'],
+  'iterback': ['iter', 'rev', 'palindrome'],
+  'ply': ['segment', 'compress', 'zoom'],
+  'segment': ['ply', 'compress', 'zoom', 'ribbon'],
+  'compress': ['ply', 'segment'],
+  'zoom': ['linger', 'fastgap', 'ply', 'segment'],
+  'linger': ['zoom', 'fastgap'],
+  'fastgap': ['zoom', 'linger'],
+  'inside': ['outside', 'clip'],
+  'outside': ['inside', 'clip'],
+  'swing': ['swingby', 'cpm', 'slow', 'fast'],
+  'swingby': ['swing', 'cpm'],
+  'cpm': ['swing', 'swingby'],
+  'ribbon': ['segment', 'ply'],
+  
+  // Control operators
+  'add': ['sub', 'mul', 'div', 'range', 'rangex'],
+  'sub': ['add', 'mul', 'div', 'range'],
+  'mul': ['add', 'sub', 'div', 'range'],
+  'div': ['add', 'sub', 'mul', 'range'],
+  'range': ['rangex', 'range2', 'add', 'sub', 'mul'],
+  'rangex': ['range', 'range2'],
+  'range2': ['range', 'rangex'],
+  'floor': ['ceil', 'ratio'],
+  'ceil': ['floor', 'ratio'],
+  'ratio': ['floor', 'ceil'],
+  'as': ['range'],
+  
+  // Signals
+  'saw': ['sine', 'tri', 'square', 'rand', 'range'],
+  'sine': ['saw', 'cosine', 'tri', 'square', 'range'],
+  'cosine': ['sine', 'saw', 'tri', 'square'],
+  'tri': ['saw', 'sine', 'square', 'rand'],
+  'square': ['saw', 'sine', 'tri', 'rand'],
+  'rand': ['saw', 'sine', 'tri', 'square', 'irand', 'brand'],
+  'saw2': ['sine2', 'tri2', 'square2', 'rand2'],
+  'sine2': ['saw2', 'cosine2', 'tri2', 'square2'],
+  'cosine2': ['sine2', 'saw2', 'tri2', 'square2'],
+  'tri2': ['saw2', 'sine2', 'square2', 'rand2'],
+  'square2': ['saw2', 'sine2', 'tri2', 'rand2'],
+  'rand2': ['saw2', 'sine2', 'tri2', 'square2'],
+  'perlin': ['rand', 'brand', 'range'],
+  'irand': ['rand', 'brand'],
+  'brand': ['rand', 'irand', 'brandby'],
+  'brandby': ['brand'],
+  
+  // Tonal functions - suggest other tonal modifiers
+  'chord': ['voicing', 'addvoicings', 'scale', 'transpose', 'scaletranspose', 'rootnotes', 'dict', 'mode', 'note'],
+  'voicing': ['chord', 'addvoicings', 'scale', 'transpose', 'note'],
+  'addvoicings': ['voicing', 'chord'],
+  'scale': ['chord', 'voicing', 'transpose', 'scaletranspose', 'rootnotes', 'dict', 'mode', 'note'],
+  'transpose': ['scale', 'scaletranspose', 'chord', 'note', 'offset'],
+  'scaletranspose': ['scale', 'transpose', 'chord'],
+  'rootnotes': ['scale', 'chord', 'transpose'],
+  'dict': ['chord', 'scale', 'note'],
+  'anchor': ['penv', 'pcurve', 'panchor', 'scale'],
+  'mode': ['scale', 'chord', 'note'],
+  'below': ['above', 'note', 'chord'],
+  'above': ['below', 'note', 'chord'],
+  'offset': ['transpose', 'scale', 'note'],
+  'n': ['note', 'chord', 'scale', 'voicing', 'transpose'],
+  
+  // Synths
+  'cutoff': ['lpf', 'resonance', 'lpenv'],
+  'resonance': ['cutoff', 'lpf', 'lpq'],
+  'noise': ['sound', 'cutoff', 'lpf'],
+  'vib': ['vibmod', 'tremolo'],
+  'vibmod': ['vib'],
+  'fm': ['fmh', 'fmattack', 'fmdecay', 'fmsustain', 'fmenv', 'fmwave'],
+  'fmh': ['fm', 'fmattack', 'fmdecay'],
+  'fmattack': ['fm', 'fmdecay', 'fmsustain', 'fmenv'],
+  'fmdecay': ['fm', 'fmattack', 'fmsustain', 'fmenv'],
+  'fmsustain': ['fm', 'fmattack', 'fmdecay', 'fmenv'],
+  'fmenv': ['fm', 'fmattack', 'fmdecay', 'fmsustain'],
+  'fmwave': ['fm'],
+  'zrand': ['rand', 'brand'],
+  'curve': ['slide', 'deltaslide'],
+  'slide': ['curve', 'deltaslide'],
+  'deltaslide': ['slide', 'curve'],
+  'zmod': ['vib', 'vibmod'],
+  'zcrush': ['crush', 'distort'],
+  'zdelay': ['delay', 'delaytime'],
+  'pitchjump': ['pitchjumptime', 'penv'],
+  'pitchjumptime': ['pitchjump'],
+  'lfo': ['tremolo', 'vib'],
+  'octave': ['transpose', 'note'],
+  'pw': ['pwrate', 'pwsweep'],
+  'pwrate': ['pw', 'pwsweep'],
+  'pwsweep': ['pw', 'pwrate'],
+  'spread': ['unison', 'pan'],
+  'unison': ['spread'],
+  'isaw': ['isaw2', 'itri', 'itri2'],
+  'isaw2': ['isaw', 'itri', 'itri2'],
+  'itri': ['isaw', 'isaw2', 'itri2'],
+  'itri2': ['isaw', 'isaw2', 'itri'],
+  
+  // Amplitude modulation
+  'tremolo': ['tremolosync', 'tremolodepth', 'tremoloskew', 'tremolophase', 'tremoloshape', 'lfo'],
+  'tremolosync': ['tremolo', 'tremolodepth'],
+  'tremolodepth': ['tremolo', 'tremolosync'],
+  'tremoloskew': ['tremolo', 'tremolophase'],
+  'tremolophase': ['tremolo', 'tremoloshape'],
+  'tremoloshape': ['tremolo', 'tremolophase'],
+  
+  // Random modifiers
+  'choose': ['wchoose', 'sometimes', 'rarely'],
+  'wchoose': ['choose', 'sometimes'],
+  'choosecycles': ['wchoosecycles', 'somecycles'],
+  'wchoosecycles': ['choosecycles', 'somecycles'],
+  'degradeby': ['degrade', 'sometimes'],
+  'degrade': ['degradeby', 'sometimes'],
+  'undegradeby': ['undegrade'],
+  'undegrade': ['undegradeby'],
+  'sometimesby': ['sometimes', 'rarely', 'often'],
+  'sometimes': ['sometimesby', 'rarely', 'often', 'choose'],
+  'somecyclesby': ['somecycles', 'choosecycles'],
+  'somecycles': ['somecyclesby', 'choosecycles'],
+  'often': ['sometimes', 'rarely', 'almostalways'],
+  'rarely': ['sometimes', 'often', 'almostnever'],
+  'almostnever': ['rarely', 'never'],
+  'almostalways': ['often', 'always'],
+  'never': ['almostnever'],
+  'always': ['almostalways'],
+  
+  // Conditional modifiers - rhythmic/pattern modifiers
+  'lastof': ['firstof', 'when', 'mask'],
+  'firstof': ['lastof', 'when', 'mask'],
+  'when': ['lastof', 'firstof', 'mask', 'struct'],
+  'chunk': ['chunkback', 'fastchunk', 'mask', 'struct'],
+  'chunkback': ['chunk', 'fastchunk', 'mask'],
+  'fastchunk': ['chunk', 'chunkback', 'mask'],
+  'arp': ['arpwith', 'chord', 'voicing', 'note'],
+  'arpwith': ['arp', 'chord'],
+  'struct': ['mask', 'pick', 'when', 'beat'],
+  'mask': ['struct', 'when', 'euclid', 'beat', 'chunk'],
+  'reset': ['restart', 'pickreset'],
+  'restart': ['reset', 'pickrestart'],
+  'hush': ['silence'],
+  'invert': ['rev', 'palindrome'],
+  'pick': ['pickmod', 'pickf', 'pickmodf', 'struct', 'mask'],
+  'pickmod': ['pick', 'pickmodf', 'struct'],
+  'pickf': ['pick', 'pickmodf', 'struct'],
+  'pickmodf': ['pick', 'pickf', 'struct'],
+  'pickrestart': ['pickmodrestart', 'restart'],
+  'pickmodrestart': ['pickrestart'],
+  'pickreset': ['pickmodreset', 'reset'],
+  'pickmodreset': ['pickreset'],
+  'inhabit': ['inhabitmod', 'mask', 'struct'],
+  'inhabitmod': ['inhabit', 'mask'],
+  'squeeze': ['compress', 'segment'],
+  
+  // Accumulation modifiers
+  'superimpose': ['layer', 'off', 'echo'],
+  'layer': ['superimpose', 'off'],
+  'off': ['superimpose', 'layer'],
+  'echo': ['echowith', 'delay', 'superimpose'],
+  'echowith': ['echo'],
+  
+  // Stepwise patterning - rhythmic/time modifiers
+  'pace': ['stepcat', 'stepalt', 'polymeter', 'slow', 'fast'],
+  'stepcat': ['pace', 'stepalt', 'polymeter'],
+  'stepalt': ['pace', 'stepcat'],
+  'expand': ['contract', 'extend', 'take', 'drop'],
+  'contract': ['expand', 'extend', 'take', 'drop'],
+  'extend': ['expand', 'contract', 'take', 'drop'],
+  'take': ['drop', 'extend', 'expand', 'contract'],
+  'drop': ['take', 'extend', 'expand', 'contract'],
+  'polymeter': ['pace', 'stepcat', 'slow', 'fast'],
+  'shrink': ['grow', 'compress'],
+  'grow': ['shrink', 'expand'],
+  'tour': ['zip', 'iter'],
+  'zip': ['tour', 'iter'],
+  
+  // Device motion
+  'orientation': ['acceleration', 'rotationx', 'rotationy', 'rotationz'],
+  'acceleration': ['accelerationx', 'accelerationy', 'accelerationz', 'gravityx', 'gravityy', 'gravityz'],
+  'accelerate': ['acceleration'],
+  'accelerationx': ['accelerationy', 'accelerationz', 'gravityx'],
+  'accelerationy': ['accelerationx', 'accelerationz', 'gravityy'],
+  'accelerationz': ['accelerationx', 'accelerationy', 'gravityz'],
+  'rotationx': ['rotationy', 'rotationz', 'orientation'],
+  'rotationy': ['rotationx', 'rotationz', 'orientation'],
+  'rotationz': ['rotationx', 'rotationy', 'orientation'],
+  'gravityx': ['gravityy', 'gravityz', 'accelerationx'],
+  'gravityy': ['gravityx', 'gravityz', 'accelerationy'],
+  'gravityz': ['gravityx', 'gravityy', 'accelerationz'],
+  'mousex': ['mousey', 'pan', 'range'],
+  'mousey': ['mousex', 'gain', 'range'],
+  
+  // External communication
+  'osc': ['mqtt'],
+  'mqtt': ['osc'],
+  
+  // MIDI
+  'midi': ['midiport', 'midicmd', 'midibend', 'miditouch'],
+  'midiport': ['midi'],
+  'midicmd': ['midi'],
+  'midibend': ['midi', 'miditouch'],
+  'miditouch': ['midi', 'midibend'],
+  'midimap': ['midimaps', 'defaultmidimap'],
+  'midimaps': ['midimap', 'defaultmidimap'],
+  'defaultmidimap': ['midimap', 'midimaps'],
+  'ccn': ['ccv', 'control'],
+  'ccv': ['ccn', 'control'],
+  'control': ['ccn', 'ccv'],
+  'prognum': ['midi'],
+  'sysex': ['sysexid', 'sysexdata'],
+  'sysexid': ['sysex', 'sysexdata'],
+  'sysexdata': ['sysex', 'sysexid'],
+  
+  // Global effects
+  'orbit': ['duckorbit', 'pan'],
+  
+  // Visual feedback
+  'scope': ['fscope', 'pianoroll', 'spiral'],
+  'fscope': ['scope', 'pianoroll'],
+  'pianoroll': ['scope', 'fscope'],
+  'spiral': ['scope'],
+  'pitchwheel': ['penv'],
+  'color': ['markcss'],
+  'markcss': ['color'],
+  
+  // Other
+  'vowel': ['ftype', 'lpf'],
+  'speed': ['slow', 'fast'],
+  'seg': ['segment'],
+  'fancor': ['lpf'],
+  'patt': ['struct'],
+  'dec': ['decay'],
+  'set': ['struct'],
+  'irand': ['rand', 'brand']
+};
 
 function getSnippetKey(snippet) {
   if (!snippet || typeof snippet !== 'string') return '';
@@ -2842,6 +3251,30 @@ class InteractiveSoundApp {
           }
         }
       });
+
+      // Toggle master play/pause with spacebar (when not typing in an input)
+      if (!this._masterSpacebarHandlerAttached) {
+        this._masterSpacebarHandlerAttached = true;
+        document.addEventListener('keydown', async (event) => {
+          if (event.code !== 'Space') {
+            return;
+          }
+
+          const activeElement = document.activeElement;
+          const tag = activeElement?.tagName?.toLowerCase();
+          const typingElement = activeElement?.isContentEditable ||
+            tag === 'textarea' ||
+            (tag === 'input' && activeElement?.type !== 'button' && activeElement?.type !== 'checkbox' && activeElement?.type !== 'range') ||
+            tag === 'select';
+
+          if (typingElement) {
+            return;
+          }
+
+          event.preventDefault();
+          playMasterBtn.click();
+        });
+      }
     }
 
     // Export Audio button
@@ -3718,6 +4151,9 @@ class InteractiveSoundApp {
     if (!this.spectrumDataArray || this.spectrumDataArray.length !== bufferLength) {
       this.spectrumDataArray = new Uint8Array(bufferLength);
     }
+    // Get sample rate for frequency calculation
+    const sampleRate = analyser.context?.sampleRate || 44100;
+    const nyquist = sampleRate / 2;
     this.activeVisualizerLoop = 'barchart';
     const draw = () => {
       if (this.selectedVisualizer !== 'barchart') {
@@ -3738,14 +4174,37 @@ class InteractiveSoundApp {
       const height = canvas.height / pixelRatio;
       context.fillStyle = 'rgba(5, 6, 10, 0.92)';
       context.fillRect(0, 0, width, height);
-      const barCount = Math.min(this.spectrumDataArray.length, Math.floor(width / 3));
-      const step = this.spectrumDataArray.length / barCount;
+      
+      // Use non-linear frequency mapping
+      // Create bars distributed across the non-linear frequency ranges
+      const barCount = Math.min(200, Math.floor(width / 2)); // More bars for smoother visualization
+      const bars = [];
+      
+      // Map each frequency bin to its position and value
+      for (let i = 0; i < this.spectrumDataArray.length; i++) {
+        // Calculate frequency for this bin
+        const frequency = (i / this.spectrumDataArray.length) * nyquist;
+        // Only process frequencies in our range (20-20000 Hz)
+        if (frequency >= 20 && frequency <= 20000) {
+          const position = frequencyToPosition(frequency);
+          const value = this.spectrumDataArray[i] / 255;
+          bars.push({ position, value, frequency });
+        }
+      }
+      
+      // Sort by position
+      bars.sort((a, b) => a.position - b.position);
+      
+      // Group bars by position ranges and draw
       const barWidth = width / barCount;
       for (let i = 0; i < barCount; i++) {
-        const dataIndex = Math.floor(i * step);
-        const value = this.spectrumDataArray[dataIndex] / 255;
-        const barHeight = Math.max(value * height, 2);
-        const x = i * barWidth;
+        const targetPosition = i / barCount;
+        // Find bars near this position
+        const nearbyBars = bars.filter(b => Math.abs(b.position - targetPosition) < 1 / barCount);
+        const maxValue = nearbyBars.length > 0 ? Math.max(...nearbyBars.map(b => b.value)) : 0;
+        
+        const barHeight = Math.max(maxValue * height, 2);
+        const x = targetPosition * width;
         const y = height - barHeight;
         const gradient = context.createLinearGradient(x, y, x, height);
         gradient.addColorStop(0, 'rgba(56, 189, 248, 0.95)');
@@ -7275,6 +7734,12 @@ class InteractiveSoundApp {
         patternSnippetSearchInput = patternSnippetContainer.querySelector('.pattern-snippet-search');
       }
 
+      // State to track selected tag for suggestions (stored on app instance for external access)
+      if (!this.selectedTagKey) {
+        this.selectedTagKey = null;
+      }
+      let selectedTagKey = this.selectedTagKey;
+
       const renderSnippets = (listEl, items, reference, searchTermValue) => {
         hideSnippetTooltip();
         listEl.innerHTML = '';
@@ -7298,8 +7763,17 @@ class InteractiveSoundApp {
           }
           const insertionSnippet = rawInsertion.replace(/^[.]+/, '');
           let displayLabel = insertionSnippet;
-          // Remove text inside parentheses for all tags
-          displayLabel = displayLabel.replace(/\([^)]*\)/g, '()');
+          // Preserve instrument names for sound() tags that have instruments
+          // Check if it's a sound() tag with an instrument (e.g., sound("sawtooth"))
+          const soundWithInstrumentMatch = insertionSnippet.match(/^sound\s*\(\s*["']([^"']+)["']\s*\)/i);
+          if (soundWithInstrumentMatch && soundWithInstrumentMatch[1]) {
+            // Preserve the instrument name
+            const instrumentName = soundWithInstrumentMatch[1];
+            displayLabel = `sound("${instrumentName}")`;
+          } else {
+            // Remove text inside parentheses for all other tags
+            displayLabel = displayLabel.replace(/\([^)]*\)/g, '()');
+          }
           const lowerLabel = displayLabel.toLowerCase();
           const headingLower = heading.toLowerCase();
 
@@ -7341,6 +7815,16 @@ class InteractiveSoundApp {
         });
 
         let renderedAny = false;
+
+        // Build a map of all available items by key for suggestions lookup
+        const availableItemsMap = new Map();
+        items.forEach((entry) => {
+          const snippet = typeof entry === 'string' ? entry : entry.snippet;
+          const key = getSnippetKey(snippet);
+          if (!availableItemsMap.has(key)) {
+            availableItemsMap.set(key, entry);
+          }
+        });
 
         // Show all groups (not just filters)
         groupOrder.forEach((group) => {
@@ -7486,12 +7970,16 @@ class InteractiveSoundApp {
               // Format display text: 
               // - For (paramName:number) format: extract paramName -> "paramName()"
               // - For (number) format: keep function name -> "functionName()"
+              // - For sound("instrument"): preserve instrument name
               let displayText = item.displayLabel;
               const paramNameMatch = displayText.match(/\(([a-zA-Z_]+):number\)/);
               if (paramNameMatch) {
                 // Extract parameter name and use it as the display text
                 const paramName = paramNameMatch[1];
                 displayText = `${paramName}()`;
+              } else if (displayText.includes('sound("') && displayText.includes('")')) {
+                // Preserve sound("instrument") format - already handled in displayLabel
+                displayText = item.displayLabel;
               } else {
                 // Remove content inside parentheses but keep function name
                 displayText = displayText.replace(/\([^)]*\)/g, '()');
@@ -7533,40 +8021,92 @@ class InteractiveSoundApp {
               // Get function name (e.g., 'lpf', 'hpf', 'gain')
               const functionName = tagKey;
               
-              // Set slider properties from NUMERIC_TAG_PARAMS
-              slider.min = String(numericParams.min);
-              slider.max = String(numericParams.max);
-              slider.step = String(numericParams.step);
+              // Check if this is a frequency slider (Hz unit)
+              const isFrequencySlider = numericParams.unit === 'Hz' && 
+                (tagKey === 'lpf' || tagKey === 'hpf' || tagKey === 'bpf' || tagKey === 'cutoff' || tagKey === 'roomlp');
               
-              // Try to get existing value from pattern, otherwise use default
-              const getCurrentPatternValue = () => {
-                const currentPattern = getStrudelEditorValue('modal-pattern') || '';
-                const functionRegex = new RegExp(`\\.${functionName}\\(([^)]+)\\)`, 'g');
-                const match = functionRegex.exec(currentPattern);
-                return match ? match[1] : null;
-              };
-              
-              const existingValue = getCurrentPatternValue();
-              slider.value = existingValue ? String(existingValue) : String(numericParams.default);
-              
-              const valueSpan = document.createElement('span');
-              valueSpan.className = 'slider-value';
-              valueSpan.style.minWidth = '60px';
-              valueSpan.style.textAlign = 'right';
-              valueSpan.style.fontSize = '0.75rem';
-              valueSpan.style.fontWeight = '600';
-              valueSpan.textContent = slider.value + (numericParams.unit ? ' ' + numericParams.unit : '');
-              
-              // Update value display on input (for visual feedback)
-              slider.addEventListener('input', (e) => {
-                const value = e.target.value;
-                valueSpan.textContent = value + (numericParams.unit ? ' ' + numericParams.unit : '');
-              });
+              if (isFrequencySlider) {
+                // Use non-linear frequency mapping for Hz sliders
+                // Slider internally uses 0-1 range, but we map it to Hz
+                slider.min = '0';
+                slider.max = '1';
+                slider.step = '0.001'; // Fine-grained steps for smooth control
+                
+                // Try to get existing value from pattern, otherwise use default
+                const getCurrentPatternValue = () => {
+                  const currentPattern = getStrudelEditorValue('modal-pattern') || '';
+                  const functionRegex = new RegExp(`\\.${functionName}\\(([^)]+)\\)`, 'g');
+                  const match = functionRegex.exec(currentPattern);
+                  return match ? match[1] : null;
+                };
+                
+                const existingValue = getCurrentPatternValue();
+                let currentHz = existingValue ? parseFloat(existingValue) : numericParams.default;
+                // Clamp to valid range
+                currentHz = Math.max(numericParams.min, Math.min(numericParams.max, currentHz));
+                // Convert Hz to slider position (0-1)
+                const sliderPosition = frequencyToPosition(currentHz);
+                slider.value = String(sliderPosition);
+                
+                const valueSpan = document.createElement('span');
+                valueSpan.className = 'slider-value';
+                valueSpan.style.minWidth = '60px';
+                valueSpan.style.textAlign = 'right';
+                valueSpan.style.fontSize = '0.75rem';
+                valueSpan.style.fontWeight = '600';
+                valueSpan.textContent = Math.round(currentHz) + ' ' + numericParams.unit;
+                
+                // Update value display on input (for visual feedback)
+                slider.addEventListener('input', (e) => {
+                  const position = parseFloat(e.target.value);
+                  const hz = positionToFrequency(position);
+                  valueSpan.textContent = Math.round(hz) + ' ' + numericParams.unit;
+                });
+              } else {
+                // Regular linear slider for non-frequency parameters
+                slider.min = String(numericParams.min);
+                slider.max = String(numericParams.max);
+                slider.step = String(numericParams.step);
+                
+                // Try to get existing value from pattern, otherwise use default
+                const getCurrentPatternValue = () => {
+                  const currentPattern = getStrudelEditorValue('modal-pattern') || '';
+                  const functionRegex = new RegExp(`\\.${functionName}\\(([^)]+)\\)`, 'g');
+                  const match = functionRegex.exec(currentPattern);
+                  return match ? match[1] : null;
+                };
+                
+                const existingValue = getCurrentPatternValue();
+                slider.value = existingValue ? String(existingValue) : String(numericParams.default);
+                
+                const valueSpan = document.createElement('span');
+                valueSpan.className = 'slider-value';
+                valueSpan.style.minWidth = '60px';
+                valueSpan.style.textAlign = 'right';
+                valueSpan.style.fontSize = '0.75rem';
+                valueSpan.style.fontWeight = '600';
+                valueSpan.textContent = slider.value + (numericParams.unit ? ' ' + numericParams.unit : '');
+                
+                // Update value display on input (for visual feedback)
+                slider.addEventListener('input', (e) => {
+                  const value = e.target.value;
+                  valueSpan.textContent = value + (numericParams.unit ? ' ' + numericParams.unit : '');
+                });
+              }
               
               // Replace or insert function when slider is released
               slider.addEventListener('change', (e) => {
-                const value = e.target.value;
-                valueSpan.textContent = value + (numericParams.unit ? ' ' + numericParams.unit : '');
+                let value = e.target.value;
+                
+                // For frequency sliders, convert position to Hz
+                if (isFrequencySlider) {
+                  const position = parseFloat(value);
+                  const hz = positionToFrequency(position);
+                  value = Math.round(hz); // Round to nearest Hz for cleaner values
+                  valueSpan.textContent = value + ' ' + numericParams.unit;
+                } else {
+                  valueSpan.textContent = value + (numericParams.unit ? ' ' + numericParams.unit : '');
+                }
                 
                 // Get current pattern
                 const currentPattern = getStrudelEditorValue('modal-pattern') || '';
@@ -7608,12 +8148,28 @@ class InteractiveSoundApp {
                   
                   if (match) {
                     // Pattern already has this function - update slider to match
-                    const existingValue = match[1];
-                    slider.value = existingValue;
-                    valueSpan.textContent = existingValue + (numericParams.unit ? ' ' + numericParams.unit : '');
+                    let existingValue = match[1];
+                    
+                    // For frequency sliders, convert Hz to slider position
+                    if (isFrequencySlider) {
+                      const hz = parseFloat(existingValue);
+                      const clampedHz = Math.max(numericParams.min, Math.min(numericParams.max, hz));
+                      const position = frequencyToPosition(clampedHz);
+                      slider.value = String(position);
+                      valueSpan.textContent = Math.round(clampedHz) + ' ' + numericParams.unit;
+                    } else {
+                      slider.value = existingValue;
+                      valueSpan.textContent = existingValue + (numericParams.unit ? ' ' + numericParams.unit : '');
+                    }
                   } else {
                     // Insert tag with default value if not already in pattern
-                    const functionCall = `.${functionName}(${slider.value})`;
+                    let valueToInsert = slider.value;
+                    if (isFrequencySlider) {
+                      // For frequency sliders, convert position to Hz
+                      const position = parseFloat(slider.value);
+                      valueToInsert = Math.round(positionToFrequency(position));
+                    }
+                    const functionCall = `.${functionName}(${valueToInsert})`;
                     const newPattern = currentPattern.trim() + functionCall;
                     setStrudelEditorValue('modal-pattern', newPattern);
                   }
@@ -7690,6 +8246,115 @@ class InteractiveSoundApp {
             }
             
             itemsContainer.appendChild(itemWrapper);
+            
+            // Show suggestions if this is the selected tag (check both local and app instance)
+            const currentSelectedTag = selectedTagKey || appInstance.selectedTagKey;
+            if (currentSelectedTag && tagKey === currentSelectedTag) {
+              const suggestions = TAG_SUGGESTIONS[tagKey];
+              if (suggestions && Array.isArray(suggestions) && suggestions.length > 0) {
+                // Create suggestions container
+                const suggestionsContainer = document.createElement('div');
+                suggestionsContainer.className = 'pattern-snippet-suggestions';
+                
+                const suggestionsLabel = document.createElement('div');
+                suggestionsLabel.className = 'pattern-snippet-suggestions-label';
+                suggestionsLabel.textContent = 'Suggested:';
+                suggestionsContainer.appendChild(suggestionsLabel);
+                
+                const suggestionsList = document.createElement('div');
+                suggestionsList.className = 'pattern-snippet-suggestions-list';
+                
+                // Filter suggestions to only show tags that exist in current items
+                const validSuggestions = suggestions.filter(suggestedKey => {
+                  return availableItemsMap.has(suggestedKey);
+                });
+                
+                // Limit to top 8 suggestions to avoid clutter
+                const topSuggestions = validSuggestions.slice(0, 8);
+                
+                topSuggestions.forEach(suggestedKey => {
+                  const suggestedEntry = availableItemsMap.get(suggestedKey);
+                  const suggestedSnippet = typeof suggestedEntry === 'string' ? suggestedEntry : suggestedEntry.snippet;
+                  const suggestedKeyActual = getSnippetKey(suggestedSnippet);
+                  const suggestedReferenceEntry = reference.get(suggestedKeyActual);
+                  let suggestedRawInsertion = buildSnippetInsertion(suggestedSnippet, suggestedReferenceEntry);
+                  const suggestedInsertionSnippet = suggestedRawInsertion.replace(/^[.]+/, '');
+                  let suggestedDisplayLabel = suggestedInsertionSnippet;
+                  suggestedDisplayLabel = suggestedDisplayLabel.replace(/\([^)]*\)/g, '()');
+                  
+                  // Find the group for this suggestion
+                  let suggestedGroupId = 'other';
+                  let suggestedClassName = '';
+                  for (const group of PATTERN_SNIPPET_GROUPS) {
+                    if (group.matcher(suggestedKeyActual, suggestedSnippet)) {
+                      suggestedGroupId = group.id;
+                      suggestedClassName = group.className;
+                      break;
+                    }
+                  }
+                  
+                  const suggestedButton = document.createElement('button');
+                  suggestedButton.type = 'button';
+                  const suggestedCustomClass = getCustomSnippetClass(suggestedSnippet);
+                  const suggestedApplyCoreStyle = !suggestedCustomClass && suggestedGroupId !== 'core' && shouldUseCoreStyle(suggestedSnippet);
+                  const suggestedExtraClassNames = [
+                    suggestedClassName,
+                    suggestedCustomClass,
+                    suggestedApplyCoreStyle ? 'pattern-snippet-tag-core' : '',
+                    'pattern-snippet-tag-suggested'
+                  ]
+                    .filter(Boolean)
+                    .join(' ');
+                  suggestedButton.className = `pattern-snippet-tag ${suggestedExtraClassNames}`.trim();
+                  suggestedButton.dataset.snippet = suggestedSnippet;
+                  suggestedButton.dataset.insertion = suggestedInsertionSnippet;
+                  suggestedButton.textContent = suggestedDisplayLabel;
+                  suggestedButton.setAttribute('aria-label', suggestedDisplayLabel);
+                  
+                  // Add click handler for suggested tag
+                  suggestedButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (!patternSnippetContainer.classList.contains('disabled') && drumGridState.patternEditorEnabled) {
+                      // Update selected tag to the newly clicked suggestion
+                      selectedTagKey = suggestedKeyActual;
+                      appInstance.selectedTagKey = suggestedKeyActual;
+                      hideSnippetTooltip(suggestedButton);
+                      insertStrudelEditorSnippet('modal-pattern', suggestedInsertionSnippet);
+                      // Refresh to show new suggestions
+                      if (typeof refreshSnippetButtons === 'function') {
+                        refreshSnippetButtons().catch(err => console.warn('⚠️ Unable to refresh snippet tags:', err));
+                      }
+                    }
+                  });
+                  
+                  // Add tooltip
+                  const suggestedTooltipTitle = suggestedReferenceEntry?.name || suggestedDisplayLabel.replace(/^[.]+/, '').trim();
+                  const suggestedTooltipDescription = getReferenceDescriptionText(suggestedReferenceEntry);
+                  const suggestedTooltipParams = Array.isArray(suggestedReferenceEntry?.params)
+                    ? suggestedReferenceEntry.params.map(buildParamDescription).filter(Boolean).join('\n')
+                    : '';
+                  
+                  suggestedButton.dataset.tooltipTitle = suggestedTooltipTitle || suggestedDisplayLabel;
+                  suggestedButton.dataset.tooltipDescription = suggestedTooltipDescription || '';
+                  suggestedButton.dataset.tooltipParams = suggestedTooltipParams || '';
+                  
+                  const handleSuggestedShowTooltip = () => showSnippetTooltip(suggestedButton);
+                  const handleSuggestedHideTooltip = () => hideSnippetTooltip(suggestedButton);
+                  
+                  suggestedButton.addEventListener('mouseenter', handleSuggestedShowTooltip);
+                  suggestedButton.addEventListener('mouseleave', handleSuggestedHideTooltip);
+                  suggestedButton.addEventListener('focus', handleSuggestedShowTooltip);
+                  suggestedButton.addEventListener('blur', handleSuggestedHideTooltip);
+                  
+                  suggestionsList.appendChild(suggestedButton);
+                });
+                
+                if (topSuggestions.length > 0) {
+                  suggestionsContainer.appendChild(suggestionsList);
+                  itemsContainer.appendChild(suggestionsContainer);
+                }
+              }
+            }
           });
 
           groupWrapper.appendChild(headingButton);
@@ -7714,8 +8379,13 @@ class InteractiveSoundApp {
         const updatedSnippets = await getPatternSnippets(getStrudelEditorValue('modal-pattern'));
         const ref = await loadStrudelReferenceDocs();
         const term = patternSnippetSearchInput ? patternSnippetSearchInput.value.trim().toLowerCase() : '';
+        // Sync selectedTagKey from app instance
+        selectedTagKey = appInstance.selectedTagKey;
         renderSnippets(patternSnippetListEl, updatedSnippets, ref, term);
       };
+      
+      // Store refreshSnippetButtons on app instance for external access
+      appInstance.refreshSnippetButtons = refreshSnippetButtons;
 
       if (patternSnippetListEl && !patternSnippetListEl.dataset.listenersAttached) {
         patternSnippetListEl.addEventListener('click', (event) => {
@@ -7741,8 +8411,19 @@ class InteractiveSoundApp {
           if (!snippet) {
             return;
           }
+          
+          // Track selected tag for suggestions
+          const tagKey = getSnippetKey(snippet);
+          selectedTagKey = tagKey;
+          appInstance.selectedTagKey = tagKey; // Store on app instance for external access
+          
           hideSnippetTooltip(button);
           insertStrudelEditorSnippet('modal-pattern', snippet);
+          
+          // Refresh to show suggestions
+          if (typeof refreshSnippetButtons === 'function') {
+            refreshSnippetButtons().catch(err => console.warn('⚠️ Unable to refresh snippet tags:', err));
+          }
         });
 
         patternSnippetListEl.addEventListener('mouseleave', () => {
@@ -10268,9 +10949,27 @@ class InteractiveSoundApp {
           
           // Show/hide Key/Scale controls based on bank selection and toggle state
           updateKeyScaleVisibility();
+          
+          // Set selected tag to 'bank' to show suggestions
+          this.selectedTagKey = 'bank';
+          // Refresh snippet buttons to show suggestions
+          if (typeof this.refreshSnippetButtons === 'function') {
+            setTimeout(() => {
+              this.refreshSnippetButtons().catch(err => console.warn('⚠️ Unable to refresh snippet tags:', err));
+            }, 100);
+          }
         } else {
           // Hide Key/Scale if no bank selected or toggle state requires it
           updateKeyScaleVisibility();
+          
+          // Clear selected tag when no bank is selected
+          this.selectedTagKey = null;
+          // Refresh snippet buttons to hide suggestions
+          if (typeof this.refreshSnippetButtons === 'function') {
+            setTimeout(() => {
+              this.refreshSnippetButtons().catch(err => console.warn('⚠️ Unable to refresh snippet tags:', err));
+            }, 100);
+          }
         }
         
         if (!elementId) {
