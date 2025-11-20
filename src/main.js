@@ -459,6 +459,49 @@ $: n("7 8 [10 9] 8").set(chords).voicing().dec(.2)
 $: chords.struct("- x - x").voicing().room(.5)
 
 $: n("0 - 1 -").set(chords).mode("root:g2").voicing()`
+  },
+  {
+    id: 'mini-notation-example',
+    label: 'Mini-notation Example',
+    bank: '',
+    description: 'Layered mini-notation demo showing melody + bass progressions',
+    pattern: `note(\`<
+
+[e5 [b4 c5] d5 [c5 b4]]
+
+[a4 [a4 c5] e5 [d5 c5]]
+
+[b4 [~ c5] d5 e5]
+
+[c5 a4 a4 ~]
+
+[[~ d5] [~ f5] a5 [g5 f5]]
+
+[e5 [~ c5] e5 [d5 c5]]
+
+[b4 [b4 c5] d5 e5]
+
+[c5 a4 a4 ~]
+
+,
+
+[[e2 e3]*4]
+
+[[a2 a3]*4]
+
+[[g#2 g#3]*2 [e2 e3]*2]
+
+[a2 a3 a2 a3 a2 a3 b1 c2]
+
+[[d2 d3]*4]
+
+[[c2 c3]*4]
+
+[[b1 b2]*2 [e2 e3]*2]
+
+[[a1 a2]*4]
+
+>\`)`
   }
 ];
 
@@ -7487,6 +7530,116 @@ class InteractiveSoundApp {
     const appInstance = this;
     
     const bankSelect = document.getElementById('modal-pattern-bank');
+    const sampleUrlInput = document.getElementById('modal-sample-url');
+    const sampleNameInput = document.getElementById('modal-sample-name');
+    const addSampleButton = document.getElementById('modal-add-sample-btn');
+    const sampleFileInput = document.getElementById('modal-sample-file');
+
+    const parseSampleLocation = (rawUrl) => {
+      const fallback = { baseUrl: './', samplePath: '' };
+      if (!rawUrl || typeof rawUrl !== 'string') {
+        return fallback;
+      }
+      const trimmedUrl = rawUrl.trim();
+      if (!trimmedUrl) {
+        return fallback;
+      }
+      try {
+        const parsed = new URL(trimmedUrl);
+        const pathname = parsed.pathname || '';
+        const normalizedPath = pathname.endsWith('/') && pathname.length > 1
+          ? pathname.slice(0, -1)
+          : pathname;
+        const lastSlash = normalizedPath.lastIndexOf('/');
+        if (lastSlash !== -1) {
+          const fileName = normalizedPath.slice(lastSlash + 1) || '';
+          const basePath = normalizedPath.slice(0, lastSlash + 1);
+          return {
+            baseUrl: `${parsed.origin}${basePath}`,
+            samplePath: fileName || trimmedUrl
+          };
+        }
+        return {
+          baseUrl: `${parsed.origin}/`,
+          samplePath: normalizedPath || parsed.origin
+        };
+      } catch {
+        const normalized = trimmedUrl.replace(/\\/g, '/');
+        const lastSlash = normalized.lastIndexOf('/');
+        if (lastSlash !== -1) {
+          return {
+            baseUrl: normalized.slice(0, lastSlash + 1),
+            samplePath: normalized.slice(lastSlash + 1) || normalized
+          };
+        }
+        return {
+          baseUrl: './',
+          samplePath: normalized || 'sample.wav'
+        };
+      }
+    };
+
+    const escapeDoubleQuotes = (value = '') => value.replace(/"/g, '\\"');
+    const escapeSingleQuotes = (value = '') => value.replace(/'/g, "\\'");
+
+    const insertSampleIntoPattern = (sampleName, baseUrl, samplePath) => {
+      const safeSampleName = escapeDoubleQuotes(sampleName);
+      const safeSamplePath = escapeDoubleQuotes(samplePath || sampleName);
+      const safeBaseUrl = escapeSingleQuotes(baseUrl || './');
+      const samplesSnippet = `samples({\n  "${safeSampleName}": "${safeSamplePath}"\n}, '${safeBaseUrl}')`;
+      const soundSnippet = `sound("${safeSampleName}")`;
+      const currentPattern = getStrudelEditorValue('modal-pattern') || '';
+      const trimmedPattern = currentPattern.trim();
+      const addition = `${samplesSnippet};\n\n${soundSnippet}`;
+      const newPattern = trimmedPattern
+        ? `${trimmedPattern}\n\n${addition}`
+        : addition;
+      setStrudelEditorValue('modal-pattern', newPattern);
+      if (typeof updatePreviewButtonState === 'function') {
+        updatePreviewButtonState();
+      }
+      sampleNameInput.value = '';
+      sampleUrlInput.value = '';
+      if (sampleFileInput) {
+        sampleFileInput.value = '';
+      }
+      sampleNameInput.focus();
+    };
+
+    if (addSampleButton) {
+      addSampleButton.addEventListener('click', () => {
+        if (!sampleNameInput || !sampleUrlInput) {
+          return;
+        }
+        const sampleName = sampleNameInput.value.trim();
+        const sampleUrl = sampleUrlInput.value.trim();
+        const hasFileSelection = sampleFileInput && sampleFileInput.files && sampleFileInput.files.length > 0;
+        if (!sampleName || (!sampleUrl && !hasFileSelection)) {
+          alert('Please provide a Sample Name and either a Sample URL or select a file.');
+          return;
+        }
+
+        if (sampleUrl) {
+          const { baseUrl, samplePath } = parseSampleLocation(sampleUrl);
+          insertSampleIntoPattern(sampleName, baseUrl, samplePath || sampleName);
+        } else if (hasFileSelection) {
+          const file = sampleFileInput.files[0];
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const dataUrl = e.target.result;
+            if (typeof dataUrl === 'string' && dataUrl.length > 0) {
+              insertSampleIntoPattern(sampleName, './', dataUrl);
+            } else {
+              alert('Unable to read the selected file. Please try again.');
+            }
+          };
+          reader.onerror = () => {
+            alert('Unable to read the selected file. Please try again.');
+          };
+          reader.readAsDataURL(file);
+        }
+      });
+    }
 
     const removeExistingSpecialtyOptions = () => {
       if (!bankSelect) return;

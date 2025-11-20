@@ -2499,6 +2499,46 @@ header h1 {
   color: #4c51bf;
 }
 
+.sample-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sample-add-row input {
+  flex: 1;
+}
+
+.sample-add-button {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 4px;
+  border: none;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.sample-add-button:hover,
+.sample-add-button:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(102, 126, 234, 0.4);
+}
+
+.sample-add-button:active {
+  transform: translateY(0);
+  box-shadow: 0 3px 7px rgba(102, 126, 234, 0.35);
+}
+
+.sample-add-hint {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #718096;
+}
+
 .pattern-snippet-suggestions {
   margin-top: 8px;
   margin-bottom: 8px;
