@@ -1803,7 +1803,11 @@ class SoundManager {
     // so we should NOT apply .gain() in the pattern to avoid double application.
     // When playing through master, gain is applied in the pattern.
     if (applyGainInPattern) {
-      modifiedPattern = `${modifiedPattern}.postgain(${gain})`;
+      if (/\.postgain\s*\([^)]*\)\s*$/i.test(modifiedPattern)) {
+        modifiedPattern = modifiedPattern.replace(/\.postgain\s*\([^)]*\)\s*$/i, `.postgain(${gain})`);
+      } else {
+        modifiedPattern = `${modifiedPattern}.postgain(${gain})`;
+      }
     }
     
     // Only add .pan() if pan value is not 0 (not center)

@@ -5,7 +5,7 @@
 import { soundManager } from './soundManager.js';
 import { uiController } from './ui.js';
 import { soundConfig } from './config.js';
-import { initStrudelReplEditors, getStrudelEditor, getStrudelEditorValue, setStrudelEditorValue, setStrudelEditorEditable, insertStrudelEditorSnippet, setStrudelEditorHighlights } from './strudelReplEditor.js';
+import { initStrudelReplEditors, getStrudelEditor, getStrudelEditorValue, setStrudelEditorValue, setStrudelEditorEditable, insertStrudelEditorSnippet } from './strudelReplEditor.js';
 import { getDrawContext } from '@strudel/draw';
 import { transpiler as strudelTranspiler } from '@strudel/transpiler';
 import { evaluate as strudelCoreEvaluate } from '@strudel/core';
@@ -546,7 +546,7 @@ stack(
   }
 ];
 
-const INTRO_SAMPLE_PATH = new URL('../assets/samples/voice/Strudesk4000_de.mp3', import.meta.url).href;
+const INTRO_SAMPLE_PATH = new URL('./assets/samples/voice/Strudesk4000_de.mp3', document.baseURI).href;
 
 let interactiveSoundAppInstance = null;
 
@@ -2837,10 +2837,11 @@ class InteractiveSoundApp {
     this.introSamplePlayed = false;
     this._introSampleActivationHandler = null;
 
-    // Master editor highlighting
-    this.masterHighlightData = null;
-    this.masterHighlightRaf = null;
-    this.currentMasterHighlightKey = null;
+    // Native Strudel highlighting
+    this.nativeHighlightingEnabled = false;
+    this.nativeHighlightingDisabled = false;
+    this.nativeHighlightRetryCount = 0;
+    this.nativeHighlightRetryTimer = null;
 
     this.visualizerFullscreenBtn = null;
     this.handleVisualizerFullscreenChange = this.handleVisualizerFullscreenChange.bind(this);
@@ -2918,6 +2919,7 @@ class InteractiveSoundApp {
       console.log('🎉 Sounds are ready - activating green dots');
       this.setAllElementsLoaded();
       uiController.updateStatus('Ready - Click elements to start/stop patterns (Press Escape to stop all)');
+      this.enableNativeStrudelHighlighting();
     });
 
     // Set up callback for when master pattern is updated
@@ -2927,10 +2929,6 @@ class InteractiveSoundApp {
       
       // Update pattern slots display when master pattern changes
       this.updateActiveElementsDisplay();
-      
-      this.updateMasterPatternHighlights().catch(error => {
-        console.warn('⚠️ Could not update master highlight data:', error);
-      });
 
       // Don't re-apply visualizer when master pattern is updated from save
       // Visualizer will be applied when user presses play button
@@ -2985,15 +2983,8 @@ class InteractiveSoundApp {
 
       if (isPlaying) {
         this.hideMasterPunchcardPlaceholder();
-        this.updateMasterPatternHighlights()
-          .catch(error => {
-            console.warn('⚠️ Could not refresh master highlight data on play start:', error);
-          })
-          .finally(() => {
-            this.startMasterHighlightLoop();
-          });
+        this.enableNativeStrudelHighlighting();
       } else {
-        this.stopMasterHighlightLoop();
         this.showMasterPunchcardPlaceholder();
       }
     });
@@ -3079,6 +3070,7 @@ class InteractiveSoundApp {
     setTimeout(() => {
       try {
         initStrudelReplEditors();
+        this.enableNativeStrudelHighlighting();
       } catch (error) {
         console.warn('⚠️ Strudel REPL editor initialization failed (non-critical):', error.message);
         console.log('💡 Pattern editing will use plain textareas instead');
@@ -5138,466 +5130,56 @@ class InteractiveSoundApp {
     return { counts, hits, events };
   }
 
-  async computeMasterHighlightData(patternCode) {
-    if (!patternCode || typeof patternCode !== 'string' || patternCode.trim() === '') {
-      return null;
-    }
+  enableNativeStrudelHighlighting(retryDelay = 500) {
+    if (this.nativeHighlightingEnabled || this.nativeHighlightingDisabled) {
+        return;
+      }
 
-    let transpiled;
-    try {
-      transpiled = strudelTranspiler(patternCode, { emitMiniLocations: true });
+    const strudelAPI =
+      globalThis?.Strudel ||
+      globalThis?.strudel ||
+      window?.Strudel ||
+      window?.strudel;
+
+    const enableFn = strudelAPI && typeof strudelAPI.enableHighlighting === 'function'
+      ? strudelAPI.enableHighlighting
+      : null;
+
+    if (enableFn) {
+      try {
+        enableFn.call(strudelAPI);
+        this.nativeHighlightingEnabled = true;
+        this.nativeHighlightRetryCount = 0;
+        if (this.nativeHighlightRetryTimer) {
+          clearTimeout(this.nativeHighlightRetryTimer);
+          this.nativeHighlightRetryTimer = null;
+        }
+        console.log('✅ Enabled Strudel.enableHighlighting()');
+        return;
     } catch (error) {
-      console.warn('⚠️ Could not transpile master pattern for highlighting:', error);
-      return null;
-    }
-
-    const miniLocations = Array.isArray(transpiled?.miniLocations) ? transpiled.miniLocations : [];
-    const tokenEntries = [];
-
-    const pushToken = (from, to, text) => {
-      if (typeof from !== 'number' || typeof to !== 'number') {
-        return;
-      }
-      const length = to - from;
-      if (!Number.isFinite(length) || length <= 0) {
-        return;
-      }
-      const normalized = (text || '').replace(/['"]/g, '').trim().toLowerCase();
-      if (!normalized) {
-        return;
-      }
-      tokenEntries.push({ from, to, text, normalized, used: false, length });
-    };
-
-  miniLocations.forEach((entry) => {
-      if (!Array.isArray(entry) || entry.length < 2) {
-        return;
-      }
-      const [from, to] = entry;
-      if (typeof from !== 'number' || typeof to !== 'number' || !Number.isFinite(from) || !Number.isFinite(to) || to <= from) {
-        return;
-      }
-    const text = patternCode.slice(from, to);
-    const commentIndex = text.indexOf('//');
-    if (commentIndex !== -1) {
-      const beforeComment = text.slice(0, commentIndex);
-      if (beforeComment.trim()) {
-        pushToken(from, from + beforeComment.length, beforeComment);
-      const beforeRegex = /"[^"]*"|'[^']*'|[A-Za-z0-9_#:+-]+/g;
-      let beforeMatch;
-      while ((beforeMatch = beforeRegex.exec(beforeComment)) !== null) {
-          const raw = beforeMatch[0];
-          const tokenFrom = from + beforeMatch.index;
-          const tokenTo = tokenFrom + raw.length;
-          pushToken(tokenFrom, tokenTo, raw);
-        }
-
-      const beforeDigitRegex = /\b\d+\b/g;
-      let beforeDigitMatch;
-      while ((beforeDigitMatch = beforeDigitRegex.exec(beforeComment)) !== null) {
-        const raw = beforeDigitMatch[0];
-        const tokenFrom = from + beforeDigitMatch.index;
-        const tokenTo = tokenFrom + raw.length;
-        pushToken(tokenFrom, tokenTo, raw);
-      }
-      }
-      const newlineIndex = text.indexOf('\n', commentIndex);
-      if (newlineIndex === -1) {
-        return;
-      }
-      const afterComment = text.slice(newlineIndex + 1);
-      const trimmed = afterComment.replace(/^\s+/, '');
-      const offset = afterComment.length - trimmed.length;
-      const trimmedFrom = from + newlineIndex + 1 + offset;
-      if (trimmed.trim()) {
-        pushToken(trimmedFrom, trimmedFrom + trimmed.length, trimmed);
-      const afterRegex = /"[^"]*"|'[^']*'|[A-Za-z0-9_#:+-]+/g;
-      let afterMatch;
-      while ((afterMatch = afterRegex.exec(trimmed)) !== null) {
-          const raw = afterMatch[0];
-          const tokenFrom = trimmedFrom + afterMatch.index;
-          const tokenTo = tokenFrom + raw.length;
-          pushToken(tokenFrom, tokenTo, raw);
-        }
-
-      const afterDigitRegex = /\b\d+\b/g;
-      let afterDigitMatch;
-      while ((afterDigitMatch = afterDigitRegex.exec(trimmed)) !== null) {
-        const raw = afterDigitMatch[0];
-        const tokenFrom = trimmedFrom + afterDigitMatch.index;
-        const tokenTo = tokenFrom + raw.length;
-        pushToken(tokenFrom, tokenTo, raw);
-      }
-      }
+        console.warn('⚠️ Strudel.enableHighlighting() failed:', error);
+        this.nativeHighlightingDisabled = true;
       return;
     }
-    pushToken(from, to, text);
-
-    const localText = text || '';
-    const tokenRegex = /"[^"]*"|'[^']*'|[A-Za-z0-9_#:+-]+/g;
-    let match;
-    while ((match = tokenRegex.exec(localText)) !== null) {
-      const raw = match[0];
-      const tokenFrom = from + match.index;
-      const tokenTo = tokenFrom + raw.length;
-      pushToken(tokenFrom, tokenTo, raw);
     }
 
-    const digitRegex = /\b\d+\b/g;
-    let digitMatch;
-    while ((digitMatch = digitRegex.exec(localText)) !== null) {
-      const raw = digitMatch[0];
-      const tokenFrom = from + digitMatch.index;
-      const tokenTo = tokenFrom + raw.length;
-      pushToken(tokenFrom, tokenTo, raw);
-    }
-    });
-
-  tokenEntries.sort((a, b) => a.length - b.length);
-  const numericTokenEntries = tokenEntries
-    .filter((entry) => /^[0-9]+$/.test(entry.normalized))
-    .sort((a, b) => a.from - b.from || a.to - b.to);
-
-  const takeNextNumericToken = () => {
-    while (numericTokenEntries.length > 0) {
-      const entry = numericTokenEntries.shift();
-      if (entry && !entry.used) {
-        entry.used = true;
-        return entry;
-      }
-    }
-    return null;
-  };
-
-    const metrics = this.currentTimeSignatureMetrics || getTimeSignatureMetrics(this.currentTimeSignature || '4/4');
-
-    let punchcardData;
-    try {
-      punchcardData = await this.computeMasterPunchcardData(patternCode, metrics);
-    } catch (error) {
-      console.warn('⚠️ Could not compute master punchcard data for highlighting:', error);
-      return null;
-    }
-
-    const events = Array.isArray(punchcardData?.events) ? punchcardData.events : [];
-    if (typeof window !== 'undefined') {
-      window.__lastHighlightEvents = events;
-      window.__lastHighlightTokens = tokenEntries.slice();
-    }
-
-    const labelBuckets = new Map();
-    const addEntryToBucket = (key, entry) => {
-      if (!key) return;
-      if (!labelBuckets.has(key)) {
-        labelBuckets.set(key, []);
-      }
-      labelBuckets.get(key).push(entry);
-    };
-
-    tokenEntries.forEach((entry) => {
-      if (!entry.normalized) {
-        return;
-      }
-      addEntryToBucket(entry.normalized, entry);
-
-      // Split on whitespace and punctuation to allow matching individual tokens
-      entry.normalized.split(/[\s,;:()[\]{}<>]+/).forEach((part) => {
-        const token = part.trim();
-        if (token && token.length <= entry.normalized.length) {
-          addEntryToBucket(token, entry);
-        }
-      });
-    });
-
-    const meaningfulEvents = events.filter((event) => {
-      if (!event || typeof event !== 'object') {
-        return false;
-      }
-      const label = typeof event.label === 'string' ? event.label.trim() : '';
-      const meta = event.meta || {};
-      const metaNote = meta.note != null ? String(meta.note).trim() : '';
-      const metaSound = meta.sound != null ? String(meta.sound).trim() : '';
-      const metaSample = meta.sample != null ? String(meta.sample).trim() : '';
-      const metaInstrument = meta.instrument != null ? String(meta.instrument).trim() : '';
-      const metaRaw = meta.rawString != null ? String(meta.rawString).trim() : '';
-      return (
-        label ||
-        metaNote ||
-        metaSound ||
-        metaSample ||
-        metaInstrument ||
-        metaRaw
-      );
-    });
-
-    if (!meaningfulEvents.length) {
-      return {
-        events: [],
-        patternLength: patternCode.length
-      };
-    }
-
-    const eventsWithIndex = meaningfulEvents
-      .map((event, idx) => ({ event, idx }))
-      .sort((a, b) => {
-        const aBegin = Number.isFinite(a.event?.begin) ? a.event.begin : 0;
-        const bBegin = Number.isFinite(b.event?.begin) ? b.event.begin : 0;
-        if (aBegin !== bBegin) {
-          return aBegin - bBegin;
-        }
-        const aEnd = Number.isFinite(a.event?.end) ? a.event.end : aBegin;
-        const bEnd = Number.isFinite(b.event?.end) ? b.event.end : bBegin;
-        return aEnd - bEnd;
-      });
-
-    const assignedEvents = eventsWithIndex.map(({ event }) => {
-      const labelCandidates = new Set();
-      const addCandidate = (value) => {
-        if (typeof value === 'number') {
-          labelCandidates.add(String(value));
-        } else if (typeof value === 'string') {
-          const trimmed = value.trim();
-          if (trimmed) {
-      const lower = trimmed.toLowerCase();
-      labelCandidates.add(lower);
-      labelCandidates.add(trimmed.replace(/['"]/g, '').trim().toLowerCase());
-      if (/^\d+$/.test(trimmed)) {
-        labelCandidates.add(trimmed);
-      }
-            trimmed.split(/[:/\\\s]+/).forEach(part => {
-              const p = part.trim().toLowerCase();
-              if (p) {
-                labelCandidates.add(p);
-              }
-            });
-          }
-        } else if (Array.isArray(value)) {
-          value.forEach(item => addCandidate(item));
-        }
-      };
-
-      addCandidate(event?.label);
-      addCandidate(event?.meta?.label);
-      addCandidate(event?.meta?.sound);
-      addCandidate(event?.meta?.sample);
-      addCandidate(event?.meta?.instrument);
-      addCandidate(event?.meta?.source);
-      addCandidate(event?.meta?.rawString);
-      addCandidate(event?.meta?.note);
-
-      const normalizedLabel = Array.from(labelCandidates).find(Boolean) || '';
-      let location = null;
-
-      if (normalizedLabel) {
-        for (const candidate of labelCandidates) {
-          if (!candidate) continue;
-          const bucket = labelBuckets.get(candidate);
-          if (!bucket || bucket.length === 0) continue;
-          let next = null;
-          let index = 0;
-          while (index < bucket.length) {
-            const entry = bucket[index];
-            index += 1;
-            if (entry && !entry.used) {
-              next = entry;
-              break;
-            }
-          }
-          if (next) {
-            location = next;
-            location.used = true;
-            break;
-          }
-        }
-      }
-
-      if (!location) {
-        location = takeNextNumericToken();
-      }
-
-      if (!location) {
-        const fallback = tokenEntries.find(entry => !entry.used);
-        if (fallback) {
-          fallback.used = true;
-          location = fallback;
-        }
-      }
-
-      const begin = Number.isFinite(event?.begin) ? (Number(event.begin) % 1 + 1) % 1 : 0;
-      const duration = Number.isFinite(event?.duration) ? Math.abs(Number(event.duration)) : null;
-      let end;
-      if (duration !== null && duration >= (1 / (metrics.totalSteps || 16))) {
-        end = (begin + duration) % 1;
-      } else {
-        end = Number.isFinite(event?.end) ? (Number(event.end) % 1 + 1) % 1 : begin;
-      }
-
-      return {
-        begin,
-        end,
-        label: event?.label ?? '',
-        from: location ? location.from : 0,
-        to: location ? location.to : patternCode.length
-      };
-    });
-
-    assignedEvents.sort((a, b) => {
-      if (a.begin !== b.begin) return a.begin - b.begin;
-      return a.from - b.from;
-    });
-
-    const numericTokensOrdered = tokenEntries
-      .filter((entry) => /^[0-9]+$/.test(entry.normalized))
-      .sort((a, b) => a.from - b.from || a.to - b.to);
-
-    if (numericTokensOrdered.length) {
-      assignedEvents.forEach((event, idx) => {
-        const token = numericTokensOrdered[idx % numericTokensOrdered.length];
-        if (token) {
-          event.from = token.from;
-          event.to = token.to;
-        }
-      });
-    }
-
-    if (!assignedEvents.length && numericTokensOrdered.length) {
-      const fallbackEvents = numericTokensOrdered.map((token, index) => {
-        const begin = index / Math.max(numericTokensOrdered.length, 1);
-        const end = Math.max(begin + 1e-6, (index + 1) / Math.max(numericTokensOrdered.length, 1));
-        return {
-          begin,
-          end,
-          label: '',
-          from: token.from,
-          to: token.to
-        };
-      });
-
-      return {
-        events: fallbackEvents,
-        patternLength: patternCode.length
-      };
-    }
-  }
-
-  async updateMasterPatternHighlights() {
-    const pattern = soundManager.getMasterPatternCode();
-    if (!pattern || pattern.trim() === '') {
-      this.masterHighlightData = null;
-      setStrudelEditorHighlights('master-pattern', []);
-      this.currentMasterHighlightKey = null;
+    if (this.nativeHighlightRetryTimer) {
       return;
     }
 
-    try {
-      const highlightData = await this.computeMasterHighlightData(pattern);
-      this.masterHighlightData = highlightData;
-      if (!highlightData || !Array.isArray(highlightData.events) || highlightData.events.length === 0) {
-        setStrudelEditorHighlights('master-pattern', []);
-        this.currentMasterHighlightKey = null;
-      } else if (!soundManager.isMasterActive()) {
-        setStrudelEditorHighlights('master-pattern', []);
-        this.currentMasterHighlightKey = null;
-      } else {
-        this.updateMasterHighlightForCurrentPlayback();
-      }
-    } catch (error) {
-      console.warn('⚠️ Unable to update master pattern highlights:', error);
-      this.masterHighlightData = null;
-      setStrudelEditorHighlights('master-pattern', []);
-      this.currentMasterHighlightKey = null;
-    }
-  }
-
-  startMasterHighlightLoop() {
-    if (this.masterHighlightRaf != null) {
-      return;
-    }
-    const tick = () => {
-      this.masterHighlightRaf = requestAnimationFrame(tick);
-      this.updateMasterHighlightForCurrentPlayback();
-    };
-    this.masterHighlightRaf = requestAnimationFrame(tick);
-  }
-
-  stopMasterHighlightLoop() {
-    if (this.masterHighlightRaf != null) {
-      cancelAnimationFrame(this.masterHighlightRaf);
-      this.masterHighlightRaf = null;
-    }
-    this.currentMasterHighlightKey = null;
-    setStrudelEditorHighlights('master-pattern', []);
-  }
-
-  updateMasterHighlightForCurrentPlayback() {
-    const highlightData = this.masterHighlightData;
-    if (!highlightData || !Array.isArray(highlightData.events) || highlightData.events.length === 0) {
-      if (this.currentMasterHighlightKey !== null) {
-        this.currentMasterHighlightKey = null;
-        setStrudelEditorHighlights('master-pattern', []);
-      }
+    if (this.nativeHighlightRetryCount >= 5) {
+      console.warn('⚠️ Strudel.enableHighlighting() unavailable; falling back without editor highlights.');
+      this.nativeHighlightingDisabled = true;
+      this.nativeHighlightRetryCount = 0;
       return;
     }
 
-    const playbackInfo = soundManager.getMasterPlaybackInfo ? soundManager.getMasterPlaybackInfo() : null;
-    if (
-      !playbackInfo ||
-      !playbackInfo.isPlaying ||
-      !playbackInfo.startTime ||
-      !Number.isFinite(playbackInfo.speed) ||
-      playbackInfo.speed <= 0 ||
-      !Number.isFinite(playbackInfo.tempo) ||
-      playbackInfo.tempo <= 0
-    ) {
-      if (this.currentMasterHighlightKey !== null) {
-        this.currentMasterHighlightKey = null;
-        setStrudelEditorHighlights('master-pattern', []);
-      }
-      return;
-    }
-
-    const editor = getStrudelEditor('master-pattern');
-    if (!editor) {
-      return;
-    }
-
-    const audioContext = soundManager.audioContext;
-    const nowSeconds = audioContext ? audioContext.currentTime : performance.now() / 1000;
-    const elapsed = nowSeconds - playbackInfo.startTime;
-    if (!Number.isFinite(elapsed) || elapsed < 0) {
-      return;
-    }
-
-    const phase = ((elapsed * playbackInfo.speed) % 1 + 1) % 1;
-
-    const activeEvents = highlightData.events.filter((event) => {
-      const begin = Number.isFinite(event.begin) ? ((event.begin % 1) + 1) % 1 : 0;
-      const endRaw = Number.isFinite(event.end) ? event.end : event.begin;
-      let end = ((endRaw % 1) + 1) % 1;
-
-      if (end === begin) {
-        return Math.abs(phase - begin) < 1e-2;
-      }
-
-      if (end > begin) {
-        return phase >= begin && phase < end;
-      }
-
-      // Wrap-around event
-      return phase >= begin || phase < end;
-    });
-
-    const ranges = activeEvents.map((event) => {
-      const from = Math.max(0, Math.min(highlightData.patternLength, event.from));
-      const to = Math.max(from, Math.min(highlightData.patternLength, event.to));
-      return { from, to };
-    });
-
-    const key = JSON.stringify(ranges);
-    if (key !== this.currentMasterHighlightKey) {
-      setStrudelEditorHighlights('master-pattern', ranges);
-      this.currentMasterHighlightKey = key;
-    }
+    this.nativeHighlightRetryCount += 1;
+    const nextDelay = Math.min(retryDelay * 2, 4000);
+    this.nativeHighlightRetryTimer = setTimeout(() => {
+      this.nativeHighlightRetryTimer = null;
+      this.enableNativeStrudelHighlighting(nextDelay);
+    }, nextDelay);
   }
 
   /**
@@ -7868,7 +7450,7 @@ class InteractiveSoundApp {
           ensurePatternBankOptions(selectedValue);
         }).catch(() => {});
       }
-      
+
       // Don't add non-drum banks to drums group - they belong in their own groups
       // The other groups are preserved from the HTML, so options stay in place
 
@@ -8320,34 +7902,34 @@ class InteractiveSoundApp {
                 });
               } else {
                 // Regular linear slider for non-frequency parameters
-                slider.min = String(numericParams.min);
-                slider.max = String(numericParams.max);
-                slider.step = String(numericParams.step);
-                
-                // Try to get existing value from pattern, otherwise use default
-                const getCurrentPatternValue = () => {
-                  const currentPattern = getStrudelEditorValue('modal-pattern') || '';
-                  const functionRegex = new RegExp(`\\.${functionName}\\(([^)]+)\\)`, 'g');
-                  const match = functionRegex.exec(currentPattern);
-                  return match ? match[1] : null;
-                };
-                
-                const existingValue = getCurrentPatternValue();
-                slider.value = existingValue ? String(existingValue) : String(numericParams.default);
-                
+              slider.min = String(numericParams.min);
+              slider.max = String(numericParams.max);
+              slider.step = String(numericParams.step);
+              
+              // Try to get existing value from pattern, otherwise use default
+              const getCurrentPatternValue = () => {
+                const currentPattern = getStrudelEditorValue('modal-pattern') || '';
+                const functionRegex = new RegExp(`\\.${functionName}\\(([^)]+)\\)`, 'g');
+                const match = functionRegex.exec(currentPattern);
+                return match ? match[1] : null;
+              };
+              
+              const existingValue = getCurrentPatternValue();
+              slider.value = existingValue ? String(existingValue) : String(numericParams.default);
+              
                 valueSpan = document.createElement('span');
-                valueSpan.className = 'slider-value';
-                valueSpan.style.minWidth = '60px';
-                valueSpan.style.textAlign = 'right';
-                valueSpan.style.fontSize = '0.75rem';
-                valueSpan.style.fontWeight = '600';
-                valueSpan.textContent = slider.value + (numericParams.unit ? ' ' + numericParams.unit : '');
-                
-                // Update value display on input (for visual feedback)
-                slider.addEventListener('input', (e) => {
-                  const value = e.target.value;
-                  valueSpan.textContent = value + (numericParams.unit ? ' ' + numericParams.unit : '');
-                });
+              valueSpan.className = 'slider-value';
+              valueSpan.style.minWidth = '60px';
+              valueSpan.style.textAlign = 'right';
+              valueSpan.style.fontSize = '0.75rem';
+              valueSpan.style.fontWeight = '600';
+              valueSpan.textContent = slider.value + (numericParams.unit ? ' ' + numericParams.unit : '');
+              
+              // Update value display on input (for visual feedback)
+              slider.addEventListener('input', (e) => {
+                const value = e.target.value;
+                valueSpan.textContent = value + (numericParams.unit ? ' ' + numericParams.unit : '');
+              });
               }
               
               // Replace or insert function when slider is released
@@ -8361,7 +7943,7 @@ class InteractiveSoundApp {
                   value = Math.round(hz); // Round to nearest Hz for cleaner values
                   valueSpan.textContent = value + ' ' + numericParams.unit;
                 } else {
-                  valueSpan.textContent = value + (numericParams.unit ? ' ' + numericParams.unit : '');
+                valueSpan.textContent = value + (numericParams.unit ? ' ' + numericParams.unit : '');
                 }
                 
                 // Get current pattern
@@ -8414,8 +7996,8 @@ class InteractiveSoundApp {
                       slider.value = String(position);
                       valueSpan.textContent = Math.round(clampedHz) + ' ' + numericParams.unit;
                     } else {
-                      slider.value = existingValue;
-                      valueSpan.textContent = existingValue + (numericParams.unit ? ' ' + numericParams.unit : '');
+                    slider.value = existingValue;
+                    valueSpan.textContent = existingValue + (numericParams.unit ? ' ' + numericParams.unit : '');
                     }
                   } else {
                     // Insert tag with default value if not already in pattern
@@ -11601,7 +11183,7 @@ class InteractiveSoundApp {
                   console.log(`📝 Updated .bank("${appliedBankValue}") modifier`);
                   console.log(`   Before: ${beforeUpdate.substring(0, 80)}...`);
                   console.log(`   After: ${strudelPattern.substring(0, 80)}...`);
-                } else {
+                  } else {
                   // No pattern - create minimal pattern with .bank()
                   if (isSpecialSampleBank) {
                     const defaultWorldPattern = appliedBankValue === 'mridangam'
@@ -11613,8 +11195,8 @@ class InteractiveSoundApp {
                   }
                   console.log(`📝 Created minimal pattern with .bank("${appliedBankValue}")`);
                 }
-            setStrudelEditorValue('modal-pattern', strudelPattern);
-            patternTextarea.placeholder = '';
+                  setStrudelEditorValue('modal-pattern', strudelPattern);
+                  patternTextarea.placeholder = '';
               } else if (isSynthOrWaveform) {
                 // For synths/waveforms: add/replace .s() modifier
                 const canonicalBankValue = normalizeSynthBankName(bankValue);
@@ -11625,7 +11207,7 @@ class InteractiveSoundApp {
                   console.log(`📝 Updated .s("${canonicalBankValue}") modifier`);
                   console.log(`   Before: ${beforeUpdate.substring(0, 80)}...`);
                   console.log(`   After: ${strudelPattern.substring(0, 80)}...`);
-                  } else {
+                } else {
                   // No pattern - create minimal pattern with .s()
                   strudelPattern = `note("c3").s("${canonicalBankValue}")`;
                   console.log(`📝 Created minimal pattern with .s("${canonicalBankValue}")`);
