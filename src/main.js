@@ -544,6 +544,8 @@ stack(
   }
 ];
 
+const INTRO_SAMPLE_PATH = new URL('../assets/samples/voice/Strudesk4000_de.mp3', import.meta.url).href;
+
 let interactiveSoundAppInstance = null;
 
 const CHANNEL_HISTORY_LIMIT = 25;
@@ -2830,6 +2832,8 @@ class InteractiveSoundApp {
     this.scopeDataArray = null;
     this.spectrumDataArray = null;
     this.activeVisualizerLoop = null;
+    this.introSamplePlayed = false;
+    this._introSampleActivationHandler = null;
 
     // Master editor highlighting
     this.masterHighlightData = null;
@@ -3197,6 +3201,76 @@ class InteractiveSoundApp {
     this.setupMasterPunchcard();
     
     console.log('✅ Master channel controls setup complete');
+  }
+
+  tryPlayIntroSample() {
+    if (this.introSamplePlayed || !INTRO_SAMPLE_PATH) {
+      return;
+    }
+
+    if (!soundManager) {
+      return;
+    }
+
+    const audioContext = typeof soundManager.getAudioContext === 'function'
+      ? soundManager.getAudioContext()
+      : null;
+
+    const audioReady = soundManager.isAudioReady() && audioContext;
+
+    const playAndCleanup = () => {
+      try {
+        soundManager.playAudioFile('intro-sample', INTRO_SAMPLE_PATH);
+        this.introSamplePlayed = true;
+        this.detachIntroSampleActivationHandlers();
+      } catch (error) {
+        console.warn('⚠️ Unable to play intro sample automatically:', error);
+      }
+    };
+
+    if (audioReady) {
+      if (audioContext.state !== 'running') {
+        audioContext.resume().then(() => {
+          playAndCleanup();
+        }).catch((error) => {
+          console.warn('⚠️ Unable to resume audio context for intro sample:', error);
+          this.attachIntroSampleActivationHandlers();
+        });
+      } else {
+        playAndCleanup();
+      }
+    } else {
+      this.attachIntroSampleActivationHandlers();
+    }
+  }
+
+  attachIntroSampleActivationHandlers() {
+    if (this._introSampleActivationHandler || this.introSamplePlayed) {
+      return;
+    }
+
+    this._introSampleActivationHandler = () => {
+      if (soundManager?.getAudioContext) {
+        const audioContext = soundManager.getAudioContext();
+        if (audioContext && audioContext.state === 'suspended') {
+          audioContext.resume().catch(() => {});
+        }
+      }
+      this.tryPlayIntroSample();
+    };
+
+    document.addEventListener('pointerdown', this._introSampleActivationHandler, { passive: true });
+    document.addEventListener('keydown', this._introSampleActivationHandler);
+  }
+
+  detachIntroSampleActivationHandlers() {
+    if (!this._introSampleActivationHandler) {
+      return;
+    }
+
+    document.removeEventListener('pointerdown', this._introSampleActivationHandler);
+    document.removeEventListener('keydown', this._introSampleActivationHandler);
+    this._introSampleActivationHandler = null;
   }
 
   /**
@@ -4242,9 +4316,33 @@ class InteractiveSoundApp {
       const barWidth = width / barCount;
       for (let i = 0; i < barCount; i++) {
         const targetPosition = i / barCount;
+        // Use a wider search window in low-frequency regions to avoid gaps
+        const baseRadius = 1 / barCount;
+        const searchRadius = targetPosition < 0.3
+          ? baseRadius * 4
+          : targetPosition < 0.6
+            ? baseRadius * 2
+            : baseRadius;
+
         // Find bars near this position
-        const nearbyBars = bars.filter(b => Math.abs(b.position - targetPosition) < 1 / barCount);
-        const maxValue = nearbyBars.length > 0 ? Math.max(...nearbyBars.map(b => b.value)) : 0;
+        const nearbyBars = bars.filter(b => Math.abs(b.position - targetPosition) < searchRadius);
+        let maxValue = nearbyBars.length > 0 ? Math.max(...nearbyBars.map(b => b.value)) : 0;
+
+        // Fallback: use the nearest bar if none found (ensures no blank segments)
+        if (maxValue === 0 && bars.length > 0) {
+          let closestValue = 0;
+          let closestDistance = Infinity;
+          for (const bar of bars) {
+            const distance = Math.abs(bar.position - targetPosition);
+            if (distance < closestDistance) {
+              closestDistance = distance;
+              closestValue = bar.value;
+            } else if (distance > closestDistance) {
+              break; // bars are sorted, so we can stop once distance increases
+            }
+          }
+          maxValue = closestValue;
+        }
         
         const barHeight = Math.max(maxValue * height, 2);
         const x = targetPosition * width;
@@ -4253,7 +4351,8 @@ class InteractiveSoundApp {
         gradient.addColorStop(0, 'rgba(56, 189, 248, 0.95)');
         gradient.addColorStop(1, 'rgba(14, 116, 144, 0.75)');
         context.fillStyle = gradient;
-        context.fillRect(x + barWidth * 0.15, y, barWidth * 0.7, barHeight);
+        // Fill entire segment to eliminate blank space between bars
+        context.fillRect(x, y, barWidth + 1, barHeight);
       }
       this.barchartAnimationFrame = requestAnimationFrame(draw);
     };
@@ -7584,16 +7683,16 @@ class InteractiveSoundApp {
 
     const insertSampleIntoPattern = (sampleName, baseUrl, samplePath) => {
       const safeSampleName = escapeDoubleQuotes(sampleName);
-      const safeSamplePath = escapeDoubleQuotes(samplePath || sampleName);
+      const sanitizedSamplePath = (samplePath || sampleName || '').replace(/[\r\n]+/g, '');
+      const safeSamplePath = escapeDoubleQuotes(sanitizedSamplePath);
       const safeBaseUrl = escapeSingleQuotes(baseUrl || './');
       const samplesSnippet = `samples({\n  "${safeSampleName}": "${safeSamplePath}"\n}, '${safeBaseUrl}')`;
-      const soundSnippet = `sound("${safeSampleName}")`;
+      const combinedExpression = `(${samplesSnippet},\n sound("${safeSampleName}"))`;
       const currentPattern = getStrudelEditorValue('modal-pattern') || '';
       const trimmedPattern = currentPattern.trim();
-      const addition = `${samplesSnippet};\n\n${soundSnippet}`;
       const newPattern = trimmedPattern
-        ? `${trimmedPattern}\n\n${addition}`
-        : addition;
+        ? `${trimmedPattern}\n\n${combinedExpression}`
+        : combinedExpression;
       setStrudelEditorValue('modal-pattern', newPattern);
       if (typeof updatePreviewButtonState === 'function') {
         updatePreviewButtonState();
@@ -8171,6 +8270,8 @@ class InteractiveSoundApp {
               slider.dataset.tagKey = tagKey;
               slider.style.flex = '1';
               
+              let valueSpan;
+              
               // Get function name (e.g., 'lpf', 'hpf', 'gain')
               const functionName = tagKey;
               
@@ -8201,7 +8302,7 @@ class InteractiveSoundApp {
                 const sliderPosition = frequencyToPosition(currentHz);
                 slider.value = String(sliderPosition);
                 
-                const valueSpan = document.createElement('span');
+                valueSpan = document.createElement('span');
                 valueSpan.className = 'slider-value';
                 valueSpan.style.minWidth = '60px';
                 valueSpan.style.textAlign = 'right';
@@ -8232,7 +8333,7 @@ class InteractiveSoundApp {
                 const existingValue = getCurrentPatternValue();
                 slider.value = existingValue ? String(existingValue) : String(numericParams.default);
                 
-                const valueSpan = document.createElement('span');
+                valueSpan = document.createElement('span');
                 valueSpan.className = 'slider-value';
                 valueSpan.style.minWidth = '60px';
                 valueSpan.style.textAlign = 'right';
@@ -11143,12 +11244,16 @@ class InteractiveSoundApp {
         // Show/hide sample URL and file input based on bank selection
         const sampleUrlGroup = document.getElementById('modal-sample-url')?.closest('.form-group');
         const sampleFileGroup = document.getElementById('modal-sample-file')?.closest('.form-group');
+        const sampleNameGroup = document.getElementById('modal-sample-name-group');
         const hasBankSelected = bankValue && bankValue !== '';
         if (sampleUrlGroup) {
           sampleUrlGroup.style.display = hasBankSelected ? 'none' : 'block';
         }
         if (sampleFileGroup) {
           sampleFileGroup.style.display = hasBankSelected ? 'none' : 'block';
+        }
+        if (sampleNameGroup) {
+          sampleNameGroup.style.display = hasBankSelected ? 'none' : 'block';
         }
         
         // Handle "Default" (empty value) - no bank, no .bank() modifier
