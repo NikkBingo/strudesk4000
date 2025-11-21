@@ -4791,6 +4791,56 @@ class SoundManager {
     return found;
   }
 
+  _ensureMasterPatternSanitized() {
+    if (!this.masterPattern || typeof this.masterPattern !== 'string') {
+      return '';
+    }
+    const sanitized = this._repairBrokenSampleStrings(this.masterPattern);
+    if (sanitized !== this.masterPattern) {
+      console.log('🧼 Sanitized master pattern sample strings before evaluation');
+      this.masterPattern = sanitized;
+    }
+    return this.masterPattern;
+  }
+
+  _repairBrokenSampleStrings(pattern) {
+    if (!pattern || typeof pattern !== 'string') {
+      return pattern;
+    }
+
+    const samplesCallRegex = /samples\s*\(\s*\{([\s\S]*?)\}\s*,\s*\{([\s\S]*?)\}\s*\)/g;
+
+    return pattern.replace(samplesCallRegex, (match, sampleBlock, optionsBlock) => {
+      const entryRegex = /"([^"]+)"\s*:\s*"([\s\S]*?)"/g;
+      const entries = [];
+      let entryMatch;
+
+      while ((entryMatch = entryRegex.exec(sampleBlock)) !== null) {
+        const key = entryMatch[1]?.trim();
+        const value = entryMatch[2]?.replace(/[\r\n]+/g, '').trim();
+        if (!key || !value) continue;
+        entries.push([key, value]);
+      }
+
+      if (!entries.length) {
+        return match;
+      }
+
+      const baseUrlMatch = optionsBlock.match(/baseUrl\s*:\s*"([\s\S]*?)"/);
+      const cleanedBaseUrl = baseUrlMatch
+        ? baseUrlMatch[1].replace(/[\r\n]+/g, '').trim()
+        : './';
+
+      const sampleLines = entries
+        .map(([key, value]) => `  "${key}": "${value}"`)
+        .join(',\n');
+
+      const safeBaseUrl = cleanedBaseUrl || './';
+
+      return `samples({\n${sampleLines}\n}, { baseUrl: "${safeBaseUrl}" })`;
+    });
+  }
+
   applyMasterMixModifiers(pattern, options = {}) {
     if (!pattern || typeof pattern !== 'string' || pattern.trim() === '') {
       return pattern;
@@ -6377,13 +6427,14 @@ class SoundManager {
       
       // Normalize quotes in pattern before storing
       const normalizedPattern = (pattern || '').replace(/[""]/g, '"').replace(/['']/g, "'");
+      const repairedPattern = this._repairBrokenSampleStrings(normalizedPattern);
       
       // Check if pattern is in note names format (e.g., note("C4 E4 G4"))
-      const hasNoteNames = this.patternHasNoteNames(normalizedPattern);
-      const hasNumericNotes = this.patternHasNumericNotePattern(normalizedPattern);
+      const hasNoteNames = this.patternHasNoteNames(repairedPattern);
+      const hasNumericNotes = this.patternHasNumericNotePattern(repairedPattern);
       
       // Convert note() calls with semitones to n() when adding to master
-      let preparedPattern = normalizedPattern;
+      let preparedPattern = repairedPattern;
       // Check if pattern contains note() calls (not just n())
       const hasNoteCalls = /\bnote\s*\(/i.test(normalizedPattern);
       if (hasNoteCalls) {
@@ -6408,8 +6459,8 @@ class SoundManager {
       }
       
       this.trackedPatterns.set(elementId, {
-        rawPattern: normalizedPattern,  // Original pattern as written
-        pattern: preparedPattern,  // Same as rawPattern - preserve format
+        rawPattern: preparedPattern,
+        pattern: preparedPattern,
         gain: gain || 0.8,
         pan: pan || 0,
         muted: false,
@@ -6595,8 +6646,12 @@ class SoundManager {
       .split('\n')
       .filter(line => !line.trim().startsWith(tempoPrefix));
     const cleanedPattern = filteredLines.join('\n').trimEnd();
+    const sanitizedPattern = this._repairBrokenSampleStrings(cleanedPattern);
+    if (sanitizedPattern !== cleanedPattern) {
+      console.log('🧼 Sanitized master pattern sample strings when formatting tempo comment');
+    }
 
-    return `${cleanedPattern}\n\n${tempoPrefix} ${tempo} BPM`;
+    return `${sanitizedPattern}\n\n${tempoPrefix} ${tempo} BPM`;
   }
 
   /**
@@ -6632,7 +6687,12 @@ class SoundManager {
           continue;
         }
         
-        const sourcePattern = trackData.pattern || trackData.rawPattern || '';
+        const originalSourcePattern = trackData.pattern || trackData.rawPattern || '';
+        const sourcePattern = this._repairBrokenSampleStrings(originalSourcePattern);
+        if (sourcePattern !== originalSourcePattern) {
+          trackData.pattern = sourcePattern;
+          trackData.rawPattern = sourcePattern;
+        }
         if (!sourcePattern || sourcePattern.trim() === '') {
           console.log(`  ⏭️ Skipping ${elementId} (empty pattern)`);
           continue;
@@ -7162,6 +7222,7 @@ class SoundManager {
       return { success: false, error: 'Strudel evaluate unavailable' };
     }
 
+    this._ensureMasterPatternSanitized();
     const slot = this.masterSlot || 'd0';
     const code = `${slot} = ${this.masterPattern.trim()}`;
     try {
@@ -7204,6 +7265,7 @@ class SoundManager {
       return { success: false, error: 'Strudel evaluate unavailable' };
     }
 
+    this._ensureMasterPatternSanitized();
     const slot = this.masterSlot || 'd0';
     const code = `${slot} = ${this.masterPattern.trim()}`;
     try {
@@ -7269,6 +7331,8 @@ class SoundManager {
         console.log(`⏳ Waiting for Strudel to initialize...`);
         await this.initStrudel();
       }
+      
+      this._ensureMasterPatternSanitized();
       
       // Ensure analyser is set up for visualizers
       this.setupVisualizerAnalyser();
@@ -8438,6 +8502,7 @@ class SoundManager {
         this.masterPattern = this.formatMasterPatternWithTempoComment(this.masterPattern);
       }
     }
+    this._ensureMasterPatternSanitized();
     return this.masterPattern;
   }
 
@@ -8466,6 +8531,7 @@ class SoundManager {
       } else {
         this.masterPattern = '';
       }
+      this._ensureMasterPatternSanitized();
 
       if (this.appInstance && typeof this.appInstance.syncElementsFromMasterPattern === 'function') {
         try {

@@ -2069,6 +2069,42 @@ header h1 {
   color: #475569;
   margin-top: 4px;
 }
+.modal-preset-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.modal-preset-heading-row strong {
+  flex: 1;
+}
+.modal-preset-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #1f2937;
+  background: rgba(148, 163, 184, 0.35);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.modal-preset-badge.is-step {
+  background: rgba(16, 185, 129, 0.16);
+  color: #047857;
+}
+.modal-preset-badge.is-code {
+  background: rgba(59, 130, 246, 0.15);
+  color: #1d4ed8;
+}
+.modal-preset-description {
+  display: block;
+}
+.modal-preset-secondary-row {
+  font-size: 0.76rem;
+  color: #374151;
+  font-weight: 500;
+  margin: 2px 0 4px;
+}
 
 .pattern-label-row {
   display: flex;

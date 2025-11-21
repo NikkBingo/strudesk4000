@@ -376,28 +376,32 @@ const DRUM_PATTERN_PRESETS = [
     label: 'Roland 808 – Kick & Hat',
     bank: 'RolandTR808',
     description: 'Simple BD/HH groove shown in the step editor',
-    pattern: 's("bd ~ hh ~ bd ~ hh ~ bd ~ hh ~ bd ~ hh ~").bank("RolandTR808")'
+    pattern: 's("bd ~ hh ~ bd ~ hh ~ bd ~ hh ~ bd ~ hh ~").bank("RolandTR808")',
+    editorBadge: 'Step editor'
   },
   {
     id: 'drum-beat-generator',
-    label: 'Beat Generator (Code)',
+    label: 'Beat Generator',
     bank: '',
     description: 'Opens in code editor for generative BD patterns',
-    pattern: 's("bd").bank("RolandTR808").segment(16).degradeBy(.5).ribbon(16,1)'
+    pattern: 's("bd").bank("RolandTR808").segment(16).degradeBy(.5).ribbon(16,1)',
+    editorBadge: 'Code'
   },
   {
     id: 'random-modifiers',
     label: 'Random Modifiers',
     bank: '',
     description: 'chooseCycles randomizes BD / HH / SD each cycle',
-    pattern: 's(chooseCycles("bd","hh","sd")).bank("RolandTR808").fast(8)'
+    pattern: 's(chooseCycles("bd","hh","sd")).bank("RolandTR808").fast(8)',
+    editorBadge: 'Code'
   },
   {
     id: 'mridangam-pulse',
     label: 'Mridangam Percussion Set',
     bank: '',
     description: 'Classical tha · dhi · thom · nam motif on the mridangam bank',
-    pattern: '"tha dhi thom nam".drop("0 -1 -2 -3").sound().bank("mridangam")'
+    pattern: '"tha dhi thom nam".drop("0 -1 -2 -3").sound().bank("mridangam")\n\n/* Available sounds: tha · dhi · dhin · thom · nam · na · ta · ka · ki · gumki · dhum · chaapu · ardha */',
+    editorBadge: 'Code'
   }
 ];
 
@@ -506,6 +510,12 @@ Gm7 C7 [F7 D7] [Gm7 C7]
 >\`)`
   }
 ];
+
+TONAL_PATTERN_PRESETS.forEach((preset) => {
+  if (!preset.editorBadge) {
+    preset.editorBadge = 'Code';
+  }
+});
 
 const MASTER_SONG_PRESETS = [
   {
@@ -7262,16 +7272,18 @@ class InteractiveSoundApp {
       }
     };
 
-    const escapeDoubleQuotes = (value = '') => value.replace(/"/g, '\\"');
-    const escapeSingleQuotes = (value = '') => value.replace(/'/g, "\\'");
+    const sanitizeUrlValue = (value = '') => value.replace(/[\r\n]+/g, '').trim();
+    const quoteForPattern = (value = '') => JSON.stringify(value ?? '');
 
     const insertSampleIntoPattern = (sampleName, baseUrl, samplePath) => {
-      const safeSampleName = escapeDoubleQuotes(sampleName);
-      const sanitizedSamplePath = (samplePath || sampleName || '').replace(/[\r\n]+/g, '');
-      const safeSamplePath = escapeDoubleQuotes(sanitizedSamplePath);
-      const safeBaseUrl = escapeSingleQuotes(baseUrl || './');
-      const samplesSnippet = `samples({\n  "${safeSampleName}": "${safeSamplePath}"\n}, '${safeBaseUrl}')`;
-      const combinedExpression = `(${samplesSnippet},\n sound("${safeSampleName}"))`;
+      const sampleKey = quoteForPattern(sampleName || 'sample');
+      const sanitizedSamplePath = sanitizeUrlValue(samplePath || sampleName || '');
+      const safeSamplePath = quoteForPattern(sanitizedSamplePath);
+      const sanitizedBaseUrl = sanitizeUrlValue(baseUrl || './');
+      const safeBaseUrl = quoteForPattern(sanitizedBaseUrl || './');
+      const samplesSnippet = `samples({\n  ${sampleKey}: ${safeSamplePath}\n}, { baseUrl: ${safeBaseUrl} })`;
+      const soundCall = `sound(${sampleKey})`;
+      const combinedExpression = `(${samplesSnippet},\n ${soundCall})`;
       const currentPattern = getStrudelEditorValue('modal-pattern') || '';
       const trimmedPattern = currentPattern.trim();
       const newPattern = trimmedPattern
@@ -9168,7 +9180,20 @@ class InteractiveSoundApp {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'modal-preset-button';
-        button.innerHTML = `<strong>${preset.label}</strong>${preset.description ? `<span>${preset.description}</span>` : ''}`;
+        const badge = preset.editorBadge 
+          ? `<span class="modal-preset-badge${preset.editorBadge.toLowerCase().includes('code') ? ' is-code' : preset.editorBadge.toLowerCase().includes('step') ? ' is-step' : ''}">${preset.editorBadge}</span>` 
+          : '';
+        const secondaryRow = preset.secondaryLabel
+          ? `<div class="modal-preset-secondary-row">${preset.secondaryLabel}</div>`
+          : '';
+        button.innerHTML = `
+          <div class="modal-preset-heading-row">
+            <strong>${preset.label}</strong>
+            ${badge}
+          </div>
+          ${secondaryRow}
+          ${preset.description ? `<span class="modal-preset-description">${preset.description}</span>` : ''}
+        `;
         button.addEventListener('click', () => applyPresetPattern(preset));
         container.appendChild(button);
       });
