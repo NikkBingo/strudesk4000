@@ -634,12 +634,33 @@
               </button>
               <div id="modal-presets-content" class="modal-presets-content" hidden>
                 <div class="modal-presets-group">
-                  <div class="modal-presets-heading">Drum Patterns</div>
-                  <div class="modal-presets-buttons" id="modal-drum-presets"></div>
+                  <button type="button" class="modal-presets-subtoggle" data-target="modal-drum-presets" aria-expanded="false">
+                    <span>Drum Patterns</span>
+                    <span class="modal-presets-subtoggle-icon">▾</span>
+                  </button>
+                  <div class="modal-presets-subcontent modal-presets-buttons" id="modal-drum-presets"></div>
                 </div>
                 <div class="modal-presets-group">
-                  <div class="modal-presets-heading">Tonal Examples</div>
-                  <div class="modal-presets-buttons" id="modal-tonal-presets"></div>
+                  <button type="button" class="modal-presets-subtoggle" data-target="modal-tonal-presets" aria-expanded="false">
+                    <span>Tonal Examples</span>
+                    <span class="modal-presets-subtoggle-icon">▾</span>
+                  </button>
+                  <div class="modal-presets-subcontent modal-presets-buttons" id="modal-tonal-presets"></div>
+                </div>
+                <div class="modal-presets-group">
+                  <button type="button" class="modal-presets-subtoggle" data-target="modal-sampler-subcontent" aria-expanded="false">
+                    <span>Sampler Effects</span>
+                    <span class="modal-presets-subtoggle-icon">▾</span>
+                  </button>
+                  <div class="modal-presets-subcontent" id="modal-sampler-subcontent">
+                    <p class="modal-presets-description">
+                      Sampler effects are functions that change how audio files are triggered, looped, and reshaped.
+                    </p>
+                    <p class="modal-presets-description">
+                      Source: <a href="https://strudel.cc/learn/samples/" target="_blank" rel="noreferrer">https://strudel.cc/learn/samples/</a>
+                    </p>
+                    <div class="modal-presets-buttons" id="modal-sampler-presets"></div>
+                  </div>
                 </div>
               </div>
             </div>

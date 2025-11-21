@@ -511,6 +511,174 @@ Gm7 C7 [F7 D7] [Gm7 C7]
   }
 ];
 
+const SAMPLER_EFFECT_PRESETS = [
+  {
+    id: 'sampler-begin',
+    label: 'begin',
+    description: 'Skip the first section of each triggered sample.',
+    tooltip: 'A 0–1 pattern that trims the start of each hit (0.25 removes the first quarter).',
+    pattern: `samples({
+  "rave": "rave/AREUREADY.wav"
+}, "github:tidalcycles/dirt-samples")
+
+s("rave")
+  .begin("<0 0.25 0.5 0.75>")
+  .fast(2)`
+  },
+  {
+    id: 'sampler-end',
+    label: 'end',
+    description: 'Cut the tail of the sample instead of the beginning.',
+    tooltip: 'Same as .begin but trims from the end (1 = full sample, 0.5 = half length).',
+    pattern: `s("bd*2,oh*4")
+  .end("<0.1 0.2 0.5 1>")
+  .fast(2)`
+  },
+  {
+    id: 'sampler-loop',
+    label: 'loop',
+    description: 'Keep a sample looping regardless of the cycle length.',
+    tooltip: 'Enable sustained looping (1 = on) — tempo is free-running.',
+    pattern: `s("casio")
+  .loop(1)`
+  },
+  {
+    id: 'sampler-loopBegin',
+    label: 'loopBegin',
+    description: 'Set the point inside the sample where looping starts.',
+    tooltip: 'Choose the loop start within 0–1 of the file; must be before loopEnd.',
+    pattern: `s("space").loop(1)
+  .loopBegin("<0 0.125 0.25>")
+  ._scope()`
+  },
+  {
+    id: 'sampler-loopEnd',
+    label: 'loopEnd',
+    description: 'Set the point inside the sample where looping ends.',
+    tooltip: 'Choose the loop end (0–1). Must be after loopBegin for a valid loop.',
+    pattern: `s("space").loop(1)
+  .loopEnd("<1 0.75 0.5 0.25>")
+  ._scope()`
+  },
+  {
+    id: 'sampler-cut',
+    label: 'cut',
+    description: 'Use classic drum-machine style choke groups.',
+    tooltip: 'Samples in the same cut group (1 here) stop each other when they retrigger.',
+    pattern: `s("[oh hh]*4")
+  .cut(1)`
+  },
+  {
+    id: 'sampler-clip',
+    label: 'clip',
+    description: 'Shorten or lengthen the note duration without altering tempo.',
+    tooltip: 'Multiplies sustain by the factor; values <1 gate the sample early.',
+    pattern: `note("c a f e")
+  .s("piano")
+  .clip("<0.5 1 2>")
+  .legato(1)`
+  },
+  {
+    id: 'sampler-loopAt',
+    label: 'loopAt',
+    description: 'Time-stretch samples to a specific number of cycles.',
+    tooltip: 'Stretches/compresses playback so the loop fits exactly 2 cycles.',
+    pattern: `samples({
+  "rhodes": "https://cdn.freesound.org/previews/132/132051_316502-lq.mp3"
+})
+
+s("rhodes").loopAt(2)`
+  },
+  {
+    id: 'sampler-fit',
+    label: 'fit',
+    description: 'Resize a sample to the length of each event.',
+    tooltip: 'Fits every triggered slice to its event duration — great for breakbeats.',
+    pattern: `samples({
+  "rhodes": "https://cdn.freesound.org/previews/132/132051-lq.mp3"
+})
+
+s("rhodes/2")
+  .fit()`
+  },
+  {
+    id: 'sampler-chop',
+    label: 'chop',
+    description: 'Split samples into equal slices for granular tricks.',
+    tooltip: 'Cuts each hit into 4 tiny grains, then reorders/repeats them in two cycles.',
+    pattern: `samples({
+  "rhodes": "https://cdn.freesound.org/previews/132/132051-lq.mp3"
+})
+
+s("rhodes")
+  .chop(4)
+  .rev()
+  .loopAt(2)`
+  },
+  {
+    id: 'sampler-striate',
+    label: 'striate',
+    description: 'Sequentially scan through chunks of each sample.',
+    tooltip: 'Each trigger jumps forward through 6 slices of the source file.',
+    pattern: `s("numbers:0 numbers:1 numbers:2")
+  .striate(6)
+  .slow(3)`
+  },
+  {
+    id: 'sampler-slice',
+    label: 'slice',
+    description: 'Address slices explicitly using indexes or fractional lists.',
+    tooltip: 'Divide the file into slices and trigger them via patterns or fractional lists.',
+    pattern: `samples("github:tidalcycles/dirt-samples")
+
+s("breaks165")
+  .slice(8, "0 1 <2 2*2> 3 [4 0] 5 6 7")
+  .slow(0.75)
+
+s("breaks125")
+  .fit()
+  .slice([0, 0.25, 0.5, 0.75], "0 1 1 <2 3>")`
+  },
+  {
+    id: 'sampler-splice',
+    label: 'splice',
+    description: 'Slice like .slice but time-stretches to match step length.',
+    tooltip: 'Each slice is warped to fill its step, so rhythms stay tight.',
+    pattern: `samples("github:tidalcycles/dirt-samples")
+
+s("breaks165")
+  .splice(8, "0 1 [2 3 0]@2 3 0@2 7")`
+  },
+  {
+    id: 'sampler-scrub',
+    label: 'scrub',
+    description: 'Manually scrub through audio (great for granular tape FX).',
+    tooltip: 'Supply 0–1 positions (optionally with :speed) to scrub through the waveform.',
+    pattern: `samples("github:switchangel/pad")
+s("swpad:0")
+  .scrub("{0.1!2 0.25@3 0.7!2 <0.8:1.5>}%8")
+
+samples("github:yaxu/clean-breaks/main")
+s("amen/4")
+  .fit()
+  .scrub(pattern("{0@3 0@2 4@3}%8").div(16))`
+  },
+  {
+    id: 'sampler-speed',
+    label: 'speed',
+    description: 'Pitch-shift or reverse by changing playback speed.',
+    tooltip: 'Positive speeds raise the pitch; negatives play the sample backwards.',
+    pattern: `s("bd*6")
+  .speed("1 2 4 1 -2 -4")
+
+speed("1 1.5*2 [2 1.1]")
+  .s("piano")
+  .clip(1)`
+  }
+].map((preset) => ({
+  ...preset,
+  editorBadge: 'Code'
+}));
 TONAL_PATTERN_PRESETS.forEach((preset) => {
   if (!preset.editorBadge) {
     preset.editorBadge = 'Code';
@@ -7513,6 +7681,7 @@ class InteractiveSoundApp {
     const presetsContent = document.getElementById('modal-presets-content');
     const drumPresetsContainer = document.getElementById('modal-drum-presets');
     const tonalPresetsContainer = document.getElementById('modal-tonal-presets');
+    const samplerPresetsContainer = document.getElementById('modal-sampler-presets');
     const previewButton = document.getElementById('modal-preview-btn');
 
     const updatePresetsSectionState = (expanded) => {
@@ -9173,6 +9342,35 @@ class InteractiveSoundApp {
 
     resetPresetsSection();
 
+    const updatePresetTooltipAlignment = (button) => {
+      if (!button || !button.classList.contains('has-tooltip')) return;
+      const rect = button.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        requestAnimationFrame(() => updatePresetTooltipAlignment(button));
+        return;
+      }
+      const modalContainer = modal?.querySelector('.modal-presets-content') || modal;
+      const containerRect = modalContainer
+        ? modalContainer.getBoundingClientRect()
+        : { left: 0, width: window.innerWidth };
+      const containerCenter = containerRect.left + containerRect.width / 2;
+      const buttonCenter = rect.left + rect.width / 2;
+      const alignRight = buttonCenter > containerCenter;
+      button.classList.toggle('tooltip-align-right', alignRight);
+      button.classList.toggle('tooltip-align-left', !alignRight);
+    };
+
+    let pendingTooltipAlignFrame = null;
+    const schedulePresetTooltipAlignment = () => {
+      if (pendingTooltipAlignFrame) return;
+      pendingTooltipAlignFrame = requestAnimationFrame(() => {
+        pendingTooltipAlignFrame = null;
+        const buttons = modal?.querySelectorAll('.modal-preset-button.has-tooltip');
+        buttons?.forEach((btn) => updatePresetTooltipAlignment(btn));
+      });
+    };
+    window.addEventListener('resize', schedulePresetTooltipAlignment);
+
     const renderPresetButtons = (container, presets) => {
       if (!container || !Array.isArray(presets)) return;
       container.innerHTML = '';
@@ -9194,8 +9392,38 @@ class InteractiveSoundApp {
           ${secondaryRow}
           ${preset.description ? `<span class="modal-preset-description">${preset.description}</span>` : ''}
         `;
+        if (preset.tooltip) {
+          button.classList.add('has-tooltip');
+          button.setAttribute('data-tooltip', preset.tooltip);
+          button.addEventListener('mouseenter', () => updatePresetTooltipAlignment(button));
+          button.addEventListener('focus', () => updatePresetTooltipAlignment(button));
+          requestAnimationFrame(() => updatePresetTooltipAlignment(button));
+        }
         button.addEventListener('click', () => applyPresetPattern(preset));
         container.appendChild(button);
+      });
+      schedulePresetTooltipAlignment();
+    };
+
+    const initializePresetSubtoggles = () => {
+      const toggles = modal.querySelectorAll('.modal-presets-subtoggle');
+      toggles.forEach((toggle) => {
+        const targetId = toggle.getAttribute('data-target');
+        const panel = targetId ? document.getElementById(targetId) : toggle.nextElementSibling;
+        if (!panel) return;
+
+        const setState = (isOpen) => {
+          toggle.setAttribute('aria-expanded', String(isOpen));
+          panel.classList.toggle('is-open', isOpen);
+        };
+
+        const initialOpen = panel.classList.contains('is-open');
+        setState(initialOpen);
+
+        toggle.addEventListener('click', () => {
+          const nextState = toggle.getAttribute('aria-expanded') !== 'true';
+          setState(nextState);
+        });
       });
     };
 
@@ -9209,6 +9437,8 @@ class InteractiveSoundApp {
 
     renderPresetButtons(drumPresetsContainer, DRUM_PATTERN_PRESETS);
     renderPresetButtons(tonalPresetsContainer, TONAL_PATTERN_PRESETS);
+    renderPresetButtons(samplerPresetsContainer, SAMPLER_EFFECT_PRESETS);
+    initializePresetSubtoggles();
 
     if (patternEditorSelect) {
       patternEditorSelect.addEventListener('change', (event) => {
