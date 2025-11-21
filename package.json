@@ -32,7 +32,7 @@
     "@strudel/draw": "1.2.4",
     "@strudel/mini": "1.2.5",
     "@strudel/reference": "^1.2.1",
-    "@strudel/sampler": "0.2.3",
+    "@strudel/sampler": "^0.2.3",
     "@strudel/tonal": "1.2.4",
     "@strudel/transpiler": "^1.2.5",
     "@strudel/web": "1.2.5",

@@ -2037,6 +2037,54 @@ header h1 {
   color: #4c51bf;
 }
 
+.modal-presets-subtoggle {
+  width: 100%;
+  border: none;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #4c51bf;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.modal-presets-subtoggle:hover {
+  background: rgba(102, 126, 234, 0.12);
+  color: #3b3694;
+}
+
+.modal-presets-subtoggle-icon {
+  transition: transform 0.2s ease;
+}
+
+.modal-presets-subtoggle[aria-expanded="false"] .modal-presets-subtoggle-icon {
+  transform: rotate(-90deg);
+}
+
+.modal-presets-subcontent {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.3s ease, opacity 0.22s ease, margin 0.2s ease;
+}
+
+.modal-presets-subcontent.is-open {
+  max-height: 1500px;
+  opacity: 1;
+  margin-top: 6px;
+}
+
+.modal-presets-description {
+  margin: -4px 0 6px;
+  color: #475569;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .modal-presets-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -2068,6 +2116,85 @@ header h1 {
   font-size: 0.75rem;
   color: #475569;
   margin-top: 4px;
+}
+.modal-preset-button.has-tooltip {
+  position: relative;
+}
+.modal-preset-button.has-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translate(-50%, 6px);
+  background: rgba(15, 23, 42, 0.95);
+  color: #f8fafc;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 48px));
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.2s ease;
+  z-index: 10;
+  text-align: left;
+  white-space: normal;
+}
+.modal-preset-button.has-tooltip::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 3px);
+  transform: translate(-50%, 0) scaleY(0);
+  border-width: 6px;
+  border-style: solid;
+  border-color: rgba(15, 23, 42, 0.95) transparent transparent transparent;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.2s ease;
+  z-index: 9;
+}
+.modal-preset-button.tooltip-align-left::after {
+  transform: translate(-15%, 6px);
+}
+.modal-preset-button.tooltip-align-left::before {
+  left: 35%;
+  transform: translate(-50%, 0) scaleY(0);
+}
+.modal-preset-button.tooltip-align-right::after {
+  transform: translate(-85%, 6px);
+  text-align: right;
+}
+.modal-preset-button.tooltip-align-right::before {
+  left: 65%;
+  transform: translate(-50%, 0) scaleY(0);
+}
+.modal-preset-button.has-tooltip:hover::after,
+.modal-preset-button.has-tooltip:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.modal-preset-button.has-tooltip:hover::before,
+.modal-preset-button.has-tooltip:focus-visible::before {
+  opacity: 1;
+  transform: translate(-50%, 0) scaleY(1);
+}
+.modal-preset-button.tooltip-align-left:hover::after,
+.modal-preset-button.tooltip-align-left:focus-visible::after {
+  transform: translate(-15%, 0);
+}
+.modal-preset-button.tooltip-align-left:hover::before,
+.modal-preset-button.tooltip-align-left:focus-visible::before {
+  transform: translate(-50%, 0) scaleY(1);
+}
+.modal-preset-button.tooltip-align-right:hover::after,
+.modal-preset-button.tooltip-align-right:focus-visible::after {
+  transform: translate(-85%, 0);
+}
+.modal-preset-button.tooltip-align-right:hover::before,
+.modal-preset-button.tooltip-align-right:focus-visible::before {
+  transform: translate(-50%, 0) scaleY(1);
 }
 .modal-preset-heading-row {
   display: flex;

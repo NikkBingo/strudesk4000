@@ -4795,9 +4795,9 @@ class SoundManager {
     if (!this.masterPattern || typeof this.masterPattern !== 'string') {
       return '';
     }
-    const sanitized = this._repairBrokenSampleStrings(this.masterPattern);
+    const sanitized = this._sanitizePatternExpression(this.masterPattern);
     if (sanitized !== this.masterPattern) {
-      console.log('🧼 Sanitized master pattern sample strings before evaluation');
+      console.log('🧼 Sanitized master pattern before evaluation');
       this.masterPattern = sanitized;
     }
     return this.masterPattern;
@@ -4839,6 +4839,253 @@ class SoundManager {
 
       return `samples({\n${sampleLines}\n}, { baseUrl: "${safeBaseUrl}" })`;
     });
+  }
+
+  _findMatchingParenIndex(content, openIndex) {
+    let depth = 0;
+    let inSingle = false;
+    let inDouble = false;
+    let inTemplate = false;
+    let inBlockComment = false;
+    let inLineComment = false;
+    let escaped = false;
+
+    for (let i = openIndex; i < content.length; i += 1) {
+      const char = content[i];
+      const nextChar = content[i + 1];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (inLineComment) {
+        if (char === '\n') {
+          inLineComment = false;
+        }
+        continue;
+      }
+
+      if (inBlockComment) {
+        if (char === '*' && nextChar === '/') {
+          inBlockComment = false;
+          i += 1;
+        }
+        continue;
+      }
+
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      if (inSingle) {
+        if (char === "'") {
+          inSingle = false;
+        }
+        continue;
+      }
+
+      if (inDouble) {
+        if (char === '"') {
+          inDouble = false;
+        }
+        continue;
+      }
+
+      if (inTemplate) {
+        if (char === '`') {
+          inTemplate = false;
+        }
+        continue;
+      }
+
+      if (char === "'" && !inDouble && !inTemplate) {
+        inSingle = true;
+        continue;
+      }
+
+      if (char === '"' && !inSingle && !inTemplate) {
+        inDouble = true;
+        continue;
+      }
+
+      if (char === '`' && !inSingle && !inDouble) {
+        inTemplate = true;
+        continue;
+      }
+
+      if (char === '/' && nextChar === '*') {
+        inBlockComment = true;
+        i += 1;
+        continue;
+      }
+
+      if (char === '/' && nextChar === '/') {
+        inLineComment = true;
+        i += 1;
+        continue;
+      }
+
+      if (char === '(') {
+        depth += 1;
+        continue;
+      }
+
+      if (char === ')') {
+        depth -= 1;
+        if (depth === 0) {
+          return i;
+        }
+        if (depth < 0) {
+          return -1;
+        }
+      }
+    }
+
+    return -1;
+  }
+
+  _repairLeadingSampleStatements(pattern) {
+    if (!pattern || typeof pattern !== 'string') {
+      return pattern;
+    }
+
+    const trimmed = pattern.trimStart();
+    if (trimmed.startsWith('(() =>') || trimmed.startsWith('(()=>')) {
+      return pattern;
+    }
+
+    const leadingWhitespace = pattern.slice(0, pattern.length - trimmed.length);
+
+    const leadingCommentMatch = trimmed.match(/^(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)+/);
+    const commentBlock = leadingCommentMatch ? leadingCommentMatch[0] : '';
+
+    let working = trimmed.slice(commentBlock.length).trimStart();
+    if (!working.startsWith('samples')) {
+      return pattern;
+    }
+
+    const loaders = [];
+    let position = 0;
+
+    while (working.startsWith('samples', position)) {
+      const callStart = position;
+      const openIndex = working.indexOf('(', callStart);
+      if (openIndex === -1) {
+        break;
+      }
+      const closeIndex = this._findMatchingParenIndex(working, openIndex);
+      if (closeIndex === -1) {
+        break;
+      }
+      const loaderSnippet = working.slice(callStart, closeIndex + 1).trim();
+      loaders.push(loaderSnippet);
+      position = closeIndex + 1;
+      while (position < working.length && /\s/.test(working[position])) {
+        position += 1;
+      }
+    }
+
+    if (!loaders.length) {
+      return pattern;
+    }
+
+    const remainder = working.slice(position).trim();
+    if (!remainder) {
+      return pattern;
+    }
+
+    const loaderBlock = loaders.map((line) => `  ${line};`).join('\n');
+    const bodyLines = remainder
+      .split('\n')
+      .map((line) => `    ${line}`)
+      .join('\n');
+
+    const rebuilt = `(() => {\n${loaderBlock}\n  return (\n${bodyLines}\n  );\n})()`;
+    return `${leadingWhitespace}${commentBlock}${rebuilt}`;
+  }
+
+  _repairStringPatternOperators(pattern) {
+    if (!pattern || typeof pattern !== 'string') {
+      return pattern;
+    }
+
+    let result = '';
+    let index = 0;
+    const length = pattern.length;
+
+    const isSafeContext = (char) => {
+      if (!char) return true;
+      return /[,\(\{\[=:+\-*\/!&|?;%]/.test(char);
+    };
+
+    while (index < length) {
+      const char = pattern[index];
+
+      if (char === '"' || char === "'") {
+        const quote = char;
+        let cursor = index + 1;
+        let escaped = false;
+        while (cursor < length) {
+          const current = pattern[cursor];
+          if (!escaped && current === quote) {
+            break;
+          }
+          if (!escaped && current === '\\') {
+            escaped = true;
+          } else {
+            escaped = false;
+          }
+          cursor += 1;
+        }
+
+        if (cursor >= length) {
+          result += pattern.slice(index);
+          break;
+        }
+
+        const literal = pattern.slice(index, cursor + 1);
+
+        let prevIndex = index - 1;
+        while (prevIndex >= 0 && /\s/.test(pattern[prevIndex])) {
+          prevIndex -= 1;
+        }
+        const prevChar = prevIndex >= 0 ? pattern[prevIndex] : '';
+
+        let nextIndex = cursor + 1;
+        while (nextIndex < length && /\s/.test(pattern[nextIndex])) {
+          nextIndex += 1;
+        }
+
+        const nextIsDiv = pattern.startsWith('.div', nextIndex);
+        const contextSafe = isSafeContext(prevChar);
+
+        if (nextIsDiv && contextSafe) {
+          result += `pattern(${literal})`;
+        } else {
+          result += literal;
+        }
+
+        index = cursor + 1;
+        continue;
+      }
+
+      result += char;
+      index += 1;
+    }
+
+    return result;
+  }
+
+  _sanitizePatternExpression(pattern) {
+    if (!pattern || typeof pattern !== 'string') {
+      return pattern;
+    }
+    let result = this._repairBrokenSampleStrings(pattern);
+    result = this._repairLeadingSampleStatements(result);
+    result = this._repairStringPatternOperators(result);
+    return result;
   }
 
   applyMasterMixModifiers(pattern, options = {}) {
@@ -6295,6 +6542,8 @@ class SoundManager {
       return;
     }
 
+    const workingPattern = this._sanitizePatternExpression(pattern) || pattern;
+
     // Built-in oscillator waveforms that don't need to be loaded (they're always available)
     // Note: Sample-based synths like "piano", "gtr", "wood", "casio", etc. need to be loaded via loadBank()
     const builtInOscillatorSynths = new Set([
@@ -6306,14 +6555,14 @@ class SoundManager {
 
     const bankRegex = /\.bank\(["']([^"']+)["']\)/g;
     let match;
-    while ((match = bankRegex.exec(pattern)) !== null) {
+    while ((match = bankRegex.exec(workingPattern)) !== null) {
       if (match[1]) {
         bankNames.add(match[1]);
       }
     }
 
     const sampleRegex = /\.s\(["']([^"']+)["']\)/g;
-    while ((match = sampleRegex.exec(pattern)) !== null) {
+    while ((match = sampleRegex.exec(workingPattern)) !== null) {
       const sampleName = match[1];
       if (!sampleName) continue;
       if (/\s|~|\[|\]|,/.test(sampleName)) continue;
@@ -6325,7 +6574,7 @@ class SoundManager {
     }
 
     const soundRegex = /\.sound\(["']([^"']+)["']\)/g;
-    while ((match = soundRegex.exec(pattern)) !== null) {
+    while ((match = soundRegex.exec(workingPattern)) !== null) {
       const soundName = match[1];
       if (!soundName) continue;
       // Skip built-in oscillator synths - they don't need loading
@@ -6427,7 +6676,7 @@ class SoundManager {
       
       // Normalize quotes in pattern before storing
       const normalizedPattern = (pattern || '').replace(/[""]/g, '"').replace(/['']/g, "'");
-      const repairedPattern = this._repairBrokenSampleStrings(normalizedPattern);
+      const repairedPattern = this._sanitizePatternExpression(normalizedPattern);
       
       // Check if pattern is in note names format (e.g., note("C4 E4 G4"))
       const hasNoteNames = this.patternHasNoteNames(repairedPattern);
@@ -6646,9 +6895,9 @@ class SoundManager {
       .split('\n')
       .filter(line => !line.trim().startsWith(tempoPrefix));
     const cleanedPattern = filteredLines.join('\n').trimEnd();
-    const sanitizedPattern = this._repairBrokenSampleStrings(cleanedPattern);
+    const sanitizedPattern = this._sanitizePatternExpression(cleanedPattern);
     if (sanitizedPattern !== cleanedPattern) {
-      console.log('🧼 Sanitized master pattern sample strings when formatting tempo comment');
+      console.log('🧼 Sanitized master pattern when formatting tempo comment');
     }
 
     return `${sanitizedPattern}\n\n${tempoPrefix} ${tempo} BPM`;
@@ -6688,7 +6937,7 @@ class SoundManager {
         }
         
         const originalSourcePattern = trackData.pattern || trackData.rawPattern || '';
-        const sourcePattern = this._repairBrokenSampleStrings(originalSourcePattern);
+        const sourcePattern = this._sanitizePatternExpression(originalSourcePattern);
         if (sourcePattern !== originalSourcePattern) {
           trackData.pattern = sourcePattern;
           trackData.rawPattern = sourcePattern;
