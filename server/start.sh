@@ -1,5 +1,4 @@
 #!/bin/sh
-# Don't use set -e, handle errors explicitly
 
 echo "=== Starting Container ==="
 echo "Script started at: $(date)"
@@ -20,14 +19,9 @@ EOF
   
   if [ "$TABLE_CHECK" = "0" ]; then
     echo "⚠️  Database tables don't exist. Applying all migrations from scratch..."
-    
-    # Reset any failed migration state
     npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null || true
-    
-    # Deploy all migrations (this will create tables)
     npx prisma migrate deploy || {
       echo "⚠️  Migration deploy failed. Trying to apply migrations manually..."
-      # If migrate deploy fails, try applying SQL files directly
       if [ -f "prisma/migrations/0_init/migration.sql" ]; then
         echo "Applying initial migration..."
         npx prisma db execute --file prisma/migrations/0_init/migration.sql --schema prisma/schema.prisma || true
@@ -39,30 +33,19 @@ EOF
     }
   else
     echo "✓ Database tables exist. Checking migration state..."
-    
-    # Try to resolve any failed migrations
     npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null && echo "Resolved failed migration" || echo "No failed migrations"
-    
-    # Deploy any pending migrations (with timeout to prevent hanging)
     echo "Deploying migrations..."
-    timeout 30 npx prisma migrate deploy 2>&1 || {
-      EXIT_CODE=$?
-      echo "⚠️  Migration deploy exited with code $EXIT_CODE, but continuing..."
-    }
-    echo "✓ Migration check complete (continuing to server start)"
+    npx prisma migrate deploy 2>&1 || echo "⚠️  Migration deploy had issues, but continuing..."
+    echo "✓ Migration check complete"
   fi
   
   echo "=== Generating Prisma client ==="
-  timeout 30 npx prisma generate || {
-    echo "⚠️  Prisma generate failed or timed out, but continuing..."
-  }
-  echo "✓ Prisma client generated"
+  npx prisma generate 2>&1 || echo "⚠️  Prisma generate had issues, but continuing..."
+  echo "✓ Prisma client ready"
 else
   echo "⚠️  DATABASE_URL not set, skipping database setup"
   echo "=== Generating Prisma client (without DB) ==="
-  timeout 30 npx prisma generate || {
-    echo "⚠️  Prisma generate failed or timed out, but continuing..."
-  }
+  npx prisma generate 2>&1 || echo "⚠️  Prisma generate had issues, but continuing..."
 fi
 
 echo ""
@@ -70,7 +53,7 @@ echo "========================================="
 echo "=== Starting server ==="
 echo "========================================="
 echo "Working directory: $(pwd)"
-echo "PORT environment variable: ${PORT:-not set}"
+echo "PORT: ${PORT:-not set}"
 echo "NODE_ENV: ${NODE_ENV:-not set}"
 echo ""
 
@@ -86,7 +69,5 @@ echo "✅ index.js found"
 echo "🚀 Starting Node.js server..."
 echo ""
 
-# Start the server directly with node (not npm start)
-# This ensures we see all output and errors
+# Start the server directly with node
 exec node index.js
-
