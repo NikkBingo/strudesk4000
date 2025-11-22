@@ -3255,7 +3255,7 @@ class InteractiveSoundApp {
       
       if (playMasterBtn) {
         if (isPlaying) {
-          playMasterBtn.textContent = '⏸';
+          playMasterBtn.textContent = '❚❚';
           playMasterBtn.title = 'Pause Master';
           playMasterBtn.classList.add('active');
         } else {
@@ -3654,7 +3654,7 @@ class InteractiveSoundApp {
           
           if (result.success) {
             this.masterActive = true;
-            playMasterBtn.textContent = '⏸';
+            playMasterBtn.textContent = '❚❚';
             playMasterBtn.title = 'Pause Master';
             playMasterBtn.classList.add('active');
             if (masterActiveDot) masterActiveDot.classList.add('active');
