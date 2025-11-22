@@ -3782,7 +3782,7 @@ class InteractiveSoundApp {
           copyCodeBtn.title = 'Copied!';
           setTimeout(() => {
             copyCodeBtn.textContent = originalText;
-            copyCodeBtn.title = 'Copy Code';
+            copyCodeBtn.title = 'Copy';
           }, 2000);
           console.log('✅ Master pattern code copied to clipboard');
         } catch (err) {
