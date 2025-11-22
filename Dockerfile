@@ -45,6 +45,6 @@ RUN chmod +x start.sh
 # Expose port
 EXPOSE 3001
 
-# Run migrations and start server using startup script
-CMD ["./start.sh"]
+# Start server directly - migrations will run in Node.js
+CMD ["node", "index.js"]
 
