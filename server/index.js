@@ -63,6 +63,31 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Root route - API information (fallback if frontend not available)
+app.get('/', (req, res) => {
+  const publicPath = path.join(__dirname, 'public');
+  const indexPath = path.join(publicPath, 'index.html');
+  
+  // Try to serve frontend if available
+  if (existsSync(indexPath)) {
+    return res.sendFile(path.resolve(indexPath));
+  }
+  
+  // Otherwise return API info
+  res.json({
+    name: 'Strudel Pattern Mixer API',
+    version: '1.0.0',
+    status: 'running',
+    message: 'Frontend not built. Please check deployment logs.',
+    endpoints: {
+      health: '/api/health',
+      auth: '/api/auth',
+      users: '/api/users',
+      patterns: '/api/patterns'
+    }
+  });
+});
+
 // Serve static files from the frontend build
 const publicPath = path.join(__dirname, 'public');
 console.log('__dirname:', __dirname);
