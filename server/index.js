@@ -180,25 +180,31 @@ app.use((err, req, res, next) => {
   });
 });
 
-const PORT = process.env.PORT || 3001;
+// Railway sets PORT automatically, but fallback to 3001 for local dev
+const PORT = process.env.PORT || process.env.RAILWAY_PORT || 3001;
 
 console.log(`🚀 Attempting to start server on port ${PORT}...`);
 console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 console.log(`DATABASE_URL: ${process.env.DATABASE_URL ? 'set' : 'not set'}`);
+console.log(`All env vars with PORT: ${Object.keys(process.env).filter(k => k.includes('PORT')).join(', ')}`);
 
 // Start server with error handling
 let server;
 try {
+  console.log(`Binding to 0.0.0.0:${PORT}...`);
   server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Server running on port ${PORT}`);
+    console.log(`✅✅✅ SERVER IS RUNNING ON PORT ${PORT} ✅✅✅`);
     console.log(`Frontend URL: ${frontendUrl}`);
     console.log(`Test mode: ${process.env.TEST_MODE ? 'enabled' : 'disabled'}`);
     if (!process.env.OAUTH_GOOGLE_CLIENT_ID && !process.env.OAUTH_GITHUB_CLIENT_ID) {
       console.log('⚠️  OAuth not configured - use /api/auth/test-login for testing');
     }
+    console.log(`Server ready to accept connections on http://0.0.0.0:${PORT}`);
   });
+  console.log(`Server listen() called, waiting for callback...`);
 } catch (error) {
   console.error('❌ Failed to start server:', error);
+  console.error('Error stack:', error.stack);
   process.exit(1);
 }
 
