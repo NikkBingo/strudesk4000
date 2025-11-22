@@ -73,19 +73,39 @@ console.log('Public path exists:', existsSync(publicPath));
 if (!existsSync(publicPath)) {
   console.warn(`⚠️  Public directory not found at ${publicPath}. Frontend may not be built.`);
   console.warn('Current working directory:', process.cwd());
-  console.warn('Files in __dirname:', require('fs').readdirSync(__dirname).join(', '));
+  try {
+    const files = require('fs').readdirSync(__dirname);
+    console.warn('Files in __dirname:', files.join(', '));
+  } catch (e) {
+    console.warn('Could not read __dirname:', e.message);
+  }
 } else {
   console.log('✓ Public directory found. Serving static files.');
-  app.use(express.static(publicPath));
+  const files = require('fs').readdirSync(publicPath);
+  console.log('Files in public directory:', files.join(', '));
+  
+  // Serve static files with proper headers
+  app.use(express.static(publicPath, {
+    maxAge: '1y',
+    etag: true,
+    lastModified: true,
+    setHeaders: (res, filePath) => {
+      // Set proper MIME types for JS and CSS
+      if (filePath.endsWith('.js')) {
+        res.setHeader('Content-Type', 'application/javascript');
+      } else if (filePath.endsWith('.css')) {
+        res.setHeader('Content-Type', 'text/css');
+      }
+    }
+  }));
   
   // Serve index.html for all non-API routes (SPA routing)
-  app.get('*', (req, res) => {
+  app.get('*', (req, res, next) => {
     // Don't serve index.html for API routes
     if (req.path.startsWith('/api')) {
-      return res.status(404).json({ error: 'API endpoint not found' });
+      return next(); // Let API routes handle their own 404s
     }
     const indexPath = path.join(publicPath, 'index.html');
-    console.log('Serving index.html from:', indexPath);
     if (existsSync(indexPath)) {
       res.sendFile(path.resolve(indexPath));
     } else {
