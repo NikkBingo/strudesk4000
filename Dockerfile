@@ -3,13 +3,14 @@ FROM node:18-alpine AS frontend-builder
 WORKDIR /app
 
 # Build frontend
-COPY package.json package-lock.json ./
+COPY package.json ./
 COPY vite.config.js ./
 COPY index.html ./
 COPY src ./src
 COPY assets ./assets
 
-RUN npm ci
+# Use npm install instead of npm ci since lock file might be out of sync
+RUN npm install
 RUN npm run build
 
 # Server stage
