@@ -1,15 +1,7 @@
-// Write to both stdout and stderr, and also to a file
-import { appendFileSync } from 'fs';
-
+// Write to both stdout and stderr
 const log = (...args) => {
-  const msg = args.join(' ');
   console.log(...args);
   console.error(...args);
-  try {
-    appendFileSync('/tmp/node.log', msg + '\n');
-  } catch (e) {
-    // Ignore file write errors
-  }
 };
 
 log('📦 [1/5] Loading dependencies...');
@@ -36,6 +28,24 @@ log('✅ [4/5] Routes loaded');
 dotenv.config();
 log('✅ [5/5] Environment variables loaded');
 log('🚀 Starting Express app setup...');
+
+// Run Prisma migrations on startup (non-blocking)
+if (process.env.DATABASE_URL) {
+  log('📦 Running database migrations...');
+  import('child_process').then(({ execSync }) => {
+    try {
+      execSync('npx prisma migrate deploy', { 
+        stdio: 'inherit',
+        env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL }
+      });
+      log('✅ Migrations complete');
+    } catch (error) {
+      log('⚠️  Migration warning (continuing):', error.message);
+    }
+  }).catch(err => {
+    log('⚠️  Could not run migrations:', err.message);
+  });
+}
 
 const app = express();
 
