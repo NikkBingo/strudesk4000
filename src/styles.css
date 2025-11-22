@@ -1774,6 +1774,18 @@ header h1 {
   .controls-panel {
     padding: 20px;
   }
+
+  /* Add space between pan slider and status dots on mobile */
+  .status-dots {
+    right: 8px;
+    top: 8px;
+  }
+
+  .pan-slider {
+    width: 80px;
+    /* Ensure pan slider doesn't overlap with status dots (2 dots ~24px + gap + margin) */
+    max-width: calc(50% - 40px);
+  }
 }
 
 /* Modal Styles */
@@ -3229,6 +3241,11 @@ header h1 {
   .modal-footer {
     padding: 16px;
   }
+
+  /* Further reduce pan slider width on very small screens */
+  .pan-slider {
+    width: 70px;
+  }
 }
 
 /* Collapsible Sections (Effects & Filters) */
@@ -4345,12 +4362,25 @@ header h1 {
 .user-card-social-link {
   font-size: 1.2rem;
   text-decoration: none;
-  transition: transform 0.2s;
-  display: inline-block;
+  transition: transform 0.2s, opacity 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #667eea;
+  width: 24px;
+  height: 24px;
+}
+
+.user-card-social-link svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
 }
 
 .user-card-social-link:hover {
   transform: scale(1.2);
+  opacity: 0.8;
+  color: #5568d3;
 }
 
 .save-pattern-modal-body .form-group {
