@@ -65,12 +65,17 @@ app.get('/api/health', (req, res) => {
 
 // Serve static files from the frontend build
 const publicPath = path.join(__dirname, 'public');
+console.log('__dirname:', __dirname);
 console.log('Serving static files from:', publicPath);
+console.log('Public path exists:', existsSync(publicPath));
 
 // Check if public directory exists
 if (!existsSync(publicPath)) {
   console.warn(`⚠️  Public directory not found at ${publicPath}. Frontend may not be built.`);
+  console.warn('Current working directory:', process.cwd());
+  console.warn('Files in __dirname:', require('fs').readdirSync(__dirname).join(', '));
 } else {
+  console.log('✓ Public directory found. Serving static files.');
   app.use(express.static(publicPath));
   
   // Serve index.html for all non-API routes (SPA routing)
@@ -80,9 +85,11 @@ if (!existsSync(publicPath)) {
       return res.status(404).json({ error: 'API endpoint not found' });
     }
     const indexPath = path.join(publicPath, 'index.html');
+    console.log('Serving index.html from:', indexPath);
     if (existsSync(indexPath)) {
-      res.sendFile(indexPath);
+      res.sendFile(path.resolve(indexPath));
     } else {
+      console.error('index.html not found at:', indexPath);
       res.status(404).json({ error: 'Frontend not built. index.html not found.' });
     }
   });
