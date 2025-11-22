@@ -53,6 +53,72 @@ export class SavePatternDialog {
                 <small>Add a label to this version (version number is automatic)</small>
               </div>
 
+              <div class="form-group" id="save-pattern-genre-group" style="display: none;">
+                <label for="save-pattern-genre">Genre/Style (optional)</label>
+                <select id="save-pattern-genre">
+                  <option value="">Select a genre...</option>
+                  <optgroup label="Electronic">
+                    <option value="Techno">Techno</option>
+                    <option value="House">House</option>
+                    <option value="Trance">Trance</option>
+                    <option value="Dubstep">Dubstep</option>
+                    <option value="Drum & Bass">Drum & Bass</option>
+                    <option value="Ambient">Ambient</option>
+                    <option value="IDM">IDM</option>
+                    <option value="Electro">Electro</option>
+                    <option value="Synthwave">Synthwave</option>
+                    <option value="Industrial">Industrial</option>
+                  </optgroup>
+                  <optgroup label="Hip Hop & Urban">
+                    <option value="Hip Hop">Hip Hop</option>
+                    <option value="Trap">Trap</option>
+                    <option value="R&B">R&B</option>
+                    <option value="Grime">Grime</option>
+                    <option value="Drill">Drill</option>
+                  </optgroup>
+                  <optgroup label="Rock & Alternative">
+                    <option value="Rock">Rock</option>
+                    <option value="Alternative">Alternative</option>
+                    <option value="Indie">Indie</option>
+                    <option value="Punk">Punk</option>
+                    <option value="Metal">Metal</option>
+                    <option value="Post-Rock">Post-Rock</option>
+                  </optgroup>
+                  <optgroup label="Jazz & Blues">
+                    <option value="Jazz">Jazz</option>
+                    <option value="Blues">Blues</option>
+                    <option value="Smooth Jazz">Smooth Jazz</option>
+                    <option value="Bebop">Bebop</option>
+                    <option value="Fusion">Fusion</option>
+                  </optgroup>
+                  <optgroup label="World & Folk">
+                    <option value="World">World</option>
+                    <option value="Folk">Folk</option>
+                    <option value="Traditional">Traditional</option>
+                    <option value="Ethnic">Ethnic</option>
+                  </optgroup>
+                  <optgroup label="Pop & Dance">
+                    <option value="Pop">Pop</option>
+                    <option value="Dance">Dance</option>
+                    <option value="EDM">EDM</option>
+                    <option value="Disco">Disco</option>
+                    <option value="Funk">Funk</option>
+                  </optgroup>
+                  <optgroup label="Experimental">
+                    <option value="Experimental">Experimental</option>
+                    <option value="Noise">Noise</option>
+                    <option value="Avant-garde">Avant-garde</option>
+                    <option value="Minimal">Minimal</option>
+                  </optgroup>
+                  <optgroup label="Other">
+                    <option value="Cinematic">Cinematic</option>
+                    <option value="Game Music">Game Music</option>
+                    <option value="Other">Other</option>
+                  </optgroup>
+                </select>
+                <small>Select a genre to help with pattern matching and discovery</small>
+              </div>
+
               <div class="form-group">
                 <label class="privacy-toggle-label">
                   <input type="checkbox" id="save-pattern-public" />
@@ -282,10 +348,18 @@ export class SavePatternDialog {
       // Ignore
     }
 
+    // Show/hide genre dropdown based on pattern type (only for master)
+    const genreGroup = document.getElementById('save-pattern-genre-group');
+    if (genreGroup) {
+      genreGroup.style.display = type === 'master' ? 'block' : 'none';
+    }
+
     // Clear form
     document.getElementById('save-pattern-title')?.value && (document.getElementById('save-pattern-title').value = '');
     document.getElementById('save-pattern-artist')?.value && (document.getElementById('save-pattern-artist').value = '');
     document.getElementById('save-pattern-version-name')?.value && (document.getElementById('save-pattern-version-name').value = '');
+    const genreSelect = document.getElementById('save-pattern-genre');
+    if (genreSelect) genreSelect.value = '';
     document.getElementById('save-pattern-public')?.checked && (document.getElementById('save-pattern-public').checked = false);
     this.updateSelectedUsers();
     this.clearUserSearchResults();
@@ -323,6 +397,7 @@ export class SavePatternDialog {
       const title = document.getElementById('save-pattern-title')?.value.trim() || null;
       const artistName = document.getElementById('save-pattern-artist')?.value.trim() || null;
       const versionName = document.getElementById('save-pattern-version-name')?.value.trim() || null;
+      const genre = document.getElementById('save-pattern-genre')?.value.trim() || null;
       const isPublic = document.getElementById('save-pattern-public')?.checked || false;
 
       // Extract raw pattern code (remove metadata if present)
@@ -357,6 +432,7 @@ export class SavePatternDialog {
         title,
         artistName,
         versionName,
+        genre: this.patternType === 'master' ? genre : null, // Only set genre for master patterns
         isPublic,
         metadata: {} // Can store additional config here
       };

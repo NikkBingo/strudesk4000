@@ -16,6 +16,7 @@ router.post('/', requireAuth, async (req, res) => {
       title,
       artistName,
       versionName,
+      genre,
       isPublic,
       metadata
     } = req.body;
@@ -66,6 +67,7 @@ router.post('/', requireAuth, async (req, res) => {
         patternCode: formattedCode,
         title: title || null,
         artistName: finalArtistName,
+        genre: genre || null,
         version,
         versionName: versionName || null,
         isPublic: isPublic || false,
@@ -232,6 +234,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       title,
       artistName,
       versionName,
+      genre,
       isPublic,
       metadata
     } = req.body;
@@ -259,6 +262,7 @@ router.put('/:id', requireAuth, async (req, res) => {
         ...(patternCode !== undefined && { patternCode: formattedCode }),
         ...(title !== undefined && { title }),
         ...(artistName !== undefined && { artistName: finalArtistName }),
+        ...(genre !== undefined && { genre }),
         ...(versionName !== undefined && { versionName }),
         ...(isPublic !== undefined && { isPublic }),
         ...(metadata !== undefined && { metadata })
