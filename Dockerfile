@@ -24,6 +24,6 @@ COPY server/ ./
 EXPOSE 3001
 
 # Run migrations and start server
-# Use a script that handles missing DATABASE_URL gracefully
-CMD ["sh", "-c", "if [ -n \"$DATABASE_URL\" ]; then npx prisma migrate deploy; fi && npm start"]
+# Handle failed migrations by resolving them first, then deploying
+CMD ["sh", "-c", "if [ -n \"$DATABASE_URL\" ]; then npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null || true; npx prisma migrate deploy; fi && npm start"]
 
