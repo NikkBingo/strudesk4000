@@ -4,6 +4,9 @@ const log = (...args) => {
   console.error(...args);
 };
 
+// Force immediate output
+process.stdout.write('📦 [1/5] Loading dependencies...\n');
+process.stderr.write('📦 [1/5] Loading dependencies...\n');
 log('📦 [1/5] Loading dependencies...');
 
 import express from 'express';
@@ -28,24 +31,6 @@ log('✅ [4/5] Routes loaded');
 dotenv.config();
 log('✅ [5/5] Environment variables loaded');
 log('🚀 Starting Express app setup...');
-
-// Run Prisma migrations on startup (non-blocking)
-if (process.env.DATABASE_URL) {
-  log('📦 Running database migrations...');
-  import('child_process').then(({ execSync }) => {
-    try {
-      execSync('npx prisma migrate deploy', { 
-        stdio: 'inherit',
-        env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL }
-      });
-      log('✅ Migrations complete');
-    } catch (error) {
-      log('⚠️  Migration warning (continuing):', error.message);
-    }
-  }).catch(err => {
-    log('⚠️  Could not run migrations:', err.message);
-  });
-}
 
 const app = express();
 
@@ -207,16 +192,24 @@ app.use((err, req, res, next) => {
 // Railway sets PORT automatically, but fallback to 3001 for local dev
 const PORT = process.env.PORT || process.env.RAILWAY_PORT || 3001;
 
+// Force immediate output - Railway might be buffering
+process.stdout.write('🚀 SERVER STARTING...\n');
+process.stderr.write('🚀 SERVER STARTING...\n');
+
 log(`🚀 Attempting to start server on port ${PORT}...`);
 log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 log(`DATABASE_URL: ${process.env.DATABASE_URL ? 'set' : 'not set'}`);
-log(`All env vars with PORT: ${Object.keys(process.env).filter(k => k.includes('PORT')).join(', ')}`);
+log(`PORT: ${PORT}`);
 
 // Start server with error handling
 let server;
 try {
   log(`Binding to 0.0.0.0:${PORT}...`);
   server = app.listen(PORT, '0.0.0.0', () => {
+    // Force immediate output
+    process.stdout.write(`✅✅✅ SERVER IS RUNNING ON PORT ${PORT} ✅✅✅\n`);
+    process.stderr.write(`✅✅✅ SERVER IS RUNNING ON PORT ${PORT} ✅✅✅\n`);
+    
     log(`✅✅✅ SERVER IS RUNNING ON PORT ${PORT} ✅✅✅`);
     log(`Frontend URL: ${frontendUrl}`);
     log(`Test mode: ${process.env.TEST_MODE ? 'enabled' : 'disabled'}`);
@@ -227,6 +220,8 @@ try {
   });
   log(`Server listen() called, waiting for callback...`);
 } catch (error) {
+  process.stdout.write(`❌ Failed to start server: ${error.message}\n`);
+  process.stderr.write(`❌ Failed to start server: ${error.message}\n`);
   console.error('❌ Failed to start server:', error);
   console.error('Error stack:', error.stack);
   process.exit(1);
