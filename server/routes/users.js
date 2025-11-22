@@ -1,6 +1,7 @@
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
+import { isTestMode } from '../utils/config.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -42,7 +43,7 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', requireAuth, async (req, res) => {
   try {
     // In test mode, allow updating the test user profile
-    if (process.env.TEST_MODE && req.params.id === req.user.id) {
+    if (isTestMode() && req.params.id === req.user.id) {
       // Allow update
     } else if (req.user.id !== req.params.id) {
       return res.status(403).json({ error: 'Cannot update another user\'s profile' });
