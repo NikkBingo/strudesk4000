@@ -16,7 +16,19 @@ import patternRoutes from './routes/patterns.js';
 dotenv.config();
 
 const app = express();
-const prisma = new PrismaClient();
+
+// Initialize Prisma client with error handling
+let prisma;
+try {
+  prisma = new PrismaClient({
+    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+  });
+  console.log('✅ Prisma client initialized');
+} catch (error) {
+  console.error('❌ Failed to initialize Prisma client:', error);
+  // Create a stub that will fail gracefully on use
+  prisma = null;
+}
 
 // Get directory name for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -183,7 +195,9 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-  await prisma.$disconnect();
+  if (prisma) {
+    await prisma.$disconnect();
+  }
   process.exit(0);
 });
 

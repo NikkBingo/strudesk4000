@@ -3,7 +3,16 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
 import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+// Initialize Prisma client with error handling
+let prisma;
+try {
+  prisma = new PrismaClient({
+    log: ['error'],
+  });
+} catch (error) {
+  console.error('❌ Failed to initialize Prisma client in passport config:', error);
+  prisma = null;
+}
 
 // Configure Google OAuth Strategy (only if credentials are provided)
 if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET) {
