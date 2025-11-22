@@ -37,6 +37,7 @@ model Pattern {
   patternCode String    @db.Text @map("pattern_code")
   title       String?
   artistName  String?   @map("artist_name")
+  genre       String?   // Song style/genre for matching
   version     Int       @default(1)
   versionName String?   @map("version_name")
   isPublic    Boolean   @default(false) @map("is_public")
@@ -51,6 +52,7 @@ model Pattern {
   @@index([userId])
   @@index([isPublic])
   @@index([type])
+  @@index([genre])
   @@map("patterns")
 }
 
