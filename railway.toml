@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+buildCommand = "cd server && npm ci && npx prisma generate"
+
+[deploy]
+startCommand = "cd server && npx prisma migrate deploy && npm start"
+
