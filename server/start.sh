@@ -2,22 +2,33 @@
 
 # Resolve any failed migrations first
 if [ -n "$DATABASE_URL" ]; then
-  echo "Checking for failed migrations..."
+  echo "Checking database state..."
   
-  # Try to resolve the failed migration by marking it as rolled back
-  npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null && echo "Marked failed migration as rolled back" || echo "No failed migration to resolve or already resolved"
+  # Check if users table exists
+  TABLE_CHECK=$(npx prisma db execute --stdin <<'EOF' 2>/dev/null | grep -c "users" || echo "0"
+SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users';
+EOF
+)
   
-  echo "Deploying migrations..."
-  npx prisma migrate deploy
-  
-  # If migrate deploy says no pending migrations but tables don't exist, force apply
-  if [ $? -ne 0 ]; then
-    echo "Migration deploy had issues. Checking database state..."
-    # Try to apply migrations from scratch if needed
-    npx prisma migrate deploy --skip-seed || {
-      echo "Attempting to resolve migration state..."
-      npx prisma migrate resolve --applied add_genre_field 2>/dev/null || true
+  if [ "$TABLE_CHECK" = "0" ]; then
+    echo "⚠️  Database tables don't exist. Applying migrations..."
+    
+    # Reset any failed migration state
+    npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null || true
+    
+    # Try to deploy migrations
+    npx prisma migrate deploy || {
+      echo "⚠️  Migration deploy failed. This might be normal if migration state is inconsistent."
+      echo "If tables still don't exist after this, you may need to run migrations manually."
     }
+  else
+    echo "✓ Database tables exist. Checking migration state..."
+    
+    # Try to resolve any failed migrations
+    npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null && echo "Resolved failed migration" || echo "No failed migrations"
+    
+    # Deploy any pending migrations
+    npx prisma migrate deploy
   fi
   
   echo "Generating Prisma client..."
