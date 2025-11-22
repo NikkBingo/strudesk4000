@@ -1,15 +1,10 @@
 #!/bin/sh
 
-# Force output to be visible
-exec > >(tee -a /proc/1/fd/1) 2>&1 || true
-
 echo "=== START SCRIPT RUNNING ==="
 echo "Script started at: $(date)"
 echo "Current directory: $(pwd)"
 echo "Node version: $(node --version)"
-echo "NPM version: $(npm --version)"
 echo "PORT: ${PORT:-not set}"
-echo "DATABASE_URL: ${DATABASE_URL:+set}"
 
 # Resolve any failed migrations first
 if [ -n "$DATABASE_URL" ]; then
@@ -38,28 +33,30 @@ EOF
   else
     echo "✓ Database tables exist. Checking migration state..."
     npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null && echo "Resolved failed migration" || echo "No failed migrations"
-    echo "Deploying migrations..."
-    # Run migrate deploy in background with timeout to prevent hanging
-    (npx prisma migrate deploy 2>&1 &)
+    echo "Deploying migrations (this may take a moment)..."
+    # Run migrate deploy and capture output, but don't fail if it hangs
+    npx prisma migrate deploy 2>&1 &
     MIGRATE_PID=$!
-    sleep 5
+    # Wait max 10 seconds
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+      if ! kill -0 $MIGRATE_PID 2>/dev/null; then
+        wait $MIGRATE_PID 2>/dev/null
+        break
+      fi
+      sleep 1
+    done
+    # If still running, kill it and continue
     if kill -0 $MIGRATE_PID 2>/dev/null; then
-      echo "⚠️  Migration deploy still running after 5s, continuing anyway..."
+      echo "⚠️  Migration deploy taking too long, continuing anyway..."
       kill $MIGRATE_PID 2>/dev/null || true
-    else
-      wait $MIGRATE_PID 2>/dev/null || true
-      echo "✓ Migration deploy completed"
     fi
-    echo "✓ Migration check complete - CONTINUING TO SERVER START"
+    echo "✓ Migration check complete"
   fi
   
-  echo "=== Generating Prisma client ==="
-  # Prisma client should already be generated in Dockerfile, but regenerate to be safe
-  echo "Skipping prisma generate (already done in build)"
+  echo "=== Prisma client (already generated in build) ==="
   echo "✓ Prisma client ready"
 else
   echo "⚠️  DATABASE_URL not set, skipping database setup"
-  echo "=== Prisma client (already generated in build) ==="
 fi
 
 echo ""
@@ -68,7 +65,6 @@ echo "=== STARTING SERVER NOW ==="
 echo "========================================="
 echo "Working directory: $(pwd)"
 echo "PORT: ${PORT:-not set}"
-echo "NODE_ENV: ${NODE_ENV:-not set}"
 echo ""
 
 # Verify index.js exists
@@ -84,5 +80,4 @@ echo "🚀 EXECUTING: node index.js"
 echo ""
 
 # Start the server directly with node
-# Use exec to replace shell process
 exec node index.js
