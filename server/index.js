@@ -174,15 +174,25 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3001;
 
+console.log(`🚀 Attempting to start server on port ${PORT}...`);
+console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+console.log(`DATABASE_URL: ${process.env.DATABASE_URL ? 'set' : 'not set'}`);
+
 // Start server with error handling
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Server running on port ${PORT}`);
-  console.log(`Frontend URL: ${frontendUrl}`);
-  console.log(`Test mode: ${process.env.TEST_MODE ? 'enabled' : 'disabled'}`);
-  if (!process.env.OAUTH_GOOGLE_CLIENT_ID && !process.env.OAUTH_GITHUB_CLIENT_ID) {
-    console.log('⚠️  OAuth not configured - use /api/auth/test-login for testing');
-  }
-});
+let server;
+try {
+  server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Server running on port ${PORT}`);
+    console.log(`Frontend URL: ${frontendUrl}`);
+    console.log(`Test mode: ${process.env.TEST_MODE ? 'enabled' : 'disabled'}`);
+    if (!process.env.OAUTH_GOOGLE_CLIENT_ID && !process.env.OAUTH_GITHUB_CLIENT_ID) {
+      console.log('⚠️  OAuth not configured - use /api/auth/test-login for testing');
+    }
+  });
+} catch (error) {
+  console.error('❌ Failed to start server:', error);
+  process.exit(1);
+}
 
 // Handle server errors
 server.on('error', (err) => {
