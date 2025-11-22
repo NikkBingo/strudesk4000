@@ -12,7 +12,7 @@ export default defineConfig({
     }
   },
   optimizeDeps: {
-    include: ['@strudel/core', '@strudel/web', '@strudel/webaudio', '@strudel/mini', 'escodegen'],
+    include: ['@strudel/core', '@strudel/web', '@strudel/webaudio', '@strudel/mini', 'escodegen', 'chord-voicings'],
     force: true,
     // Exclude from optimization to prevent duplicate bundling
     exclude: []
@@ -27,8 +27,8 @@ export default defineConfig({
   },
   build: {
     commonjsOptions: {
-      // Include Strudel packages and escodegen in commonjs transform
-      include: [/@strudel/, /escodegen/],
+      // Include Strudel packages and CommonJS dependencies in commonjs transform
+      include: [/@strudel/, /escodegen/, /chord-voicings/],
       // Transform default exports for CommonJS modules
       transformMixedEsModules: true
     },
