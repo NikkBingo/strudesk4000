@@ -1,7 +1,8 @@
 #!/bin/sh
-set -e  # Exit on error
+# Don't use set -e, handle errors explicitly
 
 echo "=== Starting Container ==="
+echo "Script started at: $(date)"
 echo "Current directory: $(pwd)"
 echo "Node version: $(node --version)"
 echo "NPM version: $(npm --version)"
@@ -42,25 +43,43 @@ EOF
     # Try to resolve any failed migrations
     npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null && echo "Resolved failed migration" || echo "No failed migrations"
     
-    # Deploy any pending migrations
+    # Deploy any pending migrations (with timeout to prevent hanging)
     echo "Deploying migrations..."
-    npx prisma migrate deploy
+    timeout 30 npx prisma migrate deploy || {
+      echo "⚠️  Migration deploy timed out or failed, but continuing..."
+    }
+    echo "✓ Migration check complete"
   fi
   
   echo "=== Generating Prisma client ==="
-  npx prisma generate || {
-    echo "⚠️  Prisma generate failed, but continuing..."
+  timeout 30 npx prisma generate || {
+    echo "⚠️  Prisma generate failed or timed out, but continuing..."
   }
   echo "✓ Prisma client generated"
 else
   echo "⚠️  DATABASE_URL not set, skipping database setup"
+  echo "=== Generating Prisma client (without DB) ==="
+  timeout 30 npx prisma generate || {
+    echo "⚠️  Prisma generate failed or timed out, but continuing..."
+  }
 fi
 
 echo "=== Starting server ==="
 echo "Running: npm start"
 echo "Working directory: $(pwd)"
-echo "Files in current directory: $(ls -la | head -10)"
+echo "PORT environment variable: ${PORT:-not set}"
+echo "NODE_ENV: ${NODE_ENV:-not set}"
+
+# Verify index.js exists
+if [ ! -f "index.js" ]; then
+  echo "❌ ERROR: index.js not found in $(pwd)"
+  echo "Files in directory:"
+  ls -la
+  exit 1
+fi
+
+echo "✅ index.js found, starting server..."
 
 # Start the server (don't use exec so we can see errors)
-npm start
+node index.js
 
