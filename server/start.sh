@@ -11,15 +11,23 @@ EOF
 )
   
   if [ "$TABLE_CHECK" = "0" ]; then
-    echo "⚠️  Database tables don't exist. Applying migrations..."
+    echo "⚠️  Database tables don't exist. Applying all migrations from scratch..."
     
     # Reset any failed migration state
     npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null || true
     
-    # Try to deploy migrations
+    # Deploy all migrations (this will create tables)
     npx prisma migrate deploy || {
-      echo "⚠️  Migration deploy failed. This might be normal if migration state is inconsistent."
-      echo "If tables still don't exist after this, you may need to run migrations manually."
+      echo "⚠️  Migration deploy failed. Trying to apply migrations manually..."
+      # If migrate deploy fails, try applying SQL files directly
+      if [ -f "prisma/migrations/0_init/migration.sql" ]; then
+        echo "Applying initial migration..."
+        npx prisma db execute --file prisma/migrations/0_init/migration.sql --schema prisma/schema.prisma || true
+      fi
+      if [ -f "prisma/migrations/add_genre_field/migration.sql" ]; then
+        echo "Applying genre field migration..."
+        npx prisma db execute --file prisma/migrations/add_genre_field/migration.sql --schema prisma/schema.prisma || true
+      fi
     }
   else
     echo "✓ Database tables exist. Checking migration state..."
