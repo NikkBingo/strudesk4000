@@ -1,12 +1,15 @@
+// MINIMAL TEST - If you see this, Node.js is running
+console.error('=== NODE.JS STARTING ===');
+console.log('=== NODE.JS STARTING ===');
+process.stdout.write('=== NODE.JS STARTING ===\n');
+process.stderr.write('=== NODE.JS STARTING ===\n');
+
 // Write to both stdout and stderr
 const log = (...args) => {
   console.log(...args);
   console.error(...args);
 };
 
-// Force immediate output
-process.stdout.write('📦 [1/5] Loading dependencies...\n');
-process.stderr.write('📦 [1/5] Loading dependencies...\n');
 log('📦 [1/5] Loading dependencies...');
 
 import express from 'express';
@@ -255,4 +258,3 @@ process.on('SIGTERM', async () => {
   }
   process.exit(0);
 });
-
