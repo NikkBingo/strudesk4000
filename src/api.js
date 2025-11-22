@@ -80,6 +80,16 @@ export const authAPI = {
  */
 export const usersAPI = {
   /**
+   * List all users (with optional search)
+   */
+  async listUsers(search = '', limit = 50) {
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    params.append('limit', limit);
+    return apiRequest(`/users?${params.toString()}`);
+  },
+
+  /**
    * Get user profile by ID
    */
   async getUser(userId) {

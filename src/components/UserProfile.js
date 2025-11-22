@@ -34,6 +34,15 @@ export class UserProfile {
           <div class="user-profile-modal-body">
             <form id="user-profile-form">
               <div class="form-group">
+                <label for="profile-avatar-url">Profile Image</label>
+                <div class="avatar-preview-container">
+                  <img id="profile-avatar-preview" src="" alt="Avatar preview" style="display: none; width: 100px; height: 100px; border-radius: 50%; object-fit: cover; margin-bottom: 10px; border: 2px solid #ddd;" />
+                  <input type="url" id="profile-avatar-url" placeholder="https://example.com/your-image.jpg" />
+                  <small>Enter a URL to your profile image</small>
+                </div>
+              </div>
+
+              <div class="form-group">
                 <label for="profile-artist-name">Artist Name (Pseudonym)</label>
                 <input type="text" id="profile-artist-name" placeholder="Your artist name or pseudonym" />
                 <small>This will be used as the default copyright holder for your patterns</small>
@@ -146,6 +155,35 @@ export class UserProfile {
       this.user = fullUser;
 
       // Populate form
+      const avatarUrlInput = document.getElementById('profile-avatar-url');
+      const avatarPreview = document.getElementById('profile-avatar-preview');
+      if (avatarUrlInput) {
+        avatarUrlInput.value = fullUser.avatarUrl || '';
+        // Update preview when URL changes
+        avatarUrlInput.addEventListener('input', (e) => {
+          const url = e.target.value.trim();
+          if (avatarPreview) {
+            if (url) {
+              avatarPreview.src = url;
+              avatarPreview.style.display = 'block';
+              avatarPreview.onerror = () => {
+                avatarPreview.style.display = 'none';
+              };
+            } else {
+              avatarPreview.style.display = 'none';
+            }
+          }
+        });
+        // Initial preview
+        if (fullUser.avatarUrl && avatarPreview) {
+          avatarPreview.src = fullUser.avatarUrl;
+          avatarPreview.style.display = 'block';
+          avatarPreview.onerror = () => {
+            avatarPreview.style.display = 'none';
+          };
+        }
+      }
+
       const artistNameInput = document.getElementById('profile-artist-name');
       if (artistNameInput) {
         artistNameInput.value = fullUser.artistName || '';
@@ -189,6 +227,7 @@ export class UserProfile {
     }
 
     try {
+      const avatarUrl = document.getElementById('profile-avatar-url')?.value.trim() || null;
       const artistName = document.getElementById('profile-artist-name')?.value.trim() || null;
       
       // Collect social links
@@ -203,6 +242,7 @@ export class UserProfile {
 
       // Update user
       const updated = await usersAPI.updateUser(this.user.id, {
+        avatarUrl,
         artistName,
         socialLinks
       });

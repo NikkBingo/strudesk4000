@@ -4039,6 +4039,18 @@ header h1 {
   transition: border-color 0.2s;
 }
 
+.avatar-preview-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.avatar-preview-container img {
+  border: 2px solid #ddd;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 .user-profile-modal-body .form-group input:focus {
   outline: none;
   border-color: #667eea;
@@ -4152,6 +4164,190 @@ header h1 {
 
 .save-pattern-modal-body {
   padding: 24px;
+}
+
+/* User Profiles Listing Styles */
+.user-profiles-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+}
+
+.user-profiles-modal {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-width: 900px;
+  width: 90%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.user-profiles-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px;
+  border-bottom: 1px solid #eee;
+}
+
+.user-profiles-modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #333;
+}
+
+.user-profiles-modal-close {
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: #666;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.user-profiles-modal-close:hover {
+  background: #f5f5f5;
+  color: #333;
+}
+
+.user-profiles-modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.profiles-search-container {
+  margin-bottom: 24px;
+}
+
+.profiles-search-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: border-color 0.2s;
+}
+
+.profiles-search-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.profiles-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.profiles-loading,
+.profiles-empty,
+.profiles-error {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 40px;
+  color: #666;
+  font-size: 1.1rem;
+}
+
+.user-card {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+  transition: all 0.2s;
+  display: flex;
+  gap: 16px;
+}
+
+.user-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: #667eea;
+}
+
+.user-card-avatar {
+  flex-shrink: 0;
+}
+
+.user-card-avatar img {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #ddd;
+}
+
+.user-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-card-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.user-card-artist {
+  font-size: 0.9rem;
+  color: #667eea;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.user-card-email {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.user-card-stats {
+  margin-bottom: 8px;
+}
+
+.user-card-patterns {
+  font-size: 0.85rem;
+  color: #666;
+  background: #e5e7eb;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.user-card-social {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.user-card-social-link {
+  font-size: 1.2rem;
+  text-decoration: none;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+
+.user-card-social-link:hover {
+  transform: scale(1.2);
 }
 
 .save-pattern-modal-body .form-group {
