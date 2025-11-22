@@ -28,9 +28,11 @@ export default defineConfig({
   build: {
     commonjsOptions: {
       // Include Strudel packages and CommonJS dependencies in commonjs transform
-      include: [/@strudel/, /escodegen/, /chord-voicings/],
+      include: [/@strudel/, /escodegen/, /chord-voicings/, /node_modules/],
       // Transform default exports for CommonJS modules
-      transformMixedEsModules: true
+      transformMixedEsModules: true,
+      // Handle default exports from CommonJS
+      defaultIsModuleExports: true
     },
     rollupOptions: {
       output: {
