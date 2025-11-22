@@ -5,7 +5,7 @@ import passport from 'passport';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import { PrismaClient } from '@prisma/client';
 
 import './config/passport.js'; // Initialize passport strategies
@@ -74,14 +74,14 @@ if (!existsSync(publicPath)) {
   console.warn(`⚠️  Public directory not found at ${publicPath}. Frontend may not be built.`);
   console.warn('Current working directory:', process.cwd());
   try {
-    const files = require('fs').readdirSync(__dirname);
+    const files = readdirSync(__dirname);
     console.warn('Files in __dirname:', files.join(', '));
   } catch (e) {
     console.warn('Could not read __dirname:', e.message);
   }
 } else {
   console.log('✓ Public directory found. Serving static files.');
-  const files = require('fs').readdirSync(publicPath);
+  const files = readdirSync(publicPath);
   console.log('Files in public directory:', files.join(', '));
   
   // Serve static files with proper headers
