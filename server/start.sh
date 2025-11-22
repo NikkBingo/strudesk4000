@@ -45,10 +45,11 @@ EOF
     
     # Deploy any pending migrations (with timeout to prevent hanging)
     echo "Deploying migrations..."
-    timeout 30 npx prisma migrate deploy || {
-      echo "⚠️  Migration deploy timed out or failed, but continuing..."
+    timeout 30 npx prisma migrate deploy 2>&1 || {
+      EXIT_CODE=$?
+      echo "⚠️  Migration deploy exited with code $EXIT_CODE, but continuing..."
     }
-    echo "✓ Migration check complete"
+    echo "✓ Migration check complete (continuing to server start)"
   fi
   
   echo "=== Generating Prisma client ==="
@@ -64,11 +65,14 @@ else
   }
 fi
 
+echo ""
+echo "========================================="
 echo "=== Starting server ==="
-echo "Running: npm start"
+echo "========================================="
 echo "Working directory: $(pwd)"
 echo "PORT environment variable: ${PORT:-not set}"
 echo "NODE_ENV: ${NODE_ENV:-not set}"
+echo ""
 
 # Verify index.js exists
 if [ ! -f "index.js" ]; then
@@ -78,8 +82,11 @@ if [ ! -f "index.js" ]; then
   exit 1
 fi
 
-echo "✅ index.js found, starting server..."
+echo "✅ index.js found"
+echo "🚀 Starting Node.js server..."
+echo ""
 
-# Start the server (don't use exec so we can see errors)
-node index.js
+# Start the server directly with node (not npm start)
+# This ensures we see all output and errors
+exec node index.js
 
