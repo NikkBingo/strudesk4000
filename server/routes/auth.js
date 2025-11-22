@@ -45,9 +45,48 @@ if (process.env.OAUTH_GITHUB_CLIENT_ID && process.env.OAUTH_GITHUB_CLIENT_SECRET
 }
 
 // Get current user
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
   if (req.isAuthenticated && req.isAuthenticated()) {
     res.json(req.user);
+  } else if (process.env.TEST_MODE) {
+    // In test mode, return a test user if not authenticated
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+
+      // Find or create test user
+      let testUser = await prisma.user.findUnique({
+        where: {
+          oauthProvider_oauthId: {
+            oauthProvider: 'test',
+            oauthId: 'test-user-1'
+          }
+        }
+      });
+
+      if (!testUser) {
+        testUser = await prisma.user.create({
+          data: {
+            email: 'test@strudel.test',
+            name: 'Test User',
+            oauthProvider: 'test',
+            oauthId: 'test-user-1',
+            artistName: 'Test Artist'
+          }
+        });
+      }
+
+      res.json({
+        id: testUser.id,
+        email: testUser.email,
+        name: testUser.name,
+        artistName: testUser.artistName,
+        avatarUrl: testUser.avatarUrl
+      });
+    } catch (error) {
+      console.error('Error getting test user:', error);
+      res.status(500).json({ error: 'Failed to get test user' });
+    }
   } else {
     res.status(401).json({ error: 'Not authenticated' });
   }
