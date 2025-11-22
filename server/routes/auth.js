@@ -63,5 +63,60 @@ router.post('/logout', (req, res) => {
   });
 });
 
+// Test mode: Create a test user and log them in (only in development/test mode)
+router.post('/test-login', async (req, res) => {
+  // Only allow in development or when TEST_MODE is enabled
+  if (process.env.NODE_ENV === 'production' && !process.env.TEST_MODE) {
+    return res.status(403).json({ error: 'Test login is disabled in production' });
+  }
+
+  try {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+
+    // Find or create test user
+    let testUser = await prisma.user.findUnique({
+      where: {
+        oauthProvider_oauthId: {
+          oauthProvider: 'test',
+          oauthId: 'test-user-1'
+        }
+      }
+    });
+
+    if (!testUser) {
+      testUser = await prisma.user.create({
+        data: {
+          email: 'test@strudel.test',
+          name: 'Test User',
+          oauthProvider: 'test',
+          oauthId: 'test-user-1',
+          artistName: 'Test Artist'
+        }
+      });
+    }
+
+    // Log the user in
+    req.login(testUser, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Login failed' });
+      }
+      res.json({
+        message: 'Test login successful',
+        user: {
+          id: testUser.id,
+          email: testUser.email,
+          name: testUser.name,
+          artistName: testUser.artistName,
+          avatarUrl: testUser.avatarUrl
+        }
+      });
+    });
+  } catch (error) {
+    console.error('Test login error:', error);
+    res.status(500).json({ error: 'Test login failed', details: error.message });
+  }
+});
+
 export default router;
 
