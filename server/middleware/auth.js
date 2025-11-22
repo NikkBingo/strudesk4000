@@ -4,13 +4,15 @@
  * In test mode, automatically creates/uses a test user if not authenticated
  */
 
+import { isTestMode } from '../utils/config.js';
+
 export const requireAuth = async (req, res, next) => {
   if (req.isAuthenticated && req.isAuthenticated()) {
     return next();
   }
   
   // In test mode, create/use a test user automatically
-  if (process.env.TEST_MODE) {
+  if (isTestMode()) {
     try {
       const { PrismaClient } = await import('@prisma/client');
       const prisma = new PrismaClient();

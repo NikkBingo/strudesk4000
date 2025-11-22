@@ -29,6 +29,7 @@ import './config/passport.js'; // Initialize passport strategies
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import patternRoutes from './routes/patterns.js';
+import { isTestMode } from './utils/config.js';
 log('✅ [4/5] Routes loaded');
 
 dotenv.config();
@@ -215,7 +216,7 @@ try {
     
     log(`✅✅✅ SERVER IS RUNNING ON PORT ${PORT} ✅✅✅`);
     log(`Frontend URL: ${frontendUrl}`);
-    log(`Test mode: ${process.env.TEST_MODE ? 'enabled' : 'disabled'}`);
+    log(`Test mode: ${isTestMode() ? 'enabled' : 'disabled'}`);
     if (!process.env.OAUTH_GOOGLE_CLIENT_ID && !process.env.OAUTH_GITHUB_CLIENT_ID) {
       log('⚠️  OAuth not configured - use /api/auth/test-login for testing');
     }

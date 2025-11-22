@@ -1,6 +1,7 @@
 import express from 'express';
 import passport from 'passport';
 import '../config/passport.js';
+import { isTestMode } from '../utils/config.js';
 
 const router = express.Router();
 
@@ -48,7 +49,7 @@ if (process.env.OAUTH_GITHUB_CLIENT_ID && process.env.OAUTH_GITHUB_CLIENT_SECRET
 router.get('/me', async (req, res) => {
   if (req.isAuthenticated && req.isAuthenticated()) {
     res.json(req.user);
-  } else if (process.env.TEST_MODE) {
+  } else if (isTestMode()) {
     // In test mode, return a test user if not authenticated
     try {
       const { PrismaClient } = await import('@prisma/client');
@@ -105,7 +106,7 @@ router.post('/logout', (req, res) => {
 // Test mode: Create a test user and log them in (only in development/test mode)
 router.post('/test-login', async (req, res) => {
   // Only allow in development or when TEST_MODE is enabled
-  if (process.env.NODE_ENV === 'production' && !process.env.TEST_MODE) {
+  if (process.env.NODE_ENV === 'production' && !isTestMode()) {
     return res.status(403).json({ error: 'Test login is disabled in production' });
   }
 
