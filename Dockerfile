@@ -1,3 +1,18 @@
+FROM node:18-alpine AS frontend-builder
+
+WORKDIR /app
+
+# Build frontend
+COPY package.json package-lock.json ./
+COPY vite.config.js ./
+COPY index.html ./
+COPY src ./src
+COPY assets ./assets
+
+RUN npm ci
+RUN npm run build
+
+# Server stage
 FROM node:18-alpine
 
 WORKDIR /app
@@ -19,6 +34,9 @@ RUN npx prisma generate
 
 # Copy server application code
 COPY server/ ./
+
+# Copy built frontend from builder stage
+COPY --from=frontend-builder /app/dist ./public
 
 # Make start script executable
 RUN chmod +x start.sh
