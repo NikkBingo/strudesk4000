@@ -1,8 +1,15 @@
 #!/bin/sh
+set -e  # Exit on error
+
+echo "=== Starting Container ==="
+echo "Current directory: $(pwd)"
+echo "Node version: $(node --version)"
+echo "NPM version: $(npm --version)"
+echo "PORT: ${PORT:-not set}"
 
 # Resolve any failed migrations first
 if [ -n "$DATABASE_URL" ]; then
-  echo "Checking database state..."
+  echo "=== Checking database state ==="
   
   # Check if users table exists
   TABLE_CHECK=$(npx prisma db execute --stdin <<'EOF' 2>/dev/null | grep -c "users" || echo "0"
@@ -36,21 +43,24 @@ EOF
     npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null && echo "Resolved failed migration" || echo "No failed migrations"
     
     # Deploy any pending migrations
+    echo "Deploying migrations..."
     npx prisma migrate deploy
   fi
   
-  echo "Generating Prisma client..."
+  echo "=== Generating Prisma client ==="
   npx prisma generate || {
     echo "⚠️  Prisma generate failed, but continuing..."
   }
+  echo "✓ Prisma client generated"
+else
+  echo "⚠️  DATABASE_URL not set, skipping database setup"
 fi
 
-echo "Starting server..."
-echo "Current directory: $(pwd)"
-echo "Node version: $(node --version)"
-echo "NPM version: $(npm --version)"
-echo "PORT: ${PORT:-not set}"
+echo "=== Starting server ==="
+echo "Running: npm start"
+echo "Working directory: $(pwd)"
+echo "Files in current directory: $(ls -la | head -10)"
 
-# Start the server
-exec npm start
+# Start the server (don't use exec so we can see errors)
+npm start
 

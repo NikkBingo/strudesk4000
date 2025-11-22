@@ -1,3 +1,5 @@
+console.log('📦 Loading dependencies...');
+
 import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
@@ -8,12 +10,17 @@ import { fileURLToPath } from 'url';
 import { existsSync, readdirSync } from 'fs';
 import { PrismaClient } from '@prisma/client';
 
+console.log('✅ Dependencies loaded');
+
+console.log('📦 Loading routes...');
 import './config/passport.js'; // Initialize passport strategies
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import patternRoutes from './routes/patterns.js';
+console.log('✅ Routes loaded');
 
 dotenv.config();
+console.log('✅ Environment variables loaded');
 
 const app = express();
 
