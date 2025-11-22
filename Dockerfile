@@ -20,10 +20,12 @@ RUN npx prisma generate
 # Copy server application code
 COPY server/ ./
 
+# Make start script executable
+RUN chmod +x start.sh
+
 # Expose port
 EXPOSE 3001
 
-# Run migrations and start server
-# Handle failed migrations by resolving them first, then deploying
-CMD ["sh", "-c", "if [ -n \"$DATABASE_URL\" ]; then npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null || true; npx prisma migrate deploy; fi && npm start"]
+# Run migrations and start server using startup script
+CMD ["./start.sh"]
 
