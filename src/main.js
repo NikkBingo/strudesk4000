@@ -3909,6 +3909,7 @@ class InteractiveSoundApp {
         this.masterPunchcardContainer.classList.remove('is-fullscreen');
         document.body.style.overflow = '';
         this.updateVisualizerFullscreenButton(false);
+        this.removeMobileFullscreenCloseButton();
       }
       return;
     }
@@ -3957,6 +3958,7 @@ class InteractiveSoundApp {
         this.masterPunchcardContainer.classList.add('is-fullscreen');
         document.body.style.overflow = 'hidden';
         this.updateVisualizerFullscreenButton(true);
+        this.addMobileFullscreenCloseButton();
         // Trigger refresh after CSS fullscreen
         setTimeout(() => {
           this.refreshMasterPunchcard('css-fullscreen').catch(err => {
@@ -3974,6 +3976,7 @@ class InteractiveSoundApp {
         this.masterPunchcardContainer.classList.add('is-fullscreen');
         document.body.style.overflow = 'hidden';
         this.updateVisualizerFullscreenButton(true);
+        this.addMobileFullscreenCloseButton();
         setTimeout(() => {
           this.refreshMasterPunchcard('css-fullscreen-fallback').catch(err => {
             console.warn('⚠️ Unable to refresh punchcard after CSS fullscreen fallback:', err);
@@ -3986,6 +3989,32 @@ class InteractiveSoundApp {
   isMobileDevice() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
            (window.innerWidth <= 768 && 'ontouchstart' in window);
+  }
+
+  addMobileFullscreenCloseButton() {
+    // Remove existing close button if any
+    this.removeMobileFullscreenCloseButton();
+    
+    if (!this.masterPunchcardContainer) return;
+    
+    // Create close button
+    const closeBtn = document.createElement('button');
+    closeBtn.id = 'mobile-fullscreen-close';
+    closeBtn.className = 'mobile-fullscreen-close-btn';
+    closeBtn.innerHTML = '✕';
+    closeBtn.setAttribute('aria-label', 'Close fullscreen');
+    closeBtn.addEventListener('click', () => {
+      this.toggleVisualizerFullscreen();
+    });
+    
+    this.masterPunchcardContainer.appendChild(closeBtn);
+  }
+
+  removeMobileFullscreenCloseButton() {
+    const closeBtn = document.getElementById('mobile-fullscreen-close');
+    if (closeBtn) {
+      closeBtn.remove();
+    }
   }
 
   updateVisualizerFullscreenButton(isFullscreen) {
@@ -4005,6 +4034,12 @@ class InteractiveSoundApp {
       // If exiting fullscreen and using CSS fallback, restore body overflow
       if (!isFullscreen && this.isMobileDevice()) {
         document.body.style.overflow = '';
+        this.removeMobileFullscreenCloseButton();
+      } else if (isFullscreen && this.isMobileDevice()) {
+        // Add close button when entering native fullscreen on mobile
+        setTimeout(() => {
+          this.addMobileFullscreenCloseButton();
+        }, 100);
       }
     }
     this.updateVisualizerFullscreenButton(isFullscreen);
