@@ -63,17 +63,30 @@ app.get('/api/health', (req, res) => {
 });
 
 // Serve static files from the frontend build
-const publicPath = path.join(__dirname, '..', 'public');
-app.use(express.static(publicPath));
+const publicPath = path.join(__dirname, 'public');
+console.log('Serving static files from:', publicPath);
 
-// Serve index.html for all non-API routes (SPA routing)
-app.get('*', (req, res) => {
-  // Don't serve index.html for API routes
-  if (req.path.startsWith('/api')) {
-    return res.status(404).json({ error: 'API endpoint not found' });
-  }
-  res.sendFile(path.join(publicPath, 'index.html'));
-});
+// Check if public directory exists
+import { existsSync } from 'fs';
+if (!existsSync(publicPath)) {
+  console.warn(`⚠️  Public directory not found at ${publicPath}. Frontend may not be built.`);
+} else {
+  app.use(express.static(publicPath));
+  
+  // Serve index.html for all non-API routes (SPA routing)
+  app.get('*', (req, res) => {
+    // Don't serve index.html for API routes
+    if (req.path.startsWith('/api')) {
+      return res.status(404).json({ error: 'API endpoint not found' });
+    }
+    const indexPath = path.join(publicPath, 'index.html');
+    if (existsSync(indexPath)) {
+      res.sendFile(indexPath);
+    } else {
+      res.status(404).json({ error: 'Frontend not built. index.html not found.' });
+    }
+  });
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {
