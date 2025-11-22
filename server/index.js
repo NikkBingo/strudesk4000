@@ -1,7 +1,15 @@
-// Write to both stdout and stderr so Railway shows it
+// Write to both stdout and stderr, and also to a file
+import { appendFileSync } from 'fs';
+
 const log = (...args) => {
+  const msg = args.join(' ');
   console.log(...args);
   console.error(...args);
+  try {
+    appendFileSync('/tmp/node.log', msg + '\n');
+  } catch (e) {
+    // Ignore file write errors
+  }
 };
 
 log('📦 [1/5] Loading dependencies...');
