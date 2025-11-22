@@ -33,24 +33,13 @@ EOF
   else
     echo "✓ Database tables exist. Checking migration state..."
     npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null && echo "Resolved failed migration" || echo "No failed migrations"
-    echo "Deploying migrations (this may take a moment)..."
-    # Run migrate deploy and capture output, but don't fail if it hangs
-    npx prisma migrate deploy 2>&1 &
-    MIGRATE_PID=$!
-    # Wait max 10 seconds
-    for i in 1 2 3 4 5 6 7 8 9 10; do
-      if ! kill -0 $MIGRATE_PID 2>/dev/null; then
-        wait $MIGRATE_PID 2>/dev/null
-        break
-      fi
-      sleep 1
-    done
-    # If still running, kill it and continue
-    if kill -0 $MIGRATE_PID 2>/dev/null; then
-      echo "⚠️  Migration deploy taking too long, continuing anyway..."
-      kill $MIGRATE_PID 2>/dev/null || true
-    fi
-    echo "✓ Migration check complete"
+    echo "Deploying migrations (with 5 second timeout)..."
+    # Run migrate deploy with a simple timeout approach
+    (sleep 5 && echo "⚠️  Migration check timeout, continuing...") &
+    TIMEOUT_PID=$!
+    npx prisma migrate deploy 2>&1 || echo "⚠️  Migration deploy had issues"
+    kill $TIMEOUT_PID 2>/dev/null || true
+    echo "✓ Migration check complete - PROCEEDING TO SERVER"
   fi
   
   echo "=== Prisma client (already generated in build) ==="
@@ -77,7 +66,13 @@ fi
 
 echo "✅ index.js found"
 echo "🚀 EXECUTING: node index.js"
+echo "About to start server - if you don't see server logs after this, node is crashing"
 echo ""
 
 # Start the server directly with node
-exec node index.js
+# Don't use exec initially so we can see if there's an immediate error
+node index.js || {
+  echo "❌ Server failed to start!"
+  echo "Exit code: $?"
+  exit 1
+}
