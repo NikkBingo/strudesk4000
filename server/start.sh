@@ -1,11 +1,15 @@
 #!/bin/sh
 
-echo "=== Starting Container ==="
+# Force output to be visible
+exec > >(tee -a /proc/1/fd/1) 2>&1 || true
+
+echo "=== START SCRIPT RUNNING ==="
 echo "Script started at: $(date)"
 echo "Current directory: $(pwd)"
 echo "Node version: $(node --version)"
 echo "NPM version: $(npm --version)"
 echo "PORT: ${PORT:-not set}"
+echo "DATABASE_URL: ${DATABASE_URL:+set}"
 
 # Resolve any failed migrations first
 if [ -n "$DATABASE_URL" ]; then
@@ -50,7 +54,7 @@ fi
 
 echo ""
 echo "========================================="
-echo "=== Starting server ==="
+echo "=== STARTING SERVER NOW ==="
 echo "========================================="
 echo "Working directory: $(pwd)"
 echo "PORT: ${PORT:-not set}"
@@ -66,8 +70,9 @@ if [ ! -f "index.js" ]; then
 fi
 
 echo "✅ index.js found"
-echo "🚀 Starting Node.js server..."
+echo "🚀 EXECUTING: node index.js"
 echo ""
 
 # Start the server directly with node
+# Use exec to replace shell process
 exec node index.js
