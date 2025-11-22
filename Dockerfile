@@ -2,6 +2,9 @@ FROM node:18-alpine
 
 WORKDIR /app
 
+# Install OpenSSL for Prisma
+RUN apk add --no-cache openssl1.1-compat
+
 # Copy server package files
 COPY server/package.json server/package-lock.json ./
 
@@ -11,7 +14,7 @@ RUN npm ci
 # Copy Prisma schema
 COPY server/prisma ./prisma
 
-# Generate Prisma client
+# Generate Prisma client (doesn't need DATABASE_URL)
 RUN npx prisma generate
 
 # Copy server application code
@@ -21,5 +24,6 @@ COPY server/ ./
 EXPOSE 3001
 
 # Run migrations and start server
-CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
+# Use a script that handles missing DATABASE_URL gracefully
+CMD ["sh", "-c", "if [ -n \"$DATABASE_URL\" ]; then npx prisma migrate deploy; fi && npm start"]
 
