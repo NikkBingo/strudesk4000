@@ -1,6 +1,5 @@
 [build]
 builder = "dockerfile"
-dockerfilePath = "server/Dockerfile"
 
 [deploy]
 startCommand = ""
