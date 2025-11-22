@@ -8,6 +8,11 @@ let prisma;
 try {
   prisma = new PrismaClient({
     log: ['error'],
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL
+      }
+    }
   });
 } catch (error) {
   console.error('❌ Failed to initialize Prisma client in passport config:', error);
