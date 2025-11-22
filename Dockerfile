@@ -2,11 +2,8 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Install OpenSSL and other dependencies for Prisma
-RUN apk add --no-cache openssl openssl-dev libc6-compat
-
-# Set Prisma to use OpenSSL 3.x (default in Alpine)
-ENV PRISMA_OPENSSL_VERSION=openssl-3.0.x
+# Install OpenSSL for Prisma (Alpine 3.21+ uses OpenSSL 3.x by default)
+RUN apk add --no-cache openssl
 
 # Copy server package files
 COPY server/package.json server/package-lock.json ./
