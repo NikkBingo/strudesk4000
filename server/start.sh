@@ -8,12 +8,20 @@ if [ -n "$DATABASE_URL" ]; then
   npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null && echo "Marked failed migration as rolled back" || echo "No failed migration to resolve or already resolved"
   
   echo "Deploying migrations..."
-  npx prisma migrate deploy || {
-    echo "Migration deploy failed. Attempting to resolve..."
-    # If deploy fails, try to mark as applied (in case it partially succeeded)
-    npx prisma migrate resolve --applied add_genre_field 2>/dev/null || true
-    echo "Continuing with server start..."
-  }
+  npx prisma migrate deploy
+  
+  # If migrate deploy says no pending migrations but tables don't exist, force apply
+  if [ $? -ne 0 ]; then
+    echo "Migration deploy had issues. Checking database state..."
+    # Try to apply migrations from scratch if needed
+    npx prisma migrate deploy --skip-seed || {
+      echo "Attempting to resolve migration state..."
+      npx prisma migrate resolve --applied add_genre_field 2>/dev/null || true
+    }
+  fi
+  
+  echo "Generating Prisma client..."
+  npx prisma generate
 fi
 
 echo "Starting server..."
