@@ -3,7 +3,8 @@
  * Handles authentication, patterns, and user management
  */
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+// Use relative URL in production (same origin), or env var, or localhost for dev
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3001/api');
 
 class APIError extends Error {
   constructor(message, status, data) {
