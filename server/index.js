@@ -13,16 +13,11 @@ import { PrismaClient } from '@prisma/client';
 console.log('✅ [2/5] Dependencies loaded');
 
 console.log('📦 [3/5] Loading routes...');
-try {
-  import('./config/passport.js'); // Initialize passport strategies
-  import authRoutes from './routes/auth.js';
-  import userRoutes from './routes/users.js';
-  import patternRoutes from './routes/patterns.js';
-  console.log('✅ [4/5] Routes loaded');
-} catch (error) {
-  console.error('❌ Error loading routes:', error);
-  throw error;
-}
+import './config/passport.js'; // Initialize passport strategies
+import authRoutes from './routes/auth.js';
+import userRoutes from './routes/users.js';
+import patternRoutes from './routes/patterns.js';
+console.log('✅ [4/5] Routes loaded');
 
 dotenv.config();
 console.log('✅ [5/5] Environment variables loaded');
