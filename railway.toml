@@ -1,7 +1,7 @@
 [build]
-builder = "nixpacks"
-buildCommand = "cd server && npm ci && npx prisma generate"
+builder = "dockerfile"
+dockerfilePath = "server/Dockerfile"
 
 [deploy]
-startCommand = "cd server && npx prisma migrate deploy && npm start"
+startCommand = ""
 
