@@ -40,9 +40,17 @@ EOF
   fi
   
   echo "Generating Prisma client..."
-  npx prisma generate
+  npx prisma generate || {
+    echo "⚠️  Prisma generate failed, but continuing..."
+  }
 fi
 
 echo "Starting server..."
+echo "Current directory: $(pwd)"
+echo "Node version: $(node --version)"
+echo "NPM version: $(npm --version)"
+echo "PORT: ${PORT:-not set}"
+
+# Start the server
 exec npm start
 
