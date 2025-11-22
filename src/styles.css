@@ -930,15 +930,6 @@ header h1 {
     border-radius: 0;
     z-index: 9999;
     background: rgba(255, 255, 255, 0.98);
-    /* Force landscape orientation on mobile */
-    transform: rotate(90deg);
-    transform-origin: center center;
-    width: 100vh;
-    height: 100vw;
-    top: 50%;
-    left: 50%;
-    margin-top: -50vw;
-    margin-left: -50vh;
   }
   
   #master-punchcard.is-fullscreen canvas {
@@ -946,7 +937,7 @@ header h1 {
     height: 100% !important;
   }
 
-  /* Mobile fullscreen close button - positioned relative to rotated container */
+  /* Mobile fullscreen close button */
   #master-punchcard.is-fullscreen .mobile-fullscreen-close-btn {
     position: absolute;
     top: 12px;
@@ -968,19 +959,17 @@ header h1 {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
     line-height: 1;
     padding: 0;
-    /* Counter-rotate the button so it appears upright */
-    transform: rotate(-90deg);
   }
 
   #master-punchcard.is-fullscreen .mobile-fullscreen-close-btn:hover,
   #master-punchcard.is-fullscreen .mobile-fullscreen-close-btn:active {
     background: rgba(0, 0, 0, 0.9);
-    transform: rotate(-90deg) scale(1.1);
+    transform: scale(1.1);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   }
 
   #master-punchcard.is-fullscreen .mobile-fullscreen-close-btn:active {
-    transform: rotate(-90deg) scale(0.95);
+    transform: scale(0.95);
   }
 }
 
