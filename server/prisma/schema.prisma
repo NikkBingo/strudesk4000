@@ -11,18 +11,18 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(uuid())
-  email         String    @unique
+  id            String   @id @default(uuid())
+  email         String   @unique
   name          String
-  oauthProvider String    @map("oauth_provider") // 'google' | 'github'
-  oauthId       String    @map("oauth_id")
-  avatarUrl    String?    @map("avatar_url")
-  artistName   String?   @map("artist_name")
-  socialLinks  Json?     @default("{}") @map("social_links")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  oauthProvider String   @map("oauth_provider") // 'google' | 'github' | 'test'
+  oauthId       String   @map("oauth_id")
+  avatarUrl     String?  @map("avatar_url")
+  artistName    String?  @map("artist_name")
+  socialLinks   Json?    @default("{}") @map("social_links")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
-  patterns      Pattern[]
+  patterns       Pattern[]
   sharedPatterns PatternShare[]
 
   @@unique([oauthProvider, oauthId])
@@ -30,24 +30,24 @@ model User {
 }
 
 model Pattern {
-  id          String    @id @default(uuid())
-  userId      String    @map("user_id")
-  type        String    // 'channel' | 'master'
-  elementId   String?   @map("element_id")
-  patternCode String    @db.Text @map("pattern_code")
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  type        String // 'channel' | 'master'
+  elementId   String?  @map("element_id")
+  patternCode String   @map("pattern_code") @db.Text
   title       String?
-  artistName  String?   @map("artist_name")
-  genre       String?   // Song style/genre for matching
-  version     Int       @default(1)
-  versionName String?   @map("version_name")
-  isPublic    Boolean   @default(false) @map("is_public")
-  userCount   Int       @default(0) @map("user_count")
-  metadata    Json?     @default("{}")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  artistName  String?  @map("artist_name")
+  genre       String? // Song style/genre for matching
+  version     Int      @default(1)
+  versionName String?  @map("version_name")
+  isPublic    Boolean  @default(false) @map("is_public")
+  userCount   Int      @default(0) @map("user_count")
+  metadata    Json?    @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  shares      PatternShare[]
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shares PatternShare[]
 
   @@index([userId])
   @@index([isPublic])
@@ -57,16 +57,15 @@ model Pattern {
 }
 
 model PatternShare {
-  id              String   @id @default(uuid())
-  patternId       String   @map("pattern_id")
+  id               String   @id @default(uuid())
+  patternId        String   @map("pattern_id")
   sharedWithUserId String   @map("shared_with_user_id")
-  createdAt       DateTime @default(now()) @map("created_at")
+  createdAt        DateTime @default(now()) @map("created_at")
 
-  pattern         Pattern  @relation(fields: [patternId], references: [id], onDelete: Cascade)
-  sharedWithUser  User     @relation(fields: [sharedWithUserId], references: [id], onDelete: Cascade)
+  pattern        Pattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
+  sharedWithUser User    @relation(fields: [sharedWithUserId], references: [id], onDelete: Cascade)
 
   @@unique([patternId, sharedWithUserId])
   @@index([sharedWithUserId])
   @@map("pattern_shares")
 }
-
