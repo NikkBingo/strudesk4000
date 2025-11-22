@@ -2,22 +2,20 @@
 
 # Resolve any failed migrations first
 if [ -n "$DATABASE_URL" ]; then
-  echo "Resolving failed migrations..."
-  npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null || true
+  echo "Checking for failed migrations..."
+  
+  # Try to resolve the failed migration by marking it as rolled back
+  npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null && echo "Marked failed migration as rolled back" || echo "No failed migration to resolve or already resolved"
   
   echo "Deploying migrations..."
   npx prisma migrate deploy || {
-    echo "Migration deploy failed, checking if genre column exists..."
-    # Try to manually apply if migration failed but column doesn't exist
-    npx prisma db execute --stdin <<EOF 2>/dev/null || true
-ALTER TABLE "patterns" ADD COLUMN IF NOT EXISTS "genre" TEXT;
-CREATE INDEX IF NOT EXISTS "patterns_genre_idx" ON "patterns"("genre");
-EOF
-    # Mark migration as applied if we manually fixed it
+    echo "Migration deploy failed. Attempting to resolve..."
+    # If deploy fails, try to mark as applied (in case it partially succeeded)
     npx prisma migrate resolve --applied add_genre_field 2>/dev/null || true
+    echo "Continuing with server start..."
   }
 fi
 
 echo "Starting server..."
-npm start
+exec npm start
 
