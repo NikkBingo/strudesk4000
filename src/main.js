@@ -3889,32 +3889,103 @@ class InteractiveSoundApp {
   async toggleVisualizerFullscreen() {
     if (!this.masterPunchcardContainer) return;
     const fullscreenElement = this.getCurrentFullscreenElement();
-    if (fullscreenElement === this.masterPunchcardContainer) {
-      if (document.exitFullscreen) {
-        await document.exitFullscreen();
-      } else if (document.webkitExitFullscreen) {
-        await document.webkitExitFullscreen();
-      } else if (document.mozCancelFullScreen) {
-        await document.mozCancelFullScreen();
-      } else if (document.msExitFullscreen) {
-        await document.msExitFullscreen();
+    const isCssFullscreen = this.masterPunchcardContainer.classList.contains('is-fullscreen') && !fullscreenElement;
+    
+    if (fullscreenElement === this.masterPunchcardContainer || isCssFullscreen) {
+      // Exit fullscreen
+      if (fullscreenElement === this.masterPunchcardContainer) {
+        // Exit native fullscreen
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          await document.webkitExitFullscreen();
+        } else if (document.mozCancelFullScreen) {
+          await document.mozCancelFullScreen();
+        } else if (document.msExitFullscreen) {
+          await document.msExitFullscreen();
+        }
+      } else {
+        // Exit CSS fallback fullscreen
+        this.masterPunchcardContainer.classList.remove('is-fullscreen');
+        document.body.style.overflow = '';
+        this.updateVisualizerFullscreenButton(false);
       }
       return;
     }
 
-    const requestFs =
-      this.masterPunchcardContainer.requestFullscreen ||
-      this.masterPunchcardContainer.webkitRequestFullscreen ||
-      this.masterPunchcardContainer.mozRequestFullScreen ||
-      this.masterPunchcardContainer.msRequestFullscreen;
-
-    if (requestFs) {
-      try {
-        await requestFs.call(this.masterPunchcardContainer);
-      } catch (err) {
-        console.warn('⚠️ Unable to enter visualizer fullscreen:', err);
+    // Enter fullscreen - try different methods for mobile compatibility
+    try {
+      // Try standard fullscreen first
+      if (this.masterPunchcardContainer.requestFullscreen) {
+        await this.masterPunchcardContainer.requestFullscreen();
+        return;
+      }
+      
+      // Try webkit (Safari/iOS) - iOS may need different handling
+      if (this.masterPunchcardContainer.webkitRequestFullscreen) {
+        try {
+          // Try with options for iOS
+          const options = typeof Element !== 'undefined' && Element.ALLOW_KEYBOARD_INPUT !== undefined 
+            ? Element.ALLOW_KEYBOARD_INPUT 
+            : undefined;
+          if (options !== undefined) {
+            await this.masterPunchcardContainer.webkitRequestFullscreen(options);
+          } else {
+            await this.masterPunchcardContainer.webkitRequestFullscreen();
+          }
+          return;
+        } catch (webkitErr) {
+          // If webkit fails, fall through to CSS fallback
+          console.warn('⚠️ Webkit fullscreen failed, trying fallback:', webkitErr);
+        }
+      }
+      
+      // Try Mozilla
+      if (this.masterPunchcardContainer.mozRequestFullScreen) {
+        await this.masterPunchcardContainer.mozRequestFullScreen();
+        return;
+      }
+      
+      // Try MS
+      if (this.masterPunchcardContainer.msRequestFullscreen) {
+        await this.masterPunchcardContainer.msRequestFullscreen();
+        return;
+      }
+      
+      // Fallback: If fullscreen API is not available, use CSS-based fullscreen for mobile
+      if (this.isMobileDevice()) {
+        this.masterPunchcardContainer.classList.add('is-fullscreen');
+        document.body.style.overflow = 'hidden';
+        this.updateVisualizerFullscreenButton(true);
+        // Trigger refresh after CSS fullscreen
+        setTimeout(() => {
+          this.refreshMasterPunchcard('css-fullscreen').catch(err => {
+            console.warn('⚠️ Unable to refresh punchcard after CSS fullscreen:', err);
+          });
+        }, 100);
+        return;
+      }
+      
+      console.warn('⚠️ Fullscreen API not supported on this device');
+    } catch (err) {
+      console.warn('⚠️ Unable to enter visualizer fullscreen:', err);
+      // Fallback for mobile if fullscreen fails
+      if (this.isMobileDevice()) {
+        this.masterPunchcardContainer.classList.add('is-fullscreen');
+        document.body.style.overflow = 'hidden';
+        this.updateVisualizerFullscreenButton(true);
+        setTimeout(() => {
+          this.refreshMasterPunchcard('css-fullscreen-fallback').catch(err => {
+            console.warn('⚠️ Unable to refresh punchcard after CSS fullscreen fallback:', err);
+          });
+        }, 100);
       }
     }
+  }
+
+  isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           (window.innerWidth <= 768 && 'ontouchstart' in window);
   }
 
   updateVisualizerFullscreenButton(isFullscreen) {
@@ -3931,6 +4002,10 @@ class InteractiveSoundApp {
     const isFullscreen = fullscreenElement === this.masterPunchcardContainer;
     if (this.masterPunchcardContainer) {
       this.masterPunchcardContainer.classList.toggle('is-fullscreen', isFullscreen);
+      // If exiting fullscreen and using CSS fallback, restore body overflow
+      if (!isFullscreen && this.isMobileDevice()) {
+        document.body.style.overflow = '';
+      }
     }
     this.updateVisualizerFullscreenButton(isFullscreen);
     // Recalculate canvas sizing after entering/exiting fullscreen
