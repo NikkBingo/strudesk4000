@@ -48,11 +48,12 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Cannot update another user\'s profile' });
     }
 
-    const { artistName, socialLinks } = req.body;
+    const { avatarUrl, artistName, socialLinks } = req.body;
 
     const updatedUser = await prisma.user.update({
       where: { id: req.params.id },
       data: {
+        ...(avatarUrl !== undefined && { avatarUrl }),
         ...(artistName !== undefined && { artistName }),
         ...(socialLinks !== undefined && { socialLinks })
       },
@@ -72,6 +73,49 @@ router.put('/:id', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error updating user:', error);
     res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+// List all users (for profiles page)
+router.get('/', async (req, res) => {
+  try {
+    const { search, limit = 50 } = req.query;
+    
+    const where = {};
+    if (search && search.length >= 2) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { artistName: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+
+    const users = await prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        avatarUrl: true,
+        artistName: true,
+        socialLinks: true,
+        createdAt: true,
+        _count: {
+          select: {
+            patterns: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      take: parseInt(limit)
+    });
+
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
 

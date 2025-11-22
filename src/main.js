@@ -12,6 +12,7 @@ import { evaluate as strudelCoreEvaluate } from '@strudel/core';
 import { Scale, Note, Progression } from '@tonaljs/tonal';
 import { LoginModal } from './components/LoginModal.js';
 import { UserProfile } from './components/UserProfile.js';
+import { UserProfilesListing } from './components/UserProfilesListing.js';
 import { SavePatternDialog } from './components/SavePatternDialog.js';
 import { getCurrentUser, authAPI } from './api.js';
 
@@ -12234,6 +12235,7 @@ class InteractiveSoundApp {
 let currentUser = null;
 let loginModal = null;
 let userProfile = null;
+let userProfilesListing = null;
 let savePatternDialog = null;
 
 async function initUserAuth() {
@@ -12318,6 +12320,22 @@ async function initUserAuth() {
     currentUser = updatedUser;
     updateUserUI(updatedUser);
   });
+
+  // Initialize user profiles listing
+  userProfilesListing = new UserProfilesListing();
+  userProfilesListing.init();
+
+  // Setup profiles link
+  const profilesLink = document.getElementById('user-profiles-link');
+  if (profilesLink) {
+    profilesLink.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (userProfilesListing) {
+        await userProfilesListing.show();
+      }
+      userMenuDropdown.classList.remove('active');
+    });
+  }
 
   // Initialize save pattern dialog
   savePatternDialog = new SavePatternDialog();
