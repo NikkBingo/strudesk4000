@@ -1,5 +1,6 @@
-// Force output to stderr so Railway shows it
+// Write to both stdout and stderr so Railway shows it
 const log = (...args) => {
+  console.log(...args);
   console.error(...args);
 };
 
