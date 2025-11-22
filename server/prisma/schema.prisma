@@ -1,0 +1,70 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String
+  oauthProvider String    @map("oauth_provider") // 'google' | 'github'
+  oauthId       String    @map("oauth_id")
+  avatarUrl    String?    @map("avatar_url")
+  artistName   String?   @map("artist_name")
+  socialLinks  Json?     @default("{}") @map("social_links")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  patterns      Pattern[]
+  sharedPatterns PatternShare[]
+
+  @@unique([oauthProvider, oauthId])
+  @@map("users")
+}
+
+model Pattern {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  type        String    // 'channel' | 'master'
+  elementId   String?   @map("element_id")
+  patternCode String    @db.Text @map("pattern_code")
+  title       String?
+  artistName  String?   @map("artist_name")
+  version     Int       @default(1)
+  versionName String?   @map("version_name")
+  isPublic    Boolean   @default(false) @map("is_public")
+  userCount   Int       @default(0) @map("user_count")
+  metadata    Json?     @default("{}")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shares      PatternShare[]
+
+  @@index([userId])
+  @@index([isPublic])
+  @@index([type])
+  @@map("patterns")
+}
+
+model PatternShare {
+  id              String   @id @default(uuid())
+  patternId       String   @map("pattern_id")
+  sharedWithUserId String   @map("shared_with_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  pattern         Pattern  @relation(fields: [patternId], references: [id], onDelete: Cascade)
+  sharedWithUser  User     @relation(fields: [sharedWithUserId], references: [id], onDelete: Cascade)
+
+  @@unique([patternId, sharedWithUserId])
+  @@index([sharedWithUserId])
+  @@map("pattern_shares")
+}
+

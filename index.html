@@ -26,7 +26,21 @@
   <div class="container">
     <header>
       <h1>Strudesk 4000</h1>
-      <div class="header-right">Strudel Pattern Mixer v0.9.0</div>
+      <div class="header-right">
+        <span style="opacity: 0.9;">Strudel Pattern Mixer v0.9.0</span>
+        <button class="login-button" id="header-login-btn" style="display: none;">Login</button>
+        <div class="user-menu" id="user-menu" style="display: none;">
+          <button class="user-menu-button" id="user-menu-button">
+            <img class="user-avatar" id="user-avatar" src="" alt="User" style="display: none;">
+            <span id="user-name">User</span>
+            <span style="margin-left: 4px;">▼</span>
+          </button>
+          <div class="user-menu-dropdown" id="user-menu-dropdown">
+            <a href="#" class="user-menu-item" id="user-profile-link">Profile</a>
+            <button class="user-menu-item logout" id="user-logout-btn">Logout</button>
+          </div>
+        </div>
+      </div>
     </header>
 
     <!-- Status Indicator -->
@@ -873,6 +887,12 @@
       <div class="pattern-history-header">
         <h3 id="pattern-history-title">Pattern History</h3>
         <button type="button" id="pattern-history-close" class="history-close-button" aria-label="Close history">&times;</button>
+      </div>
+      <div class="pattern-history-tabs" id="pattern-history-tabs" style="display: none;">
+        <button class="pattern-history-tab active" data-tab="local">Local</button>
+        <button class="pattern-history-tab" data-tab="my-patterns">My Patterns</button>
+        <button class="pattern-history-tab" data-tab="public">Public</button>
+        <button class="pattern-history-tab" data-tab="shared">Shared</button>
       </div>
       <div id="pattern-history-list" class="pattern-history-list">
         <p class="pattern-history-empty">No saved versions yet.</p>
