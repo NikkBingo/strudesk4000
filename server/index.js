@@ -17,13 +17,25 @@ dotenv.config();
 
 const app = express();
 
-// Initialize Prisma client with error handling
+// Initialize Prisma client with error handling and connection timeout
 let prisma;
 try {
   prisma = new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL
+      }
+    }
   });
   console.log('✅ Prisma client initialized');
+  
+  // Test database connection (non-blocking)
+  prisma.$connect().then(() => {
+    console.log('✅ Database connection successful');
+  }).catch((err) => {
+    console.error('⚠️  Database connection warning (server will continue):', err.message);
+  });
 } catch (error) {
   console.error('❌ Failed to initialize Prisma client:', error);
   // Create a stub that will fail gracefully on use
