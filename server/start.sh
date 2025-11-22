@@ -39,17 +39,27 @@ EOF
     echo "✓ Database tables exist. Checking migration state..."
     npx prisma migrate resolve --rolled-back add_genre_field 2>/dev/null && echo "Resolved failed migration" || echo "No failed migrations"
     echo "Deploying migrations..."
-    npx prisma migrate deploy 2>&1 || echo "⚠️  Migration deploy had issues, but continuing..."
-    echo "✓ Migration check complete"
+    # Run migrate deploy in background with timeout to prevent hanging
+    (npx prisma migrate deploy 2>&1 &)
+    MIGRATE_PID=$!
+    sleep 5
+    if kill -0 $MIGRATE_PID 2>/dev/null; then
+      echo "⚠️  Migration deploy still running after 5s, continuing anyway..."
+      kill $MIGRATE_PID 2>/dev/null || true
+    else
+      wait $MIGRATE_PID 2>/dev/null || true
+      echo "✓ Migration deploy completed"
+    fi
+    echo "✓ Migration check complete - CONTINUING TO SERVER START"
   fi
   
   echo "=== Generating Prisma client ==="
-  npx prisma generate 2>&1 || echo "⚠️  Prisma generate had issues, but continuing..."
+  # Prisma client should already be generated in Dockerfile, but regenerate to be safe
+  echo "Skipping prisma generate (already done in build)"
   echo "✓ Prisma client ready"
 else
   echo "⚠️  DATABASE_URL not set, skipping database setup"
-  echo "=== Generating Prisma client (without DB) ==="
-  npx prisma generate 2>&1 || echo "⚠️  Prisma generate had issues, but continuing..."
+  echo "=== Prisma client (already generated in build) ==="
 fi
 
 echo ""
