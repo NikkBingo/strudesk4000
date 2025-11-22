@@ -10,6 +10,10 @@ import { getDrawContext } from '@strudel/draw';
 import { transpiler as strudelTranspiler } from '@strudel/transpiler';
 import { evaluate as strudelCoreEvaluate } from '@strudel/core';
 import { Scale, Note, Progression } from '@tonaljs/tonal';
+import { LoginModal } from './components/LoginModal.js';
+import { UserProfile } from './components/UserProfile.js';
+import { SavePatternDialog } from './components/SavePatternDialog.js';
+import { getCurrentUser, authAPI } from './api.js';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -860,9 +864,11 @@ const createPatternHistoryModal = () => {
 
   const titleEl = document.getElementById('pattern-history-title');
   const listEl = document.getElementById('pattern-history-list');
+  const tabsEl = document.getElementById('pattern-history-tabs');
   const closeBtn = document.getElementById('pattern-history-close');
   let context = null;
   let currentEntries = [];
+  let currentTab = 'local';
 
   const escapeHtml = (value) => {
     return value.replace(/[&<>"']/g, (char) => {
@@ -898,29 +904,40 @@ const createPatternHistoryModal = () => {
   };
 
   const renderEntries = (entries, options = {}) => {
-    const { includeMasterSongs = false } = options;
+    const { includeMasterSongs = false, isCloudPatterns = false } = options;
     const fragment = document.createDocumentFragment();
     const hasEntries = Array.isArray(entries) && entries.length > 0;
 
     if (hasEntries) {
-      const historyHeader = document.createElement('h4');
-      historyHeader.className = 'pattern-history-section-title';
-      historyHeader.textContent = 'Saved Versions';
-      fragment.appendChild(historyHeader);
-
       entries.forEach((entry, index) => {
         const row = document.createElement('div');
         row.className = 'pattern-history-entry';
-        const snippet = entry.pattern.length > 240 ? `${entry.pattern.slice(0, 240)}…` : entry.pattern;
+        
+        let patternCode = entry.patternCode || entry.pattern || '';
+        const snippet = patternCode.length > 240 ? `${patternCode.slice(0, 240)}…` : patternCode;
         const displayIndex = (index + 1).toString().padStart(2, '0');
+        
+        // For cloud patterns, show metadata
+        let metaInfo = formatTimestamp(entry.createdAt);
+        if (isCloudPatterns) {
+          const metaParts = [];
+          if (entry.title) metaParts.push(`"${entry.title}"`);
+          if (entry.artistName) metaParts.push(`by ${entry.artistName}`);
+          if (entry.version) metaParts.push(`v${entry.version}${entry.versionName ? ` (${entry.versionName})` : ''}`);
+          if (entry.userCount > 0) metaParts.push(`${entry.userCount} user${entry.userCount > 1 ? 's' : ''}`);
+          if (metaParts.length > 0) {
+            metaInfo = metaParts.join(' • ');
+          }
+        }
+        
         row.innerHTML = `
           <div class="pattern-history-meta">
             <span class="pattern-history-index">#${displayIndex}</span>
-            <p class="pattern-history-date">${formatTimestamp(entry.createdAt)}</p>
+            <p class="pattern-history-date">${escapeHtml(metaInfo)}</p>
           </div>
           <pre class="pattern-history-snippet">${escapeHtml(snippet)}</pre>
           <div class="pattern-history-actions">
-            <button type="button" class="pattern-history-load" data-version-id="${entry.id}">Load</button>
+            <button type="button" class="pattern-history-load" data-version-id="${entry.id}" data-is-cloud="${isCloudPatterns}">Load</button>
           </div>
         `;
         fragment.appendChild(row);
@@ -932,7 +949,7 @@ const createPatternHistoryModal = () => {
       fragment.appendChild(emptyMsg);
     }
 
-    if (includeMasterSongs && MASTER_SONG_PRESETS.length) {
+    if (includeMasterSongs && MASTER_SONG_PRESETS.length && currentTab === 'local') {
       const songsHeader = document.createElement('h4');
       songsHeader.className = 'pattern-history-section-title';
       songsHeader.textContent = 'Songs';
@@ -961,11 +978,12 @@ const createPatternHistoryModal = () => {
     listEl.appendChild(fragment);
   };
 
-  listEl.addEventListener('click', (event) => {
+  listEl.addEventListener('click', async (event) => {
     const loadButton = event.target.closest('.pattern-history-load');
     if (!loadButton || !interactiveSoundAppInstance) return;
     const entryId = loadButton.dataset.versionId;
     const songId = loadButton.dataset.songId;
+    const isCloud = loadButton.dataset.isCloud === 'true';
 
     if (songId && context?.type === 'master') {
       const song = MASTER_SONG_PRESETS.find((item) => item.id === songId);
@@ -975,13 +993,30 @@ const createPatternHistoryModal = () => {
       return;
     }
 
-    const entry = currentEntries.find((item) => item.id === entryId);
+    let entry = currentEntries.find((item) => item.id === entryId);
+    
+    // If cloud pattern, fetch full pattern
+    if (isCloud && entry) {
+      try {
+        const { patternsAPI } = await import('./api.js');
+        const fullPattern = await patternsAPI.getPattern(entryId);
+        entry = fullPattern;
+      } catch (error) {
+        console.error('Error loading cloud pattern:', error);
+        alert('Failed to load pattern');
+        return;
+      }
+    }
+    
     if (!entry) return;
 
+    const patternCode = entry.patternCode || entry.pattern;
+    if (!patternCode) return;
+
     if (context?.type === 'channel') {
-      interactiveSoundAppInstance.applyChannelHistoryEntry(context.elementId, entry.pattern);
+      interactiveSoundAppInstance.applyChannelHistoryEntry(context.elementId, patternCode);
     } else if (context?.type === 'master') {
-      interactiveSoundAppInstance.applyMasterHistoryEntry(entry.pattern);
+      interactiveSoundAppInstance.applyMasterHistoryEntry(patternCode);
     }
     closeModal();
   });
@@ -993,24 +1028,113 @@ const createPatternHistoryModal = () => {
     }
   });
 
-  const openChannelHistory = (elementId) => {
+  const loadCloudPatterns = async (type, elementId = null) => {
+    try {
+      const { patternsAPI, getCurrentUser } = await import('./api.js');
+      const user = await getCurrentUser();
+      
+      if (!user) {
+        return [];
+      }
+
+      const filters = { type };
+      if (elementId) {
+        // For channel patterns, we'd need to filter by elementId in the API
+        // For now, just get all channel patterns
+      }
+
+      let patterns = [];
+      if (currentTab === 'my-patterns') {
+        patterns = await patternsAPI.getPatterns({ type, isPublic: false });
+        // Filter to current user's patterns
+        patterns = patterns.filter(p => p.userId === user.id);
+      } else if (currentTab === 'public') {
+        patterns = await patternsAPI.getPatterns({ type, isPublic: true });
+      } else if (currentTab === 'shared') {
+        patterns = await patternsAPI.getPatterns({ type, shared: true });
+      }
+
+      return patterns;
+    } catch (error) {
+      console.error('Error loading cloud patterns:', error);
+      return [];
+    }
+  };
+
+  const switchTab = async (tabName) => {
+    currentTab = tabName;
+    
+    // Update tab UI
+    if (tabsEl) {
+      tabsEl.querySelectorAll('.pattern-history-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.tab === tabName);
+      });
+    }
+
+    // Load appropriate patterns
+    listEl.innerHTML = '<p class="pattern-history-empty">Loading…</p>';
+    
+    if (tabName === 'local') {
+      if (context?.type === 'channel') {
+        currentEntries = patternHistoryStore.getChannelVersions(context.elementId);
+        renderEntries(currentEntries);
+      } else if (context?.type === 'master') {
+        currentEntries = patternHistoryStore.getMasterVersions();
+        renderEntries(currentEntries, { includeMasterSongs: true });
+      }
+    } else {
+      const cloudPatterns = await loadCloudPatterns(context?.type || 'master', context?.elementId);
+      currentEntries = cloudPatterns;
+      renderEntries(cloudPatterns, { isCloudPatterns: true });
+    }
+  };
+
+  const openChannelHistory = async (elementId) => {
     if (!elementId) return;
     context = { type: 'channel', elementId };
     titleEl.textContent = `${getChannelDisplayLabel(elementId)} history`;
     openModal();
+    
+    // Show tabs if user is logged in
+    const { getCurrentUser } = await import('./api.js');
+    const user = await getCurrentUser();
+    if (tabsEl) {
+      tabsEl.style.display = user ? 'flex' : 'none';
+    }
+    
     listEl.innerHTML = '<p class="pattern-history-empty">Loading…</p>';
+    currentTab = 'local';
     currentEntries = patternHistoryStore.getChannelVersions(elementId);
     renderEntries(currentEntries);
   };
 
-  const openMasterHistory = () => {
+  const openMasterHistory = async () => {
     context = { type: 'master' };
     titleEl.textContent = 'Master history';
     openModal();
+    
+    // Show tabs if user is logged in
+    const { getCurrentUser } = await import('./api.js');
+    const user = await getCurrentUser();
+    if (tabsEl) {
+      tabsEl.style.display = user ? 'flex' : 'none';
+    }
+    
     listEl.innerHTML = '<p class="pattern-history-empty">Loading…</p>';
+    currentTab = 'local';
     currentEntries = patternHistoryStore.getMasterVersions();
     renderEntries(currentEntries, { includeMasterSongs: true });
   };
+
+  // Setup tab switching
+  if (tabsEl) {
+    tabsEl.addEventListener('click', (e) => {
+      const tab = e.target.closest('.pattern-history-tab');
+      if (tab) {
+        switchTab(tab.dataset.tab);
+      }
+    });
+  }
 
   return {
     openChannelHistory,
@@ -6150,20 +6274,38 @@ class InteractiveSoundApp {
     this.uiController?.updateStatus?.('Loaded master pattern history entry.');
   }
 
-  saveChannelWithEffects(elementId) {
+  async saveChannelWithEffects(elementId) {
     const savedConfig = this.loadElementConfig(elementId);
     if (!savedConfig || !savedConfig.pattern) {
       this.uiController?.updateStatus?.('Nothing to save for this channel.');
       return;
     }
     const finalPattern = this.getPatternWithEffects(elementId, savedConfig.pattern);
-    const updatedConfig = { ...savedConfig, pattern: finalPattern };
-    this.saveElementConfig(elementId, updatedConfig, false);
-    patternHistoryStore.markChannelSnapshot(elementId, finalPattern);
-    this.uiController?.updateStatus?.(`Saved channel ${elementId} with effects.`);
+    
+    // Check if user is logged in
+    const { getCurrentUser } = await import('./api.js');
+    const user = await getCurrentUser();
+    
+    if (user && window.savePatternDialog) {
+      // Show save dialog for cloud save
+      await window.savePatternDialog.show(finalPattern, 'channel', elementId);
+      window.savePatternDialog.setOnSave(async (savedPattern) => {
+        // Also save locally
+        const updatedConfig = { ...savedConfig, pattern: finalPattern };
+        this.saveElementConfig(elementId, updatedConfig, false);
+        patternHistoryStore.markChannelSnapshot(elementId, finalPattern);
+        this.uiController?.updateStatus?.(`Saved channel ${elementId} to cloud.`);
+      });
+    } else {
+      // Fallback to local save
+      const updatedConfig = { ...savedConfig, pattern: finalPattern };
+      this.saveElementConfig(elementId, updatedConfig, false);
+      patternHistoryStore.markChannelSnapshot(elementId, finalPattern);
+      this.uiController?.updateStatus?.(`Saved channel ${elementId} locally.`);
+    }
   }
 
-  saveMasterHistoryEntry() {
+  async saveMasterHistoryEntry() {
     const masterTextarea = document.getElementById('master-pattern');
     const pattern = masterTextarea ? masterTextarea.value : '';
     const trimmed = (pattern || '').trim();
@@ -6171,11 +6313,30 @@ class InteractiveSoundApp {
       this.uiController?.updateStatus?.('Master pattern is empty.');
       return;
     }
-    patternHistoryStore.saveMasterVersion(trimmed);
-    patternHistoryStore.markMasterSnapshot(trimmed);
-    soundManager.masterPattern = trimmed;
-    this.updateMasterPatternDisplay();
-    this.uiController?.updateStatus?.('Saved master pattern version.');
+    
+    // Check if user is logged in
+    const { getCurrentUser } = await import('./api.js');
+    const user = await getCurrentUser();
+    
+    if (user && window.savePatternDialog) {
+      // Show save dialog for cloud save
+      await window.savePatternDialog.show(trimmed, 'master', null);
+      window.savePatternDialog.setOnSave(async (savedPattern) => {
+        // Also save locally
+        patternHistoryStore.saveMasterVersion(trimmed);
+        patternHistoryStore.markMasterSnapshot(trimmed);
+        soundManager.masterPattern = trimmed;
+        this.updateMasterPatternDisplay();
+        this.uiController?.updateStatus?.(`Saved master pattern to cloud.`);
+      });
+    } else {
+      // Fallback to local save
+      patternHistoryStore.saveMasterVersion(trimmed);
+      patternHistoryStore.markMasterSnapshot(trimmed);
+      soundManager.masterPattern = trimmed;
+      this.updateMasterPatternDisplay();
+      this.uiController?.updateStatus?.('Saved master pattern locally.');
+    }
   }
   
   /**
@@ -12069,16 +12230,135 @@ class InteractiveSoundApp {
   }
 }
 
+// User authentication and menu management
+let currentUser = null;
+let loginModal = null;
+let userProfile = null;
+let savePatternDialog = null;
+
+async function initUserAuth() {
+  loginModal = new LoginModal();
+  loginModal.init();
+  loginModal.setOnLoginSuccess((user) => {
+    currentUser = user;
+    updateUserUI(user);
+  });
+
+  // Check if user is already logged in
+  try {
+    const user = await getCurrentUser();
+    if (user) {
+      currentUser = user;
+      updateUserUI(user);
+    } else {
+      showLoginButton();
+    }
+  } catch (error) {
+    showLoginButton();
+  }
+
+  // Setup login button
+  const loginBtn = document.getElementById('header-login-btn');
+  if (loginBtn) {
+    loginBtn.addEventListener('click', () => {
+      if (loginModal) {
+        loginModal.show();
+      }
+    });
+  }
+
+  // Setup user menu
+  const userMenuButton = document.getElementById('user-menu-button');
+  const userMenuDropdown = document.getElementById('user-menu-dropdown');
+  if (userMenuButton && userMenuDropdown) {
+    userMenuButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      userMenuDropdown.classList.toggle('active');
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!userMenuButton.contains(e.target) && !userMenuDropdown.contains(e.target)) {
+        userMenuDropdown.classList.remove('active');
+      }
+    });
+  }
+
+  // Setup logout
+  const logoutBtn = document.getElementById('user-logout-btn');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      try {
+        await authAPI.logout();
+        currentUser = null;
+        showLoginButton();
+        userMenuDropdown.classList.remove('active');
+      } catch (error) {
+        console.error('Logout error:', error);
+      }
+    });
+  }
+
+  // Setup profile link
+  const profileLink = document.getElementById('user-profile-link');
+  if (profileLink) {
+    profileLink.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (userProfile) {
+        await userProfile.show();
+      }
+      userMenuDropdown.classList.remove('active');
+    });
+  }
+
+  // Initialize user profile
+  userProfile = new UserProfile();
+  userProfile.init();
+  userProfile.setOnUpdate((updatedUser) => {
+    currentUser = updatedUser;
+    updateUserUI(updatedUser);
+  });
+
+  // Initialize save pattern dialog
+  savePatternDialog = new SavePatternDialog();
+  savePatternDialog.init();
+  window.savePatternDialog = savePatternDialog; // Make globally accessible
+}
+
+function updateUserUI(user) {
+  const loginBtn = document.getElementById('header-login-btn');
+  const userMenu = document.getElementById('user-menu');
+  const userName = document.getElementById('user-name');
+  const userAvatar = document.getElementById('user-avatar');
+
+  if (loginBtn) loginBtn.style.display = 'none';
+  if (userMenu) userMenu.style.display = 'block';
+  if (userName) userName.textContent = user.name || user.email;
+  if (userAvatar && user.avatarUrl) {
+    userAvatar.src = user.avatarUrl;
+    userAvatar.style.display = 'block';
+  }
+}
+
+function showLoginButton() {
+  const loginBtn = document.getElementById('header-login-btn');
+  const userMenu = document.getElementById('user-menu');
+  if (loginBtn) loginBtn.style.display = 'block';
+  if (userMenu) userMenu.style.display = 'none';
+}
+
 // Initialize app when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     const app = new InteractiveSoundApp();
     app.init();
     initializePatternHistoryUI();
+    initUserAuth();
   });
 } else {
   const app = new InteractiveSoundApp();
   app.init();
   initializePatternHistoryUI();
+  initUserAuth();
 }
 
