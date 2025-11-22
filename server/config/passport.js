@@ -5,12 +5,13 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// Configure Google OAuth Strategy
-passport.use('google', new GoogleStrategy({
-  clientID: process.env.OAUTH_GOOGLE_CLIENT_ID,
-  clientSecret: process.env.OAUTH_GOOGLE_CLIENT_SECRET,
-  callbackURL: process.env.OAUTH_GOOGLE_CALLBACK_URL || '/api/auth/google/callback'
-}, async (accessToken, refreshToken, profile, done) => {
+// Configure Google OAuth Strategy (only if credentials are provided)
+if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET) {
+  passport.use('google', new GoogleStrategy({
+    clientID: process.env.OAUTH_GOOGLE_CLIENT_ID,
+    clientSecret: process.env.OAUTH_GOOGLE_CLIENT_SECRET,
+    callbackURL: process.env.OAUTH_GOOGLE_CALLBACK_URL || '/api/auth/google/callback'
+  }, async (accessToken, refreshToken, profile, done) => {
   try {
     // Find or create user
     let user = await prisma.user.findUnique({
@@ -48,15 +49,19 @@ passport.use('google', new GoogleStrategy({
   } catch (error) {
     return done(error, null);
   }
-}));
+  }));
+} else {
+  console.warn('Google OAuth not configured: OAUTH_GOOGLE_CLIENT_ID and OAUTH_GOOGLE_CLIENT_SECRET are required');
+}
 
-// Configure GitHub OAuth Strategy
-passport.use('github', new GitHubStrategy({
-  clientID: process.env.OAUTH_GITHUB_CLIENT_ID,
-  clientSecret: process.env.OAUTH_GITHUB_CLIENT_SECRET,
-  callbackURL: process.env.OAUTH_GITHUB_CALLBACK_URL || '/api/auth/github/callback',
-  scope: ['user:email']
-}, async (accessToken, refreshToken, profile, done) => {
+// Configure GitHub OAuth Strategy (only if credentials are provided)
+if (process.env.OAUTH_GITHUB_CLIENT_ID && process.env.OAUTH_GITHUB_CLIENT_SECRET) {
+  passport.use('github', new GitHubStrategy({
+    clientID: process.env.OAUTH_GITHUB_CLIENT_ID,
+    clientSecret: process.env.OAUTH_GITHUB_CLIENT_SECRET,
+    callbackURL: process.env.OAUTH_GITHUB_CALLBACK_URL || '/api/auth/github/callback',
+    scope: ['user:email']
+  }, async (accessToken, refreshToken, profile, done) => {
   try {
     // Get email from GitHub profile
     const email = profile.emails?.[0]?.value || `${profile.username}@users.noreply.github.com`;
@@ -97,7 +102,10 @@ passport.use('github', new GitHubStrategy({
   } catch (error) {
     return done(error, null);
   }
-}));
+  }));
+} else {
+  console.warn('GitHub OAuth not configured: OAUTH_GITHUB_CLIENT_ID and OAUTH_GITHUB_CLIENT_SECRET are required');
+}
 
 // Serialize user for session
 passport.serializeUser((user, done) => {
