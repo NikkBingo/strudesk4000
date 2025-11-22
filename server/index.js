@@ -5,6 +5,7 @@ import passport from 'passport';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 import { PrismaClient } from '@prisma/client';
 
 import './config/passport.js'; // Initialize passport strategies
@@ -67,7 +68,6 @@ const publicPath = path.join(__dirname, 'public');
 console.log('Serving static files from:', publicPath);
 
 // Check if public directory exists
-import { existsSync } from 'fs';
 if (!existsSync(publicPath)) {
   console.warn(`⚠️  Public directory not found at ${publicPath}. Frontend may not be built.`);
 } else {
