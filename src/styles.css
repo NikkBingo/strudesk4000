@@ -2076,44 +2076,63 @@ header h1 {
 }
 
 .modal-presets {
-  margin-top: 16px;
-  border: 1px solid rgba(102, 126, 234, 0.25);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.6);
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(102, 126, 234, 0.12);
+  padding: 4px 6px;
 }
 
 .modal-presets-toggle {
   width: 100%;
-  padding: 10px 14px;
+  padding: 6px;
   border: none;
   background: transparent;
   color: #4c51bf;
   font-weight: 600;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   display: flex;
   align-items: center;
   justify-content: space-between;
   cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
-.modal-presets-toggle-icon {
-  transition: transform 0.2s ease;
+.modal-presets-toggle:hover,
+.modal-presets-toggle:focus-visible {
+  background: rgba(102, 126, 234, 0.12);
+  color: #2a3180;
+}
+
+.modal-presets-toggle:focus-visible {
+  outline: 2px solid rgba(102, 126, 234, 0.45);
+  outline-offset: 2px;
+}
+
+.modal-presets.collapsed .modal-presets-toggle::after {
+  transform: rotate(-90deg);
 }
 
 .modal-presets-content {
-  border-top: 1px solid rgba(102, 126, 234, 0.15);
-  padding: 0 14px;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
+  margin-top: 6px;
   max-height: 0;
   opacity: 0;
   overflow: hidden;
-  transition: max-height 0.28s ease, opacity 0.24s ease, padding 0.28s ease;
+  transition: max-height 0.28s ease, opacity 0.24s ease, margin 0.28s ease;
 }
 
 .modal-presets-content.is-open {
-  padding: 12px 14px 16px;
+  padding: 0;
+  margin-top: 6px;
   max-height: 900px; /* plenty for both groups */
   opacity: 1;
 }
@@ -2133,25 +2152,34 @@ header h1 {
 .modal-presets-subtoggle {
   width: 100%;
   border: none;
-  background: rgba(255, 255, 255, 0.85);
-  border-radius: 8px;
-  padding: 8px 10px;
+  background: transparent;
+  padding: 6px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   color: #4c51bf;
   font-weight: 600;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   cursor: pointer;
+  border-radius: 4px;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-.modal-presets-subtoggle:hover {
+.modal-presets-subtoggle:hover,
+.modal-presets-subtoggle:focus-visible {
   background: rgba(102, 126, 234, 0.12);
-  color: #3b3694;
+  color: #2a3180;
 }
 
-.modal-presets-subtoggle-icon {
-  transition: transform 0.2s ease;
+.modal-presets-subtoggle:focus-visible {
+  outline: 2px solid rgba(102, 126, 234, 0.45);
+  outline-offset: 2px;
+}
+
+.modal-presets-group.collapsed .modal-presets-subtoggle::after {
+  transform: rotate(-90deg);
 }
 
 .modal-presets-subcontent {
