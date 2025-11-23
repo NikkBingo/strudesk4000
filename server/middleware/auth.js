@@ -43,8 +43,22 @@ export const requireAuth = async (req, res, next) => {
       req.user = testUser;
       return next();
     } catch (error) {
-      console.error('Error creating test user in requireAuth:', error);
-      return res.status(500).json({ error: 'Failed to create test user' });
+      // If database is unavailable in test mode, use a mock test user
+      if (error.name === 'PrismaClientInitializationError' || 
+          error.message?.includes("Can't reach database")) {
+        console.warn('⚠️  Database unavailable in test mode, using mock test user for requireAuth');
+        req.user = {
+          id: 'test-user-mock-1',
+          email: 'test@strudel.test',
+          name: 'Test User',
+          artistName: 'Test Artist',
+          avatarUrl: null
+        };
+        return next();
+      } else {
+        console.error('Error creating test user in requireAuth:', error);
+        return res.status(500).json({ error: 'Failed to create test user' });
+      }
     }
   }
   
