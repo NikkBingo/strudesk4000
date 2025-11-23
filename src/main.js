@@ -4413,7 +4413,11 @@ class InteractiveSoundApp {
     // Update the master pattern and restart playback
     await soundManager.setMasterPatternCode(patternWithVisualizer);
     
-    if (this.selectedVisualizer === 'scope') {
+    // Don't start visualizer loops if visualizer is "off"
+    if (this.selectedVisualizer === 'off') {
+      this.stopVisualizerAnimation();
+      this.showMasterPunchcardPlaceholder();
+    } else if (this.selectedVisualizer === 'scope') {
       this.startScopeVisualizerLoop();
     } else if (this.selectedVisualizer === 'barchart') {
       this.startBarchartVisualizerLoop();
@@ -4446,6 +4450,18 @@ class InteractiveSoundApp {
 
   async refreshMasterPunchcard(reason = 'auto') {
     if (!this.masterPunchcardContainer) return;
+    
+    // If visualizer is "off", just show placeholder and stop any visualizer animations
+    if (this.selectedVisualizer === 'off') {
+      this.stopVisualizerAnimation();
+      this.showMasterPunchcardPlaceholder();
+      // Clear canvas
+      if (this.masterPunchcardCanvas && this.masterPunchcardCtx) {
+        this.masterPunchcardCtx.setTransform(1, 0, 0, 1, 0, 0);
+        this.masterPunchcardCtx.clearRect(0, 0, this.masterPunchcardCanvas.width, this.masterPunchcardCanvas.height);
+      }
+      return;
+    }
     
     const patternCode = soundManager.getMasterPatternCode();
     if (!patternCode || patternCode.trim() === '') {
@@ -4509,6 +4525,13 @@ class InteractiveSoundApp {
     }
     if (activeVisualizer !== 'scope' && activeVisualizer !== 'barchart') {
       this.stopVisualizerAnimation();
+    }
+    
+    // Don't start any visualizers if "off" is selected
+    if (this.selectedVisualizer === 'off') {
+      this.stopVisualizerAnimation();
+      this.showMasterPunchcardPlaceholder();
+      return;
     }
     
     if (useScope || useSpectrum || useSpiral || usePitchwheel || usePianoroll || useBarchart) {
