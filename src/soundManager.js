@@ -6855,22 +6855,87 @@ class SoundManager {
     }
     
     try {
-      // Override or extend Strudel's MIDI output to use WebMidi
-      // Strudel patterns with .midi() will send MIDI messages
-      const originalMidiOutput = window.strudel.midiOutput;
+      // Try to find and connect to Strudel's webaudio MIDI output
+      const scheduler = window.strudel?.scheduler;
+      const webaudio = scheduler?.webaudio || window.strudel?.webaudio;
       
-      // Create a MIDI output handler
-      window.strudel.midiOutput = (message) => {
-        this.sendMIDIMessage(message);
-        // Call original if it exists
-        if (originalMidiOutput && typeof originalMidiOutput === 'function') {
-          originalMidiOutput(message);
+      if (webaudio) {
+        // Strudel's webaudio module has a midiOutput property
+        // We need to connect it to our WebMidi handler
+        if (webaudio.midiOutput) {
+          // Store original if it exists
+          const originalMidiOutput = webaudio.midiOutput;
+          
+          // Create a wrapper that sends to both original and WebMidi
+          webaudio.midiOutput = (message) => {
+            // Send to WebMidi
+            this.sendMIDIMessage(message);
+            // Call original if it exists
+            if (originalMidiOutput && typeof originalMidiOutput === 'function') {
+              originalMidiOutput(message);
+            }
+          };
+          
+          console.log('✅ Connected Strudel webaudio.midiOutput to WebMidi');
+        } else {
+          // If midiOutput doesn't exist, create it
+          webaudio.midiOutput = (message) => {
+            this.sendMIDIMessage(message);
+          };
+          console.log('✅ Created Strudel webaudio.midiOutput handler');
         }
-      };
+      }
+      
+      // Also set up global MIDI output handler as fallback
+      if (window.strudel.midiOutput) {
+        const originalMidiOutput = window.strudel.midiOutput;
+        window.strudel.midiOutput = (message) => {
+          this.sendMIDIMessage(message);
+          if (originalMidiOutput && typeof originalMidiOutput === 'function') {
+            originalMidiOutput(message);
+          }
+        };
+      } else {
+        window.strudel.midiOutput = (message) => {
+          this.sendMIDIMessage(message);
+        };
+      }
+      
+      // Auto-select IAC Driver if available (try again after a short delay to catch late connections)
+      setTimeout(() => {
+        this.selectIACDriver();
+      }, 500);
       
       console.log('✅ Strudel MIDI output handler set up');
     } catch (error) {
       console.warn('⚠️ Failed to set up Strudel MIDI output:', error);
+    }
+  }
+  
+  /**
+   * Auto-select IAC Driver if available
+   */
+  selectIACDriver() {
+    // Look for IAC Driver (macOS) or similar virtual MIDI ports
+    const iacNames = ['IAC Driver', 'IAC Bus 1', 'IAC Bus 2', 'loopMIDI', 'Virtual MIDI'];
+    
+    for (const name of iacNames) {
+      // Check both exact name and case-insensitive match
+      for (const [outputName, output] of this.midiOutputs.entries()) {
+        if (outputName === name || outputName.toLowerCase().includes('iac')) {
+          this.selectMIDIOutput(outputName);
+          console.log(`✅ Auto-selected IAC Driver: ${outputName}`);
+          return;
+        }
+      }
+    }
+    
+    // If IAC Driver not found, log available outputs
+    if (this.midiOutputs.size > 0) {
+      console.log('ℹ️ IAC Driver not found. Available MIDI outputs:', Array.from(this.midiOutputs.keys()).join(', '));
+      console.log('ℹ️ You can manually select a MIDI output using: soundManager.selectMIDIOutput("port name")');
+    } else {
+      console.log('ℹ️ No MIDI outputs available. Make sure IAC Driver is enabled in Audio MIDI Setup on macOS.');
     }
   }
   
@@ -6880,55 +6945,114 @@ class SoundManager {
    */
   sendMIDIMessage(message) {
     if (!this.midiEnabled || !this.selectedMidiOutput) {
+      // Log if MIDI is not ready (helpful for debugging)
+      if (!this.midiEnabled) {
+        console.warn('⚠️ MIDI not enabled');
+      } else if (!this.selectedMidiOutput) {
+        console.warn('⚠️ No MIDI output selected. Available:', Array.from(this.midiOutputs.keys()).join(', '));
+      }
       return;
     }
     
     try {
-      const channel = message.channel !== undefined ? message.channel : this.midiChannel;
+      // Handle different message formats from Strudel
+      let channel = this.midiChannel;
+      let note = null;
+      let velocity = 127;
+      let type = null;
       
-      switch (message.type) {
+      // Extract channel from message if present
+      if (message.channel !== undefined) {
+        channel = message.channel;
+      } else if (message.port !== undefined) {
+        // midiport() might set port instead of channel
+        channel = message.port;
+      }
+      
+      // Extract note
+      if (message.note !== undefined) {
+        note = message.note;
+      } else if (message.number !== undefined) {
+        note = message.number;
+      }
+      
+      // Extract velocity
+      if (message.velocity !== undefined) {
+        velocity = message.velocity;
+      } else if (message.value !== undefined && message.type === 'noteon') {
+        velocity = message.value;
+      }
+      
+      // Determine message type
+      if (message.type) {
+        type = message.type.toLowerCase();
+      } else if (note !== null) {
+        // Default to note on if we have a note
+        type = 'noteon';
+      }
+      
+      // Clamp channel to valid range (0-15)
+      channel = Math.max(0, Math.min(15, channel));
+      
+      switch (type) {
         case 'noteon':
-        case 'noteOn':
-          this.selectedMidiOutput.playNote(message.note, {
-            channel: channel + 1, // WebMidi uses 1-16, we use 0-15
-            velocity: message.velocity || 127
-          });
+        case 'noteon':
+          if (note !== null) {
+            this.selectedMidiOutput.playNote(note, {
+              channel: channel + 1, // WebMidi uses 1-16, we use 0-15
+              velocity: Math.max(1, Math.min(127, velocity))
+            });
+          }
           break;
           
         case 'noteoff':
-        case 'noteOff':
-          this.selectedMidiOutput.stopNote(message.note, {
-            channel: channel + 1
-          });
+        case 'noteoff':
+          if (note !== null) {
+            this.selectedMidiOutput.stopNote(note, {
+              channel: channel + 1
+            });
+          }
           break;
           
         case 'cc':
         case 'controlchange':
-          this.selectedMidiOutput.sendControlChange(message.controller, message.value, {
-            channel: channel + 1
-          });
+          if (message.controller !== undefined && message.value !== undefined) {
+            this.selectedMidiOutput.sendControlChange(message.controller, message.value, {
+              channel: channel + 1
+            });
+          }
           break;
           
         case 'programchange':
-          this.selectedMidiOutput.sendProgramChange(message.program, {
-            channel: channel + 1
-          });
+          if (message.program !== undefined) {
+            this.selectedMidiOutput.sendProgramChange(message.program, {
+              channel: channel + 1
+            });
+          }
           break;
           
         case 'pitchbend':
-          this.selectedMidiOutput.sendPitchBend(message.value, {
-            channel: channel + 1
-          });
+          if (message.value !== undefined) {
+            this.selectedMidiOutput.sendPitchBend(message.value, {
+              channel: channel + 1
+            });
+          }
           break;
           
         default:
           // Try to send raw MIDI message
           if (message.data && Array.isArray(message.data)) {
             this.selectedMidiOutput.send(message.data);
+          } else if (note !== null) {
+            // Fallback: if we have a note but no type, send note on
+            this.selectedMidiOutput.playNote(note, {
+              channel: channel + 1,
+              velocity: Math.max(1, Math.min(127, velocity))
+            });
           }
       }
     } catch (error) {
-      console.warn('⚠️ Failed to send MIDI message:', error);
+      console.warn('⚠️ Failed to send MIDI message:', error, message);
     }
   }
   
