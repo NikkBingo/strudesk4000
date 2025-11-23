@@ -3892,16 +3892,26 @@ class InteractiveSoundApp {
         
         if (!this.chaospadEnabled) {
           // Remove cutoff when disabled
+          console.log('🎛️ Chaospad: Disabled - removing cutoff');
           await this.removeCutoffFromMaster();
         } else {
-          // Apply initial cutoff when enabled (use middle section = 2000 Hz)
+          // Apply initial cutoff when enabled (use center = 4250 Hz)
+          console.log('🎛️ Chaospad: Enabled - applying initial cutoff');
           if (this.masterPunchcardCanvas) {
             const rect = this.masterPunchcardCanvas.getBoundingClientRect();
             if (rect.width > 0) {
-              // Simulate mouse at center to apply initial cutoff
+              // Simulate mouse at center to apply initial cutoff (50% = 4250 Hz)
               const fakeEvent = { clientX: rect.left + rect.width / 2 };
               this.handleChaospadMouseMove(fakeEvent);
+            } else {
+              // Canvas not ready yet, apply default center cutoff directly
+              console.log('🎛️ Chaospad: Canvas not ready, applying default cutoff 4250 Hz');
+              await this.applyCutoffToMaster(4250);
             }
+          } else {
+            // No canvas, apply default center cutoff directly
+            console.log('🎛️ Chaospad: No canvas, applying default cutoff 4250 Hz');
+            await this.applyCutoffToMaster(4250);
           }
         }
       });
@@ -5077,6 +5087,10 @@ class InteractiveSoundApp {
    */
   handleChaospadMouseMove(e) {
     if (!this.masterPunchcardCanvas || !this.chaospadEnabled) {
+      console.log('🎛️ Chaospad: Skipping - canvas or enabled check failed', {
+        hasCanvas: !!this.masterPunchcardCanvas,
+        enabled: this.chaospadEnabled
+      });
       return;
     }
 
@@ -5092,11 +5106,10 @@ class InteractiveSoundApp {
     const percentage = Math.max(0, Math.min(1, mouseX / canvasWidth));
 
     // Smoothly interpolate cutoff frequency from 500 Hz (left) to 8000 Hz (right)
-    // Using logarithmic scale for more natural audio frequency response
     const minFreq = 500;
     const maxFreq = 8000;
     
-    // Linear interpolation for now (can be changed to logarithmic if needed)
+    // Linear interpolation
     const cutoffValue = Math.round(minFreq + (maxFreq - minFreq) * percentage);
 
     // Throttle updates: only update if value changed significantly (more than 50 Hz)
@@ -5108,6 +5121,7 @@ class InteractiveSoundApp {
       (this.lastCutoffUpdate && (now - this.lastCutoffUpdate) > 100);
 
     if (shouldUpdate) {
+      console.log(`🎛️ Chaospad: Mouse at ${(percentage * 100).toFixed(1)}% - updating cutoff to ${cutoffValue} Hz`);
       this.currentCutoffValue = cutoffValue;
       this.lastCutoffUpdate = now;
       this.applyCutoffToMaster(cutoffValue);
@@ -5124,9 +5138,14 @@ class InteractiveSoundApp {
       let basePattern = soundManager.getMasterPatternCode();
       
       if (!basePattern || basePattern.trim() === '') {
-        console.log('⚠️ Chaospad: No master pattern to apply cutoff to');
-        return;
+        console.log('⚠️ Chaospad: No master pattern to apply cutoff to - master may not be playing');
+        // Even if master isn't playing, we should still add cutoff so it's there when play starts
+        // But we need at least a silence pattern to work with
+        basePattern = 'silence';
+        console.log('🎛️ Chaospad: Using silence as base pattern');
       }
+
+      console.log(`🎛️ Chaospad: Base pattern before cutoff: ${basePattern.substring(0, 100)}...`);
 
       // Remove existing cutoff modifier
       basePattern = basePattern.replace(/\.\s*cutoff\s*\([^)]*\)/gi, '');
@@ -5174,23 +5193,27 @@ class InteractiveSoundApp {
           
           // Insert cutoff before any existing modifiers
           patternWithCutoff = `${beforeStackEnd}.cutoff(${cutoffValue})${afterStackEnd}`;
+          console.log(`🎛️ Chaospad: Inserted cutoff after stack at position ${stackEnd}`);
         } else {
           // Couldn't find matching closing paren, append at end
           patternWithCutoff = `${basePattern}.cutoff(${cutoffValue})`;
+          console.log(`🎛️ Chaospad: Couldn't find stack end, appending cutoff`);
         }
       } else {
         // Not a stack pattern, append at the end
         patternWithCutoff = `${basePattern}.cutoff(${cutoffValue})`;
+        console.log(`🎛️ Chaospad: Not a stack pattern, appending cutoff`);
       }
 
       console.log(`🎛️ Chaospad: Applying cutoff ${cutoffValue} Hz to master pattern`);
-      console.log(`🎛️ Chaospad: Pattern after: ${patternWithCutoff.substring(0, 150)}...`);
+      console.log(`🎛️ Chaospad: Full pattern with cutoff: ${patternWithCutoff.substring(0, 200)}...`);
+      console.log(`🎛️ Chaospad: Master active: ${soundManager.isMasterActive()}`);
 
       // Update master pattern
       await soundManager.setMasterPatternCode(patternWithCutoff);
       console.log(`🎛️ ✅ Chaospad: Cutoff ${cutoffValue} Hz applied successfully`);
     } catch (error) {
-      console.warn('⚠️ Chaospad: Error applying cutoff to master pattern:', error);
+      console.error('⚠️ Chaospad: Error applying cutoff to master pattern:', error);
     }
   }
 
