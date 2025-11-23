@@ -3881,11 +3881,22 @@ class InteractiveSoundApp {
     // Setup Chaospad checkbox
     const chaospadCheckbox = document.getElementById('chaospad-checkbox');
     if (chaospadCheckbox) {
-      chaospadCheckbox.addEventListener('change', (e) => {
+      chaospadCheckbox.addEventListener('change', async (e) => {
         this.chaospadEnabled = e.target.checked;
+        console.log(`🎛️ Chaospad ${this.chaospadEnabled ? 'enabled' : 'disabled'}`);
         if (!this.chaospadEnabled) {
           // Remove cutoff when disabled
-          this.removeCutoffFromMaster();
+          await this.removeCutoffFromMaster();
+        } else {
+          // Apply initial cutoff when enabled (use middle section = 2000 Hz)
+          if (this.masterPunchcardCanvas) {
+            const rect = this.masterPunchcardCanvas.getBoundingClientRect();
+            if (rect.width > 0) {
+              // Simulate mouse at center to apply initial cutoff
+              const fakeEvent = { clientX: rect.left + rect.width / 2 };
+              this.handleChaospadMouseMove(fakeEvent);
+            }
+          }
         }
       });
     }
@@ -3893,6 +3904,12 @@ class InteractiveSoundApp {
     // Setup mouse move listener for Chaospad on canvas
     if (this.masterPunchcardCanvas) {
       this.masterPunchcardCanvas.addEventListener('mousemove', (e) => {
+        if (this.chaospadEnabled) {
+          this.handleChaospadMouseMove(e);
+        }
+      });
+      // Also add mouseenter to ensure it works
+      this.masterPunchcardCanvas.addEventListener('mouseenter', (e) => {
         if (this.chaospadEnabled) {
           this.handleChaospadMouseMove(e);
         }
@@ -5046,7 +5063,12 @@ class InteractiveSoundApp {
     const rect = this.masterPunchcardCanvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const canvasWidth = rect.width;
-    const percentage = mouseX / canvasWidth;
+    
+    if (canvasWidth === 0) {
+      return; // Canvas not sized yet
+    }
+    
+    const percentage = Math.max(0, Math.min(1, mouseX / canvasWidth));
 
     // Determine which section (20% each): 0-20%, 20-40%, 40-60%, 60-80%, 80-100%
     let cutoffValue;
@@ -5078,6 +5100,7 @@ class InteractiveSoundApp {
       let basePattern = soundManager.getMasterPatternCode();
       
       if (!basePattern || basePattern.trim() === '') {
+        console.log('⚠️ No master pattern to apply cutoff to');
         return;
       }
 
@@ -5085,13 +5108,14 @@ class InteractiveSoundApp {
       basePattern = basePattern.replace(/\.\s*cutoff\s*\([^)]*\)/gi, '');
       basePattern = basePattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
 
-      // Add new cutoff modifier with pattern
+      // Add new cutoff modifier with pattern that cycles through all values
+      // The pattern will cycle: 500, 1000, 2000, 4000, 8000
       const cutoffPattern = `<500 1000 2000 4000 8000>`;
       const patternWithCutoff = `${basePattern}.cutoff(${cutoffPattern})`;
 
       // Update master pattern
       await soundManager.setMasterPatternCode(patternWithCutoff);
-      console.log(`🎛️ Applied Chaospad cutoff pattern`);
+      console.log(`🎛️ Applied Chaospad cutoff pattern: ${cutoffPattern} (mouse in ${cutoffValue} Hz section)`);
     } catch (error) {
       console.warn('⚠️ Error applying cutoff to master pattern:', error);
     }
