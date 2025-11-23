@@ -758,7 +758,7 @@ header h1 {
 .chaospad-control {
   padding: 8px 12px;
   border-top: 1px solid rgba(102, 126, 234, 0.15);
-  background: rgba(255, 255, 255, 0.5);
+  background: transparent;
 }
 
 .chaospad-checkbox-label {
