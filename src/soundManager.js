@@ -2998,16 +2998,118 @@ class SoundManager {
           if (window.strudel && window.strudel.evaluate) {
             try {
               // Look for samples() calls in the pattern (handle multi-line)
-              // Match: samples({...}, "github:...") or samples({...}, { baseUrl: "..." })
-              // Use multiline regex to handle newlines in object literals
-              const samplesCallRegex = /samples\s*\(\s*(\{(?:[^{}]|\{[^}]*\})*?\})\s*(?:,\s*(["']?[^"')]+["']?|\{[^}]*\}))?\s*\)/gs;
-              let match;
+              // According to Strudel docs: https://strudel.cc/learn/samples/#loading-custom-samples
+              // Format: samples({...}, 'github:user/repo') or samples({...}, 'https://...')
+              // Manually parse to handle multi-line patterns correctly
               const samplesCalls = [];
+              let searchIndex = 0;
               
-              while ((match = samplesCallRegex.exec(pattern)) !== null) {
-                const fullMatch = match[0];
-                const samplesObjStr = match[1];
-                const secondParam = match[2];
+              while (true) {
+                const samplesStart = pattern.indexOf('samples(', searchIndex);
+                if (samplesStart === -1) break;
+                
+                let depth = 0;
+                let inString = false;
+                let stringChar = '';
+                let i = samplesStart + 'samples('.length;
+                
+                // Skip whitespace
+                while (i < pattern.length && /\s/.test(pattern[i])) {
+                  i++;
+                }
+                
+                // Find the opening brace
+                if (i < pattern.length && pattern[i] === '{') {
+                  const objStart = i;
+                  depth = 1;
+                  i++;
+                  
+                  // Find the matching closing brace (handling nested objects and strings)
+                  while (i < pattern.length && depth > 0) {
+                    const char = pattern[i];
+                    if (!inString) {
+                      if (char === '"' || char === "'") {
+                        inString = true;
+                        stringChar = char;
+                      } else if (char === '{') {
+                        depth++;
+                      } else if (char === '}') {
+                        depth--;
+                      }
+                    } else {
+                      if (char === stringChar && pattern[i - 1] !== '\\') {
+                        inString = false;
+                      }
+                    }
+                    i++;
+                  }
+                  
+                  if (depth === 0) {
+                    const samplesObjStr = pattern.substring(objStart, i);
+                    
+                    // Skip whitespace and comma
+                    while (i < pattern.length && (/\s/.test(pattern[i]) || pattern[i] === ',')) {
+                      i++;
+                    }
+                    
+                    // Check for second parameter
+                    let secondParam = null;
+                    if (i < pattern.length && (pattern[i] === '"' || pattern[i] === "'")) {
+                      const quoteChar = pattern[i];
+                      const paramStart = i;
+                      i++;
+                      while (i < pattern.length) {
+                        if (pattern[i] === '\\') {
+                          i += 2; // Skip escaped character
+                          continue;
+                        }
+                        if (pattern[i] === quoteChar) {
+                          secondParam = pattern.substring(paramStart, i + 1);
+                          i++;
+                          break;
+                        }
+                        i++;
+                      }
+                    }
+                    
+                    // Skip whitespace and find closing paren
+                    while (i < pattern.length && /\s/.test(pattern[i])) {
+                      i++;
+                    }
+                    
+                    if (i < pattern.length && pattern[i] === ')') {
+                      const fullCall = pattern.substring(samplesStart, i + 1);
+                      samplesCalls.push({
+                        fullCall: fullCall,
+                        samplesObj: samplesObjStr,
+                        secondParam: secondParam
+                      });
+                      searchIndex = i + 1;
+                      continue;
+                    } else if (i < pattern.length) {
+                      // Found something other than ')' - might be part of a larger expression
+                      // Still try to extract the samples() call
+                      const fullCall = pattern.substring(samplesStart, i);
+                      samplesCalls.push({
+                        fullCall: fullCall,
+                        samplesObj: samplesObjStr,
+                        secondParam: secondParam
+                      });
+                      searchIndex = i;
+                      continue;
+                    }
+                  }
+                }
+                
+                // If we didn't find a complete match, move search forward
+                searchIndex = samplesStart + 1;
+              }
+              
+              // Process each found samples() call
+              for (const samplesCall of samplesCalls) {
+                const fullMatch = samplesCall.fullCall;
+                const samplesObjStr = samplesCall.samplesObj;
+                const secondParam = samplesCall.secondParam;
                 
                 // Store the full samples() call to evaluate it in REPL context
                 samplesCalls.push({
@@ -3022,16 +3124,18 @@ class SoundManager {
                 try {
                   console.log('📦 Evaluating samples() call in REPL:', samplesCall.fullCall);
                   // Evaluate the samples() call in the REPL context
+                  // Strudel's samples() function handles 'github:' prefix natively per docs
                   await window.strudel.evaluate(samplesCall.fullCall);
                   console.log('✅ Samples loaded via REPL evaluation');
                   // Wait a bit for samples to be registered
-                  await new Promise(resolve => setTimeout(resolve, 300));
+                  await new Promise(resolve => setTimeout(resolve, 500));
                   
-                  // Remove the samples() call from the pattern (including any trailing newlines/whitespace)
-                  // Match the full call and any following whitespace/newlines
-                  patternWithoutSamples = patternWithoutSamples
-                    .replace(new RegExp(samplesCall.fullCall.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\n?\\s*', 'g'), '')
-                    .trim();
+                  // Remove the samples() call from the pattern
+                  // Only remove if it's on its own line (not part of a larger expression)
+                  const escapedCall = samplesCall.fullCall.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  // Match: start of line or newline, then samples() call, then optional whitespace and newline
+                  const removeRegex = new RegExp(`(^|\\n)\\s*${escapedCall}\\s*\\n?`, 'gm');
+                  patternWithoutSamples = patternWithoutSamples.replace(removeRegex, '$1').trim();
                 } catch (evalError) {
                   console.warn('Could not evaluate samples() call in REPL:', evalError);
                   // Continue - try to load samples directly as fallback
@@ -3047,30 +3151,37 @@ class SoundManager {
                         continue;
                       }
                       
-                      let baseUrl = '';
-                      if (samplesCall.secondParam) {
-                        const cleanedParam = samplesCall.secondParam.trim().replace(/^["']|["']$/g, '');
-                        if (cleanedParam.startsWith('github:')) {
-                          const repoPath = cleanedParam.replace('github:', '');
-                          baseUrl = `https://raw.githubusercontent.com/${repoPath}/main/`;
-                        } else if (cleanedParam.startsWith('http')) {
-                          baseUrl = cleanedParam;
-                        }
-                      }
-                      
+                      // For fallback, pass the second parameter as-is to samples() function
+                      // Strudel's samples() function handles 'github:' prefix natively
                       if (Object.keys(samplesMap).length > 0) {
-                        console.log('📦 Loading samples directly as fallback:', samplesMap, 'baseUrl:', baseUrl);
-                        if (baseUrl) {
-                          await samplesFunc(samplesMap, { baseUrl });
+                        console.log('📦 Loading samples directly as fallback:', samplesMap);
+                        if (samplesCall.secondParam) {
+                          // Parse the second parameter - could be string or options object
+                          let secondParamValue = null;
+                          try {
+                            const cleanedParam = samplesCall.secondParam.trim();
+                            if (cleanedParam.startsWith('{')) {
+                              // Options object
+                              secondParamValue = new Function('return ' + cleanedParam)();
+                            } else {
+                              // String parameter (e.g., 'github:tidalcycles/dirt-samples')
+                              secondParamValue = cleanedParam.replace(/^["']|["']$/g, '');
+                            }
+                            await samplesFunc(samplesMap, secondParamValue);
+                          } catch (e) {
+                            // If second param parsing fails, try as string
+                            const cleanedParam = samplesCall.secondParam.trim().replace(/^["']|["']$/g, '');
+                            await samplesFunc(samplesMap, cleanedParam);
+                          }
                         } else {
                           await samplesFunc(samplesMap);
                         }
-                        await new Promise(resolve => setTimeout(resolve, 300));
+                        await new Promise(resolve => setTimeout(resolve, 500));
                         
                         // Remove from pattern even if loaded via fallback
-                        patternWithoutSamples = patternWithoutSamples
-                          .replace(new RegExp(samplesCall.fullCall.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\n?\\s*', 'g'), '')
-                          .trim();
+                        const escapedCall = samplesCall.fullCall.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const removeRegex = new RegExp(`(^|\\n)\\s*${escapedCall}\\s*\\n?`, 'gm');
+                        patternWithoutSamples = patternWithoutSamples.replace(removeRegex, '$1').trim();
                       }
                     }
                   } catch (fallbackError) {
