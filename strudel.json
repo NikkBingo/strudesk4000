@@ -1,0 +1,106 @@
+{
+  "samples": {
+    "kick909": [
+      "assets/sounds/Kicks/ESWTR909 Kick 01.wav",
+      "assets/sounds/Kicks/ESWTR909 Kick 02.wav",
+      "assets/sounds/Kicks/ESWTR909 Kick 03.wav",
+      "assets/sounds/Kicks/ESWTR909 Kick 04.wav",
+      "assets/sounds/Kicks/ESWTR909 Kick 05.wav",
+      "assets/sounds/Kicks/ESWTR909 Kick 06.wav",
+      "assets/sounds/Kicks/ESWTR909 Kick 07.wav",
+      "assets/sounds/Kicks/ESWTR909 Kick 08.wav",
+      "assets/sounds/Kicks/ESWTR909 Kick 09.wav",
+      "assets/sounds/Kicks/ESWTR909 Kick 10.wav"
+    ],
+    "kick909x": [
+      "assets/sounds/Kicks/ESW909X Kick 01.wav",
+      "assets/sounds/Kicks/ESW909X Kick 02.wav",
+      "assets/sounds/Kicks/ESW909X Kick 03.wav",
+      "assets/sounds/Kicks/ESW909X Kick 04.wav",
+      "assets/sounds/Kicks/ESW909X Kick 05.wav"
+    ],
+    "snare909": [
+      "assets/sounds/Snares/ESWTR909 Snare 01.wav",
+      "assets/sounds/Snares/ESWTR909 Snare 02.wav",
+      "assets/sounds/Snares/ESWTR909 Snare 03.wav",
+      "assets/sounds/Snares/ESWTR909 Snare 04.wav",
+      "assets/sounds/Snares/ESWTR909 Snare 05.wav",
+      "assets/sounds/Snares/ESWTR909 Snare 06.wav",
+      "assets/sounds/Snares/ESWTR909 Snare 07.wav",
+      "assets/sounds/Snares/ESWTR909 Snare 08.wav",
+      "assets/sounds/Snares/ESWTR909 Snare 09.wav",
+      "assets/sounds/Snares/ESWTR909 Snare 10.wav",
+      "assets/sounds/Snares/ESWTR909 Snare 11.wav",
+      "assets/sounds/Snares/ESWTR909 Snare 12.wav"
+    ],
+    "snare909x": [
+      "assets/sounds/Snares/ESW909X Snare 01.wav",
+      "assets/sounds/Snares/ESW909X Snare 02.wav",
+      "assets/sounds/Snares/ESW909X Snare 03.wav",
+      "assets/sounds/Snares/ESW909X Snare 04.wav",
+      "assets/sounds/Snares/ESW909X Snare 05.wav"
+    ],
+    "hat909": [
+      "assets/sounds/Hats/ESWTR909 HH Closed 01.wav",
+      "assets/sounds/Hats/ESWTR909 HH Closed 02.wav",
+      "assets/sounds/Hats/ESWTR909 HH Closed 03.wav",
+      "assets/sounds/Hats/ESWTR909 HH Closed 04.wav",
+      "assets/sounds/Hats/ESWTR909 HH Closed 05.wav",
+      "assets/sounds/Hats/ESWTR909 HH Closed 06.wav",
+      "assets/sounds/Hats/ESWTR909 HH Closed 07.wav",
+      "assets/sounds/Hats/ESWTR909 HH Closed 08.wav",
+      "assets/sounds/Hats/ESWTR909 HH Closed 09.wav",
+      "assets/sounds/Hats/ESWTR909 HH Closed 10.wav"
+    ],
+    "hat909open": [
+      "assets/sounds/Hats/ESWTR909 HH Open 01.wav",
+      "assets/sounds/Hats/ESWTR909 HH Open 02.wav",
+      "assets/sounds/Hats/ESWTR909 HH Open 03.wav",
+      "assets/sounds/Hats/ESWTR909 HH Open 04.wav",
+      "assets/sounds/Hats/ESWTR909 HH Open 05.wav",
+      "assets/sounds/Hats/ESWTR909 HH Open 06.wav",
+      "assets/sounds/Hats/ESWTR909 HH Open 07.wav",
+      "assets/sounds/Hats/ESWTR909 HH Open 08.wav"
+    ],
+    "crash909": [
+      "assets/sounds/Hats/ESWTR909 HH Crash 01.wav",
+      "assets/sounds/Hats/ESWTR909 HH Crash 02.wav",
+      "assets/sounds/Hats/ESWTR909 HH Crash 03.wav",
+      "assets/sounds/Hats/ESWTR909 HH Crash 04.wav",
+      "assets/sounds/Hats/ESWTR909 HH Crash 05.wav"
+    ],
+    "clap909": [
+      "assets/sounds/Claps/ESWTR909 Clap 01.wav",
+      "assets/sounds/Claps/ESWTR909 Clap 02.wav",
+      "assets/sounds/Claps/ESWTR909 Clap 03.wav",
+      "assets/sounds/Claps/ESWTR909 Clap 04.wav",
+      "assets/sounds/Claps/ESWTR909 Clap 05.wav"
+    ],
+    "clap909x": [
+      "assets/sounds/Claps/ESW909X Clap 01.wav",
+      "assets/sounds/Claps/ESW909X Clap 02.wav",
+      "assets/sounds/Claps/ESW909X Clap 03.wav",
+      "assets/sounds/Claps/ESW909X Clap 04.wav",
+      "assets/sounds/Claps/ESW909X Clap 05.wav"
+    ],
+    "tom909": [
+      "assets/sounds/Toms/ESWTR909 Tom 01.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 02.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 03.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 04.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 05.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 06.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 07.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 08.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 09.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 10.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 11.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 12.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 13.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 14.wav",
+      "assets/sounds/Toms/ESWTR909 Tom 15.wav"
+    ],
+    "voice": "assets/samples/voice/Strudesk4000_de.wav"
+  }
+}
+
