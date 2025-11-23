@@ -44,8 +44,14 @@ export const requireAuth = async (req, res, next) => {
       return next();
     } catch (error) {
       // If database is unavailable in test mode, use a mock test user
-      if (error.name === 'PrismaClientInitializationError' || 
-          error.message?.includes("Can't reach database")) {
+      const isDbConnectionError = 
+        error.name === 'PrismaClientInitializationError' ||
+        error.constructor?.name === 'PrismaClientInitializationError' ||
+        error.message?.includes("Can't reach database") ||
+        error.message?.includes('database server') ||
+        String(error).includes("Can't reach database");
+      
+      if (isDbConnectionError) {
         console.warn('⚠️  Database unavailable in test mode, using mock test user for requireAuth');
         req.user = {
           id: 'test-user-mock-1',

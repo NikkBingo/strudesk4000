@@ -86,8 +86,14 @@ router.get('/me', async (req, res) => {
       });
     } catch (error) {
       // If database is unavailable in test mode, return a mock test user
-      if (error.name === 'PrismaClientInitializationError' || 
-          error.message?.includes("Can't reach database")) {
+      const isDbConnectionError = 
+        error.name === 'PrismaClientInitializationError' ||
+        error.constructor?.name === 'PrismaClientInitializationError' ||
+        error.message?.includes("Can't reach database") ||
+        error.message?.includes('database server') ||
+        String(error).includes("Can't reach database");
+      
+      if (isDbConnectionError) {
         console.warn('⚠️  Database unavailable in test mode, using mock test user');
         res.json({
           id: 'test-user-mock-1',
@@ -167,8 +173,14 @@ router.post('/test-login', async (req, res) => {
     });
   } catch (error) {
     // If database is unavailable in test mode, use a mock test user
-    if (error.name === 'PrismaClientInitializationError' || 
-        error.message?.includes("Can't reach database")) {
+    const isDbConnectionError = 
+      error.name === 'PrismaClientInitializationError' ||
+      error.constructor?.name === 'PrismaClientInitializationError' ||
+      error.message?.includes("Can't reach database") ||
+      error.message?.includes('database server') ||
+      String(error).includes("Can't reach database");
+    
+    if (isDbConnectionError) {
       console.warn('⚠️  Database unavailable in test mode, using mock test user for test-login');
       const mockUser = {
         id: 'test-user-mock-1',
