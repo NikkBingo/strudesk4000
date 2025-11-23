@@ -535,7 +535,7 @@ s("rave")
     label: 'end',
     description: 'Cut the tail of the sample instead of the beginning.',
     tooltip: 'Same as .begin but trims from the end (1 = full sample, 0.5 = half length).',
-    pattern: `s("bd*2,oh*4")
+    pattern: `s("bd*2,oh*4").bank("RolandTR808")
   .end("<0.1 0.2 0.5 1>")
   .fast(2)`
   },
@@ -570,7 +570,7 @@ s("rave")
     label: 'cut',
     description: 'Use classic drum-machine style choke groups.',
     tooltip: 'Samples in the same cut group (1 here) stop each other when they retrigger.',
-    pattern: `s("[oh hh]*4")
+    pattern: `s("[oh hh]*4").bank("RolandTR808")
   .cut(1)`
   },
   {
