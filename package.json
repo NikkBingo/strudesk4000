@@ -30,6 +30,7 @@
     "@strudel-studio/visualizer": "1.0.0",
     "@strudel/core": "1.2.5",
     "@strudel/draw": "1.2.4",
+    "@strudel/midi": "^1.2.6",
     "@strudel/mini": "1.2.5",
     "@strudel/reference": "^1.2.1",
     "@strudel/sampler": "^0.2.3",

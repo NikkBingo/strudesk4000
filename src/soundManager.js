@@ -13,6 +13,7 @@ let coreModule = null;
 let webaudioModule = null;
 let webModule = null;
 let tonalModule = null;
+let midiModule = null;
 let samplerModule = null;
 
 const resolveSampleManifestPath = (path, baseUrl) => {
@@ -63,17 +64,19 @@ async function getStrudelModules() {
       import('@strudel/core'),
       import('@strudel/web'),
       import('@strudel/webaudio'),
-      import('@strudel/tonal')
+      import('@strudel/tonal'),
+      import('@strudel/midi').catch(() => null) // MIDI module - catch if not available
     ]).then(modules => {
       coreModule = modules[0];
       webModule = modules[1];
       webaudioModule = modules[2];
       tonalModule = modules[3];
+      midiModule = modules[4]; // @strudel/midi
       // Note: @strudel/sampler has broken package.json exports, can't be imported
       // Drum samples come from @strudel/webaudio via samples() function
       samplerModule = null;
       
-      return { coreModule, webModule, webaudioModule, tonalModule, samplerModule };
+      return { coreModule, webModule, webaudioModule, tonalModule, midiModule, samplerModule };
     });
   }
   return strudelModulesPromise;
@@ -3622,7 +3625,8 @@ class SoundManager {
         ...(coreModule || {}),
         ...(tonalModule || {}),
         ...(webaudioModule || {}),
-        ...(webModule || {})
+        ...(webModule || {}),
+        ...(midiModule || {}) // Add MIDI module functions
       };
       
       // Remove undefined values
@@ -3719,11 +3723,31 @@ class SoundManager {
       if (initStrudel && typeof initStrudel === 'function') {
         console.log('Using initStrudel for proper initialization...');
         try {
+          // Initialize MIDI BEFORE initStrudel so midiOutput handler is available
+          // This ensures MIDI functions are available when Strudel initializes
+          if (!this.midiEnabled) {
+            try {
+              await this.initializeMIDI();
+            } catch (midiError) {
+              console.warn('⚠️ MIDI initialization failed, continuing without MIDI:', midiError);
+            }
+          }
+          
+          // Set up MIDI output handler before initStrudel
+          const midiOutputHandler = (message) => {
+            // This will be called by Strudel when patterns use .midi()
+            if (this.midiEnabled) {
+              this.sendMIDIMessage(message);
+            }
+          };
+          
           const initOptions = {
             audioContext: this.audioContext,
             getTime: () => this.audioContext ? this.audioContext.currentTime : 0,
             editPattern: () => {},
-            setUrl: () => {}
+            setUrl: () => {},
+            // Pass MIDI output handler to enable .midi() functions
+            midiOutput: midiOutputHandler
           };
           console.log('🎚️ initStrudel options:', Object.keys(initOptions));
           const strudelContext = await initStrudel(initOptions);
@@ -3757,11 +3781,14 @@ class SoundManager {
             console.warn('⚠️ Error pre-loading preset samples:', error);
           }
           
-          // Initialize MIDI output
+          // MIDI was already initialized before initStrudel
+          // Now ensure MIDI functions are available and set up the connection
           try {
-            await this.initializeMIDI();
+            await this.ensureMIDIFunctionsAvailable();
+            // Re-setup MIDI output handler now that Strudel is initialized
+            this.setupStrudelMIDIOutput();
           } catch (error) {
-            console.warn('⚠️ Error initializing MIDI:', error);
+            console.warn('⚠️ Error setting up MIDI functions:', error);
           }
           
           console.log('replInstance type:', typeof replInstance);
@@ -7086,6 +7113,72 @@ class SoundManager {
     if (channel >= 0 && channel <= 15) {
       this.midiChannel = channel;
       console.log(`✅ MIDI channel set to: ${channel + 1}`);
+    }
+  }
+  
+  /**
+   * Ensure MIDI functions are available in REPL context
+   * MIDI functions like .midi() and .midiport() are part of webaudio module
+   */
+  async ensureMIDIFunctionsAvailable() {
+    if (!window.strudel || !window.strudel.evaluate) {
+      console.warn('⚠️ Strudel REPL not available for MIDI functions');
+      return;
+    }
+    
+    try {
+      // Check if MIDI functions are available by testing if .midi() exists on a pattern
+      const testCode = `
+        (function() {
+          try {
+            const testPattern = note("c");
+            return typeof testPattern.midi === 'function';
+          } catch (e) {
+            return false;
+          }
+        })()
+      `;
+      
+      const midiAvailable = await window.strudel.evaluate(testCode);
+      
+      if (!midiAvailable) {
+        console.log('📦 MIDI functions not available - attempting to load webaudio MIDI support...');
+        
+        // Try to ensure webaudio module is properly loaded with MIDI support
+        const { webaudioModule } = await getStrudelModules();
+        
+        if (webaudioModule) {
+          console.log('✅ webaudio module loaded');
+          
+          // Try to explicitly enable MIDI in webaudio
+          // MIDI functions should be available when webaudio is initialized with midiOutput
+          // Since we passed midiOutput to initStrudel, MIDI should be enabled
+          // But let's verify by checking the scheduler
+          const scheduler = window.strudel?.scheduler;
+          if (scheduler && scheduler.webaudio) {
+            const webaudio = scheduler.webaudio;
+            console.log('✅ webaudio found in scheduler');
+            console.log('ℹ️ MIDI functions should be available when midiOutput is provided to initStrudel');
+          }
+          
+          // Test again after a short delay
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const midiAvailableAfter = await window.strudel.evaluate(testCode);
+          if (midiAvailableAfter) {
+            console.log('✅ MIDI functions now available');
+          } else {
+            console.warn('⚠️ MIDI functions still not available after initialization');
+            console.warn('   This may indicate that @strudel/webaudio needs MIDI support explicitly enabled');
+            console.warn('   Try using patterns without .midi() or check Strudel documentation for MIDI setup');
+          }
+        } else {
+          console.warn('⚠️ webaudio module not available');
+        }
+      } else {
+        console.log('✅ MIDI functions verified and available');
+      }
+    } catch (error) {
+      console.warn('⚠️ Error checking MIDI functions:', error);
     }
   }
 
