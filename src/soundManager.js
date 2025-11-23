@@ -2991,81 +2991,98 @@ class SoundManager {
           
           console.log('Evaluating pattern:', pattern);
           
-          // Extract and pre-load any samples() calls from the pattern before evaluation
+          // Extract and evaluate any samples() calls from the pattern before evaluating the main pattern
           // This ensures samples are loaded before s() tries to use them
-          const samplesFunc = window.strudel?.samples || globalThis.samples;
-          if (samplesFunc && typeof samplesFunc === 'function') {
+          // Also remove samples() calls from the pattern since they return undefined
+          let patternWithoutSamples = pattern;
+          if (window.strudel && window.strudel.evaluate) {
             try {
               // Look for samples() calls in the pattern (handle multi-line)
               // Match: samples({...}, "github:...") or samples({...}, { baseUrl: "..." })
               // Use multiline regex to handle newlines in object literals
               const samplesCallRegex = /samples\s*\(\s*(\{(?:[^{}]|\{[^}]*\})*?\})\s*(?:,\s*(["']?[^"')]+["']?|\{[^}]*\}))?\s*\)/gs;
               let match;
+              const samplesCalls = [];
               
               while ((match = samplesCallRegex.exec(pattern)) !== null) {
+                const fullMatch = match[0];
                 const samplesObjStr = match[1];
                 const secondParam = match[2];
                 
+                // Store the full samples() call to evaluate it in REPL context
+                samplesCalls.push({
+                  fullCall: fullMatch,
+                  samplesObj: samplesObjStr,
+                  secondParam: secondParam
+                });
+              }
+              
+              // Evaluate each samples() call in REPL context and remove from pattern
+              for (const samplesCall of samplesCalls) {
                 try {
-                  // Parse the samples object - handle JavaScript object literal format
-                  // Replace single quotes with double quotes for JSON parsing
-                  const normalizedObjStr = samplesObjStr
-                    .replace(/'/g, '"')  // Replace single quotes
-                    .replace(/(\w+):/g, '"$1":'); // Quote keys if not already quoted
+                  console.log('📦 Evaluating samples() call in REPL:', samplesCall.fullCall);
+                  // Evaluate the samples() call in the REPL context
+                  await window.strudel.evaluate(samplesCall.fullCall);
+                  console.log('✅ Samples loaded via REPL evaluation');
+                  // Wait a bit for samples to be registered
+                  await new Promise(resolve => setTimeout(resolve, 300));
                   
-                  let samplesMap = {};
+                  // Remove the samples() call from the pattern (including any trailing newlines/whitespace)
+                  // Match the full call and any following whitespace/newlines
+                  patternWithoutSamples = patternWithoutSamples
+                    .replace(new RegExp(samplesCall.fullCall.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\n?\\s*', 'g'), '')
+                    .trim();
+                } catch (evalError) {
+                  console.warn('Could not evaluate samples() call in REPL:', evalError);
+                  // Continue - try to load samples directly as fallback
                   try {
-                    samplesMap = JSON.parse(normalizedObjStr);
-                  } catch (e) {
-                    // If JSON parse fails, try evaluating it safely
-                    console.warn('Could not parse samples object as JSON, trying eval:', e);
-                    try {
-                      // Use Function constructor for safer eval
-                      samplesMap = new Function('return ' + samplesObjStr)();
-                    } catch (evalError) {
-                      console.warn('Could not parse samples object:', evalError);
-                      continue;
-                    }
-                  }
-                  
-                  // Determine baseUrl from second parameter
-                  let baseUrl = '';
-                  if (secondParam) {
-                    const cleanedParam = secondParam.trim().replace(/^["']|["']$/g, '');
-                    if (cleanedParam.startsWith('github:')) {
-                      // Convert github:user/repo to proper baseUrl
-                      const repoPath = cleanedParam.replace('github:', '');
-                      baseUrl = `https://raw.githubusercontent.com/${repoPath}/main/`;
-                    } else if (cleanedParam.startsWith('http')) {
-                      baseUrl = cleanedParam;
-                    } else if (cleanedParam.startsWith('{')) {
-                      // Parse options object
+                    const samplesFunc = window.strudel?.samples || globalThis.samples;
+                    if (samplesFunc && typeof samplesFunc === 'function') {
+                      // Parse and load samples directly
+                      let samplesMap = {};
                       try {
-                        const options = JSON.parse(cleanedParam.replace(/'/g, '"'));
-                        baseUrl = options.baseUrl || '';
+                        samplesMap = new Function('return ' + samplesCall.samplesObj)();
                       } catch (e) {
-                        // Ignore parse errors
+                        console.warn('Could not parse samples object:', e);
+                        continue;
                       }
-                    } else {
-                      baseUrl = cleanedParam;
+                      
+                      let baseUrl = '';
+                      if (samplesCall.secondParam) {
+                        const cleanedParam = samplesCall.secondParam.trim().replace(/^["']|["']$/g, '');
+                        if (cleanedParam.startsWith('github:')) {
+                          const repoPath = cleanedParam.replace('github:', '');
+                          baseUrl = `https://raw.githubusercontent.com/${repoPath}/main/`;
+                        } else if (cleanedParam.startsWith('http')) {
+                          baseUrl = cleanedParam;
+                        }
+                      }
+                      
+                      if (Object.keys(samplesMap).length > 0) {
+                        console.log('📦 Loading samples directly as fallback:', samplesMap, 'baseUrl:', baseUrl);
+                        if (baseUrl) {
+                          await samplesFunc(samplesMap, { baseUrl });
+                        } else {
+                          await samplesFunc(samplesMap);
+                        }
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        
+                        // Remove from pattern even if loaded via fallback
+                        patternWithoutSamples = patternWithoutSamples
+                          .replace(new RegExp(samplesCall.fullCall.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\n?\\s*', 'g'), '')
+                          .trim();
+                      }
                     }
+                  } catch (fallbackError) {
+                    console.warn('Fallback samples loading also failed:', fallbackError);
                   }
-                  
-                  if (Object.keys(samplesMap).length > 0) {
-                    console.log('📦 Pre-loading samples from pattern:', samplesMap, 'baseUrl:', baseUrl);
-                    if (baseUrl) {
-                      await samplesFunc(samplesMap, { baseUrl });
-                    } else {
-                      await samplesFunc(samplesMap);
-                    }
-                    console.log('✅ Samples pre-loaded from pattern');
-                    // Wait a bit for samples to be registered
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                  }
-                } catch (parseError) {
-                  console.warn('Could not parse samples() call from pattern:', parseError);
-                  // Continue - the samples() call will be evaluated as part of the pattern
                 }
+              }
+              
+              // Use pattern without samples() calls if we removed any
+              if (patternWithoutSamples !== pattern && samplesCalls.length > 0) {
+                console.log('📝 Pattern after removing samples() calls:', patternWithoutSamples);
+                pattern = patternWithoutSamples;
               }
             } catch (error) {
               console.warn('Error pre-loading samples from pattern:', error);
