@@ -1240,7 +1240,9 @@ const normalizeSnippetLabel = (tag) => (tag || '').replace(/^[^a-z0-9]+/i, '').t
 
 const BASE_PATTERN_SNIPPETS = [
   'note()',
+  'n()',
   'sound()',
+  's()',
   'bank()',
   'beat()',
   'vowel()',
@@ -1644,7 +1646,7 @@ const PATTERN_SNIPPET_GROUPS = [
     order: 0,
     label: 'Core',
     heading: 'Core',
-    matcher: (key) => ['stack', 'beat', 'bank', 'sound'].includes(key),
+    matcher: (key) => ['stack', 'beat', 'bank', 'sound', 's', 'note', 'n'].includes(key),
     className: 'snippet-group-core'
   },
   {
