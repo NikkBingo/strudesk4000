@@ -8014,7 +8014,13 @@ class InteractiveSoundApp {
         patternSnippetContainer.appendChild(patternSnippetListEl);
 
         if (patternLabelRow) {
-          patternLabelRow.insertAdjacentElement('afterend', patternSnippetContainer);
+          // Insert after presets if they exist, otherwise after patternLabelRow
+          const presetsContainer = modal.querySelector('.modal-presets');
+          if (presetsContainer && presetsContainer.parentElement === patternLabelRow.parentElement) {
+            presetsContainer.insertAdjacentElement('afterend', patternSnippetContainer);
+          } else {
+            patternLabelRow.insertAdjacentElement('afterend', patternSnippetContainer);
+          }
         } else {
           modal.querySelector('.form-group')?.insertAdjacentElement('afterbegin', patternSnippetContainer);
         }
@@ -10265,8 +10271,9 @@ class InteractiveSoundApp {
           return `${noteName} = ${index}`;
         });
         
-        const displayText = `${rootNote.toLowerCase()}:${tonalScaleName} ${noteNumberPairs.join(', ')}`;
-        scaleNotesDisplay.textContent = displayText;
+        // Make key and scale bold
+        const displayText = `<strong>${rootNote.toLowerCase()}:${tonalScaleName}</strong> ${noteNumberPairs.join(', ')}`;
+        scaleNotesDisplay.innerHTML = displayText;
       } catch (error) {
         console.warn('Error displaying scale notes:', error);
         scaleNotesDisplay.textContent = '';
