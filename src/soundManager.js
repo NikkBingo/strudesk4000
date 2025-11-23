@@ -3782,11 +3782,18 @@ class SoundManager {
           }
           
           // MIDI was already initialized before initStrudel
-          // Now ensure MIDI functions are available and set up the connection
+          // Now set up the MIDI connection and ensure functions are available
           try {
-            await this.ensureMIDIFunctionsAvailable();
             // Re-setup MIDI output handler now that Strudel is initialized
             this.setupStrudelMIDIOutput();
+            // Ensure MIDI functions are available after a short delay to let Strudel fully initialize
+            setTimeout(async () => {
+              try {
+                await this.ensureMIDIFunctionsAvailable();
+              } catch (error) {
+                console.warn('⚠️ Error ensuring MIDI functions available:', error);
+              }
+            }, 1000);
           } catch (error) {
             console.warn('⚠️ Error setting up MIDI functions:', error);
           }
@@ -6906,10 +6913,12 @@ class SoundManager {
           console.log('✅ Connected Strudel webaudio.midiOutput to WebMidi');
         } else {
           // If midiOutput doesn't exist, create it
+          // This is critical - MIDI modifiers won't work without this
           webaudio.midiOutput = (message) => {
             this.sendMIDIMessage(message);
           };
           console.log('✅ Created Strudel webaudio.midiOutput handler');
+          console.log('ℹ️ MIDI modifiers (.midi(), .midiport()) should now be available on patterns');
         }
       }
       
@@ -6944,12 +6953,13 @@ class SoundManager {
    */
   selectIACDriver() {
     // Look for IAC Driver (macOS) or similar virtual MIDI ports
-    const iacNames = ['IAC Driver', 'IAC Bus 1', 'IAC Bus 2', 'loopMIDI', 'Virtual MIDI'];
+    // Prioritize "IAC Driver Bus 1" over "Logic Pro Virtual In"
+    const iacNames = ['IAC Driver Bus 1', 'IAC Driver Bus 2', 'IAC Driver', 'IAC Bus 1', 'IAC Bus 2', 'loopMIDI', 'Virtual MIDI'];
     
     for (const name of iacNames) {
       // Check both exact name and case-insensitive match
       for (const [outputName, output] of this.midiOutputs.entries()) {
-        if (outputName === name || outputName.toLowerCase().includes('iac')) {
+        if (outputName === name || (name.toLowerCase().includes('iac') && outputName.toLowerCase().includes('iac'))) {
           this.selectMIDIOutput(outputName);
           console.log(`✅ Auto-selected IAC Driver: ${outputName}`);
           return;
@@ -7118,11 +7128,20 @@ class SoundManager {
   
   /**
    * Ensure MIDI functions are available in REPL context
-   * MIDI functions like .midi() and .midiport() are part of webaudio module
+   * MIDI functions like .midi() and .midiport() are pattern modifiers from @strudel/webaudio
+   * They should be available when midiOutput is passed to initStrudel
    */
   async ensureMIDIFunctionsAvailable() {
+    // Wait for REPL to be ready (retry up to 5 times with 500ms delay)
+    for (let i = 0; i < 5; i++) {
+      if (window.strudel && window.strudel.evaluate) {
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
     if (!window.strudel || !window.strudel.evaluate) {
-      console.warn('⚠️ Strudel REPL not available for MIDI functions');
+      console.warn('⚠️ Strudel REPL not available for MIDI functions after waiting');
       return;
     }
     
@@ -7142,37 +7161,48 @@ class SoundManager {
       const midiAvailable = await window.strudel.evaluate(testCode);
       
       if (!midiAvailable) {
-        console.log('📦 MIDI functions not available - attempting to load webaudio MIDI support...');
+        console.log('📦 MIDI functions not available - checking webaudio MIDI setup...');
         
-        // Try to ensure webaudio module is properly loaded with MIDI support
-        const { webaudioModule } = await getStrudelModules();
-        
-        if (webaudioModule) {
-          console.log('✅ webaudio module loaded');
+        // Check if webaudio has MIDI support enabled
+        const scheduler = window.strudel?.scheduler;
+        if (scheduler && scheduler.webaudio) {
+          const webaudio = scheduler.webaudio;
+          console.log('✅ webaudio found in scheduler');
           
-          // Try to explicitly enable MIDI in webaudio
-          // MIDI functions should be available when webaudio is initialized with midiOutput
-          // Since we passed midiOutput to initStrudel, MIDI should be enabled
-          // But let's verify by checking the scheduler
-          const scheduler = window.strudel?.scheduler;
-          if (scheduler && scheduler.webaudio) {
-            const webaudio = scheduler.webaudio;
-            console.log('✅ webaudio found in scheduler');
-            console.log('ℹ️ MIDI functions should be available when midiOutput is provided to initStrudel');
-          }
-          
-          // Test again after a short delay
-          await new Promise(resolve => setTimeout(resolve, 500));
-          const midiAvailableAfter = await window.strudel.evaluate(testCode);
-          if (midiAvailableAfter) {
-            console.log('✅ MIDI functions now available');
+          // Check if MIDI output handler is set
+          if (webaudio.midiOutput) {
+            console.log('✅ MIDI output handler found in webaudio');
+            console.log('ℹ️ MIDI modifiers (.midi(), .midiport()) should be available');
+            console.log('ℹ️ If they are not, this may be a Strudel version issue');
+            console.log('ℹ️ Try: note("c").midi() in the console to test');
           } else {
-            console.warn('⚠️ MIDI functions still not available after initialization');
-            console.warn('   This may indicate that @strudel/webaudio needs MIDI support explicitly enabled');
-            console.warn('   Try using patterns without .midi() or check Strudel documentation for MIDI setup');
+            console.warn('⚠️ MIDI output handler not found in webaudio');
+            console.warn('   This means MIDI modifiers may not be available');
+            console.warn('   We passed midiOutput to initStrudel, but it may not have been applied');
+            
+            // Try to set it manually
+            if (this.midiEnabled) {
+              webaudio.midiOutput = (message) => {
+                this.sendMIDIMessage(message);
+              };
+              console.log('✅ Manually set webaudio.midiOutput handler');
+            }
           }
         } else {
-          console.warn('⚠️ webaudio module not available');
+          console.warn('⚠️ webaudio not found in scheduler');
+        }
+        
+        // Test again after a delay
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const midiAvailableAfter = await window.strudel.evaluate(testCode);
+        if (midiAvailableAfter) {
+          console.log('✅ MIDI functions now available');
+        } else {
+          console.warn('⚠️ MIDI functions still not available');
+          console.warn('   MIDI modifiers (.midi(), .midiport()) are pattern methods from @strudel/webaudio');
+          console.warn('   They should be available when midiOutput is passed to initStrudel');
+          console.warn('   This may indicate a Strudel version compatibility issue');
+          console.warn('   Try updating @strudel/webaudio to the latest version');
         }
       } else {
         console.log('✅ MIDI functions verified and available');
