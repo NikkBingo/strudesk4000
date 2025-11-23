@@ -3895,23 +3895,23 @@ class InteractiveSoundApp {
           console.log('🎛️ Chaospad: Disabled - removing cutoff');
           await this.removeCutoffFromMaster();
         } else {
-          // Apply initial cutoff when enabled (use center = 4250 Hz)
+          // Apply initial cutoff when enabled (use center = 4040 Hz)
           console.log('🎛️ Chaospad: Enabled - applying initial cutoff');
           if (this.masterPunchcardCanvas) {
             const rect = this.masterPunchcardCanvas.getBoundingClientRect();
             if (rect.width > 0) {
-              // Simulate mouse at center to apply initial cutoff (50% = 4250 Hz)
+              // Simulate mouse at center to apply initial cutoff (50% = 4040 Hz)
               const fakeEvent = { clientX: rect.left + rect.width / 2 };
               this.handleChaospadMouseMove(fakeEvent);
             } else {
-              // Canvas not ready yet, apply default center cutoff directly
-              console.log('🎛️ Chaospad: Canvas not ready, applying default cutoff 4250 Hz');
-              await this.applyCutoffToMaster(4250);
+              // Canvas not ready yet, apply default center cutoff directly (4040 Hz = center of 80-8000 range)
+              console.log('🎛️ Chaospad: Canvas not ready, applying default cutoff 4040 Hz');
+              await this.applyCutoffToMaster(4040);
             }
           } else {
-            // No canvas, apply default center cutoff directly
-            console.log('🎛️ Chaospad: No canvas, applying default cutoff 4250 Hz');
-            await this.applyCutoffToMaster(4250);
+            // No canvas, apply default center cutoff directly (4040 Hz = center of 80-8000 range)
+            console.log('🎛️ Chaospad: No canvas, applying default cutoff 4040 Hz');
+            await this.applyCutoffToMaster(4040);
           }
         }
       });
@@ -5167,8 +5167,8 @@ class InteractiveSoundApp {
     
     const percentage = Math.max(0, Math.min(1, mouseX / canvasWidth));
 
-    // Smoothly interpolate cutoff frequency from 500 Hz (left) to 8000 Hz (right)
-    const minFreq = 500;
+    // Smoothly interpolate cutoff frequency from 80 Hz (left) to 8000 Hz (right)
+    const minFreq = 80;
     const maxFreq = 8000;
     
     // Linear interpolation
