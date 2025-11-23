@@ -2100,10 +2100,6 @@ header h1 {
   transition: transform 0.2s ease;
 }
 
-.modal-presets-toggle[aria-expanded="true"] .modal-presets-toggle-icon {
-  transform: rotate(180deg);
-}
-
 .modal-presets-content {
   border-top: 1px solid rgba(102, 126, 234, 0.15);
   padding: 0 14px;
@@ -2156,10 +2152,6 @@ header h1 {
 
 .modal-presets-subtoggle-icon {
   transition: transform 0.2s ease;
-}
-
-.modal-presets-subtoggle[aria-expanded="false"] .modal-presets-subtoggle-icon {
-  transform: rotate(-90deg);
 }
 
 .modal-presets-subcontent {

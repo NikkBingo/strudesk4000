@@ -7961,6 +7961,11 @@ class InteractiveSoundApp {
       presetsToggle.setAttribute('aria-expanded', expanded.toString());
       presetsContent.classList.toggle('is-open', expanded);
       presetsContent.setAttribute('aria-hidden', (!expanded).toString());
+      // Update icon based on state
+      const icon = presetsToggle.querySelector('.modal-presets-toggle-icon');
+      if (icon) {
+        icon.textContent = expanded ? '▾' : '▶';
+      }
     };
 
     const resetPresetsSection = () => {
@@ -8781,6 +8786,7 @@ class InteractiveSoundApp {
           modalScaleSelect.value = saved.scale || 'chromatic';
         }
         updateScaleChordSuggestionsUI();
+        updateScaleNotesDisplay();
         // Ensure UI reflects current state
         updatePreviewButtonState();
         updateKeyScaleVisibility();
@@ -9687,6 +9693,11 @@ class InteractiveSoundApp {
         const setState = (isOpen) => {
           toggle.setAttribute('aria-expanded', String(isOpen));
           panel.classList.toggle('is-open', isOpen);
+          // Update icon based on state
+          const icon = toggle.querySelector('.modal-presets-subtoggle-icon');
+          if (icon) {
+            icon.textContent = isOpen ? '▾' : '▶';
+          }
         };
 
         const initialOpen = panel.classList.contains('is-open');
@@ -10160,6 +10171,108 @@ class InteractiveSoundApp {
         .join(' ');
     };
 
+    const updateScaleNotesDisplay = () => {
+      const scaleNotesDisplay = document.getElementById('modal-scale-notes-display');
+      if (!scaleNotesDisplay) return;
+      
+      const selectedKey = modalKeySelect ? (modalKeySelect.value || '').trim() : '';
+      const selectedScale = modalScaleSelect ? (modalScaleSelect.value || '').trim() : '';
+      
+      if (!selectedScale || selectedScale === 'chromatic') {
+        scaleNotesDisplay.textContent = '';
+        return;
+      }
+      
+      try {
+        // Map scale names to Tonal.js scale names (same as in convertNumericPatternToNoteNames)
+        const SCALE_NAME_TONAL_MAP = {
+          major: 'major',
+          minor: 'minor',
+          chromatic: 'chromatic',
+          harmonicMinor: 'harmonic minor',
+          melodicMinor: 'melodic minor',
+          dorian: 'dorian',
+          phrygian: 'phrygian',
+          lydian: 'lydian',
+          mixolydian: 'mixolydian',
+          locrian: 'locrian',
+          blues: 'blues',
+          pentatonicMajor: 'major pentatonic',
+          pentatonicMinor: 'minor pentatonic',
+          ionian: 'major',
+          aeolian: 'minor',
+          'melodic minor': 'melodic minor',
+          'dorian b2': 'dorian b2',
+          'lydian augmented': 'lydian augmented',
+          'lydian dominant': 'lydian dominant',
+          'mixolydian b6': 'mixolydian b6',
+          'locrian #2': 'locrian #2',
+          altered: 'altered',
+          'harmonic minor': 'harmonic minor',
+          'locrian #6': 'locrian #6',
+          'ionian #5': 'ionian #5',
+          'dorian #4': 'dorian #4',
+          'phrygian dominant': 'phrygian dominant',
+          'lydian #2': 'lydian #2',
+          ultralocrian: 'ultralocrian',
+          'harmonic major': 'harmonic major',
+          'dorian b5': 'dorian b5',
+          'phrygian b4': 'phrygian b4',
+          'lydian b3': 'lydian b3',
+          'mixolydian b2': 'mixolydian b2',
+          'lydian augmented #2': 'lydian augmented #2',
+          'locrian bb7': 'locrian bb7',
+          'major pentatonic': 'major pentatonic',
+          'suspended pentatonic': 'suspended pentatonic',
+          'man gong': 'man gong',
+          ritusen: 'ritusen',
+          'minor pentatonic': 'minor pentatonic',
+          'blues minor pentatonic': 'minor pentatonic',
+          'major pentatonic mode 3': 'major pentatonic',
+          egyptian: 'egyptian',
+          'whole tone': 'whole tone',
+          'half-whole diminished': 'dominant diminished',
+          'whole-half diminished': 'diminished',
+          'minor blues': 'blues'
+        };
+        
+        const tonalScaleName = SCALE_NAME_TONAL_MAP[selectedScale.toLowerCase()] || selectedScale.toLowerCase();
+        
+        // Normalize key root
+        let rootNote = 'C';
+        if (selectedKey) {
+          const match = selectedKey.trim().match(/^([a-gA-G])([#b]?)/);
+          if (match) {
+            rootNote = `${match[1].toUpperCase()}${match[2] || ''}`;
+          } else {
+            rootNote = selectedKey.trim();
+          }
+        }
+        
+        const scaleName = `${rootNote} ${tonalScaleName}`;
+        const scaleObj = Scale.get(scaleName);
+        
+        if (!scaleObj || !scaleObj.notes || scaleObj.notes.length === 0) {
+          scaleNotesDisplay.textContent = '';
+          return;
+        }
+        
+        // Format as "C = 0, D = 1, E = 2, ..."
+        const scaleNotes = scaleObj.notes;
+        const noteNumberPairs = scaleNotes.map((note, index) => {
+          // Remove octave if present
+          const noteName = note.replace(/-?\d+$/, '');
+          return `${noteName} = ${index}`;
+        });
+        
+        const displayText = `${rootNote.toLowerCase()}:${tonalScaleName} ${noteNumberPairs.join(', ')}`;
+        scaleNotesDisplay.textContent = displayText;
+      } catch (error) {
+        console.warn('Error displaying scale notes:', error);
+        scaleNotesDisplay.textContent = '';
+      }
+    };
+
     const updateScaleChordSuggestionsUI = () => {
       if (!scaleChordSuggestionEls.container || !scaleChordSuggestionEls.dropdown) {
         return;
@@ -10231,6 +10344,7 @@ class InteractiveSoundApp {
     };
 
     updateScaleChordSuggestionsUI();
+    updateScaleNotesDisplay();
     
     // Add event listener for chord progression dropdown
     if (scaleChordSuggestionEls.dropdown) {
@@ -10397,6 +10511,7 @@ class InteractiveSoundApp {
     
     const applyKeyScaleToPattern = (forceNoteNames = false) => {
       updateScaleChordSuggestionsUI();
+      updateScaleNotesDisplay();
       const patternValue = getStrudelEditorValue('modal-pattern');
       const keyValue = modalKeySelect ? (modalKeySelect.value || null) : null;
       const scaleValue = modalScaleSelect ? (modalScaleSelect.value || null) : null;
@@ -10494,13 +10609,17 @@ class InteractiveSoundApp {
           console.log('ℹ️ Numeric pattern: no scale selected, skipping rewrite');
           return;
         }
-        let upserted = insertScaleModifier(patternValue, scaleModifier);
-        // Remove any existing .scale() before inserting
+        // Remove any existing .scale() modifier first (handle both quoted and unquoted)
+        let upserted = patternValue.replace(/\.\s*scale\s*\((['"])(?:(?=(\\?))\2.)*?\1\)/gi, '');
         upserted = upserted.replace(/\.\s*scale\s*\([^)]*\)/gi, '');
+        // Clean up any double dots or trailing dots
+        upserted = upserted.replace(/\.+/g, '.').replace(/\.\s*\./g, '.').trim();
+        upserted = upserted.replace(/\.+$/, '').trim();
+        // Now insert the new scale modifier
         upserted = insertScaleModifier(upserted, scaleModifier);
         setStrudelEditorValue('modal-pattern', upserted);
         syncLastSemitonePattern(upserted, true);
-        console.log(`ℹ️ Numeric pattern preserved; appended scale modifier ${scaleModifier}`);
+        console.log(`ℹ️ Numeric pattern updated with scale modifier ${scaleModifier}`);
         return;
       }
 
@@ -10728,6 +10847,7 @@ class InteractiveSoundApp {
     
     if (modalKeySelect && !modalKeySelect.dataset.listenerAttached) {
       modalKeySelect.addEventListener('change', () => {
+        updateScaleNotesDisplay(); // Update display immediately
         applyKeyScaleToPattern(false);
       });
       modalKeySelect.dataset.listenerAttached = 'true';
@@ -10735,11 +10855,15 @@ class InteractiveSoundApp {
     
     if (modalScaleSelect && !modalScaleSelect.dataset.listenerAttached) {
       modalScaleSelect.addEventListener('change', () => {
+        updateScaleNotesDisplay(); // Update display immediately
         // Respect the Semitones/Note names toggle (do not force note names)
         applyKeyScaleToPattern(false);
       });
       modalScaleSelect.dataset.listenerAttached = 'true';
     }
+    
+    // Initial display update
+    updateScaleNotesDisplay();
     
     // Function to extract scale from pattern's .scale() modifier
     const extractScaleFromPattern = (pattern) => {
