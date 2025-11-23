@@ -3287,10 +3287,16 @@ class InteractiveSoundApp {
       }
 
       if (isPlaying) {
-        this.hideMasterPunchcardPlaceholder();
+        // Show placeholder text only when visualizer is "off"
+        if (this.selectedVisualizer === 'off') {
+          this.showMasterPunchcardPlaceholder();
+        } else {
+          this.hideMasterPunchcardPlaceholder();
+        }
         this.enableNativeStrudelHighlighting();
       } else {
-        this.showMasterPunchcardPlaceholder();
+        // Hide placeholder when master stops
+        this.hideMasterPunchcardPlaceholder();
       }
     });
 
@@ -3840,8 +3846,12 @@ class InteractiveSoundApp {
         console.log(`🎨 Visualizer changed to: ${this.selectedVisualizer}`);
         
         if (this.selectedVisualizer === 'off') {
-          // When "Off" is selected, just use the base pattern without any visualizer
-          this.showMasterPunchcardPlaceholder();
+          // When "Off" is selected, show placeholder only if master is playing
+          if (this.masterActive) {
+            this.showMasterPunchcardPlaceholder();
+          } else {
+            this.hideMasterPunchcardPlaceholder();
+          }
         } else if (this.selectedVisualizer !== 'punchcard') {
           this.prepareCanvasForExternalVisualizer();
         } else {
@@ -4138,8 +4148,12 @@ class InteractiveSoundApp {
       // Update the master pattern without any visualizer
       await soundManager.setMasterPatternCode(basePattern);
       
-      // Show placeholder
-      this.showMasterPunchcardPlaceholder();
+      // Show placeholder only if master is playing
+      if (this.masterActive) {
+        this.showMasterPunchcardPlaceholder();
+      } else {
+        this.hideMasterPunchcardPlaceholder();
+      }
       
       // Refresh the punchcard display
       this.refreshMasterPunchcard('visualizer-off').catch(err => {
