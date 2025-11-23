@@ -3157,6 +3157,7 @@ class InteractiveSoundApp {
     // Chaospad state
     this.chaospadEnabled = false;
     this.currentCutoffValue = null;
+    this.lastCutoffUpdate = null;
   }
 
   /**
@@ -5090,24 +5091,25 @@ class InteractiveSoundApp {
     
     const percentage = Math.max(0, Math.min(1, mouseX / canvasWidth));
 
-    // Determine which section (20% each): 0-20%, 20-40%, 40-60%, 60-80%, 80-100%
-    let cutoffValue;
-    if (percentage < 0.2) {
-      cutoffValue = 500;
-    } else if (percentage < 0.4) {
-      cutoffValue = 1000;
-    } else if (percentage < 0.6) {
-      cutoffValue = 2000;
-    } else if (percentage < 0.8) {
-      cutoffValue = 4000;
-    } else {
-      cutoffValue = 8000;
-    }
+    // Smoothly interpolate cutoff frequency from 500 Hz (left) to 8000 Hz (right)
+    // Using logarithmic scale for more natural audio frequency response
+    const minFreq = 500;
+    const maxFreq = 8000;
+    
+    // Linear interpolation for now (can be changed to logarithmic if needed)
+    const cutoffValue = Math.round(minFreq + (maxFreq - minFreq) * percentage);
 
-    // Only update if cutoff value changed to avoid excessive pattern updates
-    if (this.currentCutoffValue !== cutoffValue) {
+    // Throttle updates: only update if value changed significantly (more than 50 Hz)
+    // or if it's been more than 100ms since last update
+    const now = Date.now();
+    const shouldUpdate = 
+      this.currentCutoffValue === null ||
+      Math.abs(this.currentCutoffValue - cutoffValue) > 50 ||
+      (this.lastCutoffUpdate && (now - this.lastCutoffUpdate) > 100);
+
+    if (shouldUpdate) {
       this.currentCutoffValue = cutoffValue;
-      console.log(`🎛️ Chaospad: Mouse at ${(percentage * 100).toFixed(1)}% - applying cutoff ${cutoffValue} Hz`);
+      this.lastCutoffUpdate = now;
       this.applyCutoffToMaster(cutoffValue);
     }
   }
@@ -5210,6 +5212,7 @@ class InteractiveSoundApp {
       // Update master pattern
       await soundManager.setMasterPatternCode(pattern);
       this.currentCutoffValue = null;
+      this.lastCutoffUpdate = null;
       console.log('🎛️ Removed Chaospad cutoff from master pattern');
     } catch (error) {
       console.warn('⚠️ Error removing cutoff from master pattern:', error);
