@@ -5104,13 +5104,17 @@ class InteractiveSoundApp {
       cutoffValue = 8000;
     }
 
-    // Always update to apply cutoff (don't check if changed, as pattern might need refresh)
-    this.currentCutoffValue = cutoffValue;
-    this.applyCutoffToMaster(cutoffValue);
+    // Only update if cutoff value changed to avoid excessive pattern updates
+    if (this.currentCutoffValue !== cutoffValue) {
+      this.currentCutoffValue = cutoffValue;
+      console.log(`🎛️ Chaospad: Mouse at ${(percentage * 100).toFixed(1)}% - applying cutoff ${cutoffValue} Hz`);
+      this.applyCutoffToMaster(cutoffValue);
+    }
   }
 
   /**
    * Apply cutoff modifier to master pattern
+   * Applies cutoff to the entire stack, after the stack closing parenthesis
    */
   async applyCutoffToMaster(cutoffValue) {
     try {
@@ -5126,18 +5130,63 @@ class InteractiveSoundApp {
       basePattern = basePattern.replace(/\.\s*cutoff\s*\([^)]*\)/gi, '');
       basePattern = basePattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
 
-      // Add cutoff pattern that cycles through all values based on mouse position
-      // The pattern cycles: 500, 1000, 2000, 4000, 8000
-      const cutoffPattern = `<500 1000 2000 4000 8000>`;
-      const patternWithCutoff = `${basePattern}.cutoff(${cutoffPattern})`;
+      // Find where to insert the cutoff modifier
+      // For stack patterns, insert after the closing parenthesis
+      // For single patterns, append at the end
+      let patternWithCutoff;
+      const stackMatch = basePattern.match(/stack\s*\(/);
+      
+      if (stackMatch) {
+        // Find the closing parenthesis of the stack(...) call
+        let stackStart = stackMatch.index + stackMatch[0].length - 1; // Position of '('
+        let depth = 1;
+        let stackEnd = stackStart + 1;
+        let inString = false;
+        let stringChar = null;
+        
+        while (stackEnd < basePattern.length && depth > 0) {
+          const char = basePattern[stackEnd];
+          
+          // Handle strings
+          if (!inString && (char === '"' || char === "'")) {
+            inString = true;
+            stringChar = char;
+          } else if (inString && char === stringChar && basePattern[stackEnd - 1] !== '\\') {
+            inString = false;
+            stringChar = null;
+          }
+          
+          if (!inString) {
+            if (char === '(') depth++;
+            else if (char === ')') depth--;
+          }
+          
+          if (depth > 0) stackEnd++;
+        }
+        
+        if (depth === 0) {
+          // Found the stack closing paren at stackEnd
+          // Insert cutoff right after the closing parenthesis, before any .gain() or .pan()
+          const beforeStackEnd = basePattern.substring(0, stackEnd + 1);
+          const afterStackEnd = basePattern.substring(stackEnd + 1);
+          
+          // Insert cutoff before any existing modifiers
+          patternWithCutoff = `${beforeStackEnd}.cutoff(${cutoffValue})${afterStackEnd}`;
+        } else {
+          // Couldn't find matching closing paren, append at end
+          patternWithCutoff = `${basePattern}.cutoff(${cutoffValue})`;
+        }
+      } else {
+        // Not a stack pattern, append at the end
+        patternWithCutoff = `${basePattern}.cutoff(${cutoffValue})`;
+      }
 
-      console.log(`🎛️ Chaospad: Applying cutoff pattern ${cutoffPattern} (mouse section: ${cutoffValue} Hz)`);
-      console.log(`🎛️ Chaospad: Pattern before: ${basePattern.substring(0, 100)}...`);
+      console.log(`🎛️ Chaospad: Applying cutoff ${cutoffValue} Hz to master pattern`);
       console.log(`🎛️ Chaospad: Pattern after: ${patternWithCutoff.substring(0, 150)}...`);
 
       // Update master pattern
       await soundManager.setMasterPatternCode(patternWithCutoff);
-      console.log(`🎛️ ✅ Chaospad: Cutoff pattern applied successfully`);
+      console.log(`🎛️ ✅ Chaospad: Cutoff ${cutoffValue} Hz applied successfully`);
     } catch (error) {
       console.warn('⚠️ Chaospad: Error applying cutoff to master pattern:', error);
     }
