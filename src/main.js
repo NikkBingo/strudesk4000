@@ -4795,16 +4795,21 @@ class InteractiveSoundApp {
   }
 
   startScopeVisualizerLoop() {
-    if (this.activeVisualizerLoop === 'scope') {
-      return;
+    // Stop any existing loop first
+    if (this.scopeAnimationFrame) {
+      cancelAnimationFrame(this.scopeAnimationFrame);
+      this.scopeAnimationFrame = null;
     }
+    
     const canvas = this.masterPunchcardCanvas;
     const ctx = this.getMasterPunchcardContext();
     if (!canvas || !ctx) {
+      console.warn('⚠️ Scope visualizer: Canvas or context not available');
       return;
     }
     const analyser = this.ensureVisualizerAnalyser();
     if (!analyser) {
+      console.warn('⚠️ Scope visualizer: Analyser not available');
       this.drawVisualizerMessage('Scope analyser unavailable');
       return;
     }
@@ -4813,8 +4818,10 @@ class InteractiveSoundApp {
       this.scopeDataArray = new Uint8Array(bufferLength);
     }
     this.activeVisualizerLoop = 'scope';
+    console.log('🎨 Starting scope visualizer loop');
     const draw = () => {
       if (this.selectedVisualizer !== 'scope') {
+        console.log(`🎨 Scope loop stopping: selectedVisualizer is "${this.selectedVisualizer}", expected "scope"`);
         this.stopVisualizerAnimation();
         return;
       }
@@ -4861,16 +4868,21 @@ class InteractiveSoundApp {
   }
 
   startBarchartVisualizerLoop() {
-    if (this.activeVisualizerLoop === 'barchart') {
-      return;
+    // Stop any existing loop first
+    if (this.barchartAnimationFrame) {
+      cancelAnimationFrame(this.barchartAnimationFrame);
+      this.barchartAnimationFrame = null;
     }
+    
     const canvas = this.masterPunchcardCanvas;
     const ctx = this.getMasterPunchcardContext();
     if (!canvas || !ctx) {
+      console.warn('⚠️ Bar chart visualizer: Canvas or context not available');
       return;
     }
     const analyser = this.ensureVisualizerAnalyser();
     if (!analyser) {
+      console.warn('⚠️ Bar chart visualizer: Analyser not available');
       this.drawVisualizerMessage('Spectrum analyser unavailable');
       return;
     }
@@ -4882,8 +4894,10 @@ class InteractiveSoundApp {
     const sampleRate = analyser.context?.sampleRate || 44100;
     const nyquist = sampleRate / 2;
     this.activeVisualizerLoop = 'barchart';
+    console.log('🎨 Starting bar chart visualizer loop');
     const draw = () => {
       if (this.selectedVisualizer !== 'barchart') {
+        console.log(`🎨 Bar chart loop stopping: selectedVisualizer is "${this.selectedVisualizer}", expected "barchart"`);
         this.stopVisualizerAnimation();
         return;
       }
