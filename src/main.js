@@ -4529,11 +4529,15 @@ class InteractiveSoundApp {
     // If visualizer is "off", just show placeholder and stop any visualizer animations
     if (this.selectedVisualizer === 'off') {
       this.stopVisualizerAnimation();
+      this.teardownExternalVisualizerCanvas(); // Ensure external visualizers are removed
       this.showMasterPunchcardPlaceholder();
-      // Clear canvas
-      if (this.masterPunchcardCanvas && this.masterPunchcardCtx) {
-        this.masterPunchcardCtx.setTransform(1, 0, 0, 1, 0, 0);
-        this.masterPunchcardCtx.clearRect(0, 0, this.masterPunchcardCanvas.width, this.masterPunchcardCanvas.height);
+      // Clear canvas and ensure it's visible
+      if (this.masterPunchcardCanvas) {
+        this.masterPunchcardCanvas.style.display = 'block';
+        if (this.masterPunchcardCtx) {
+          this.masterPunchcardCtx.setTransform(1, 0, 0, 1, 0, 0);
+          this.masterPunchcardCtx.clearRect(0, 0, this.masterPunchcardCanvas.width, this.masterPunchcardCanvas.height);
+        }
       }
       return;
     }
@@ -4825,10 +4829,18 @@ class InteractiveSoundApp {
         this.stopVisualizerAnimation();
         return;
       }
-      const context = this.getMasterPunchcardContext();
-      if (!context) {
-        this.stopVisualizerAnimation();
-        return;
+      // Use cached context or get native 2D context (visualizers need native context for setTransform)
+      let context = this.masterPunchcardCtx;
+      if (!context || typeof context.setTransform !== 'function') {
+        // Fallback to native 2D context for visualizers
+        context = this.masterPunchcardCanvas.getContext('2d');
+        if (!context || typeof context.setTransform !== 'function') {
+          console.warn('⚠️ Scope visualizer: Cannot get valid 2D context');
+          this.stopVisualizerAnimation();
+          return;
+        }
+        // Cache the native context
+        this.masterPunchcardCtx = context;
       }
       this.hideMasterPunchcardPlaceholder();
       this.masterPunchcardCanvas.style.display = 'block';
@@ -4901,10 +4913,18 @@ class InteractiveSoundApp {
         this.stopVisualizerAnimation();
         return;
       }
-      const context = this.getMasterPunchcardContext();
-      if (!context) {
-        this.stopVisualizerAnimation();
-        return;
+      // Use cached context or get native 2D context (visualizers need native context for setTransform)
+      let context = this.masterPunchcardCtx;
+      if (!context || typeof context.setTransform !== 'function') {
+        // Fallback to native 2D context for visualizers
+        context = this.masterPunchcardCanvas.getContext('2d');
+        if (!context || typeof context.setTransform !== 'function') {
+          console.warn('⚠️ Bar chart visualizer: Cannot get valid 2D context');
+          this.stopVisualizerAnimation();
+          return;
+        }
+        // Cache the native context
+        this.masterPunchcardCtx = context;
       }
       this.hideMasterPunchcardPlaceholder();
       this.masterPunchcardCanvas.style.display = 'block';
@@ -4985,17 +5005,45 @@ class InteractiveSoundApp {
 
 
   teardownExternalVisualizerCanvas() {
+    // Disconnect observer
     if (this.externalVisualizerObserver) {
       this.externalVisualizerObserver.disconnect();
       this.externalVisualizerObserver = null;
     }
+    
+    // Remove tracked external canvas
     if (this.externalVisualizerCanvas && this.externalVisualizerCanvas.parentNode) {
       this.externalVisualizerCanvas.remove();
     }
     this.externalVisualizerCanvas = null;
     this.externalVisualizerType = null;
+    
+    // Remove any canvases created by Strudel visualizers (spectrum, scope, etc.)
+    // Look for canvases that might have been created by Strudel but not tracked
+    const allCanvases = document.querySelectorAll('canvas');
+    allCanvases.forEach(canvas => {
+      // Skip the master punchcard canvas
+      if (canvas === this.masterPunchcardCanvas || canvas.id === 'master-punchcard-canvas') {
+        return;
+      }
+      
+      // Check if this canvas is inside the master punchcard container
+      if (this.masterPunchcardContainer && this.masterPunchcardContainer.contains(canvas)) {
+        // Check if it looks like a visualizer canvas (spectrum, scope, etc.)
+        const id = (canvas.id || '').toLowerCase();
+        const className = (canvas.className || '').toLowerCase();
+        if (id.includes('spectrum') || id.includes('scope') || 
+            className.includes('spectrum') || className.includes('scope') ||
+            canvas.dataset.spectrum !== undefined || canvas.dataset.scope !== undefined) {
+          console.log('🧹 Removing external visualizer canvas:', canvas.id || canvas.className);
+          canvas.remove();
+        }
+      }
+    });
+    
+    // Ensure master canvas is visible
     if (this.masterPunchcardCanvas) {
-      this.masterPunchcardCanvas.style.display = '';
+      this.masterPunchcardCanvas.style.display = 'block';
     }
   }
 
@@ -5316,11 +5364,26 @@ class InteractiveSoundApp {
     if (!this.masterPunchcardCtx) {
       try {
         const { getDrawContext } = await import('@strudel/draw');
-        this.masterPunchcardCtx = getDrawContext(this.masterPunchcardCanvas.id, { contextType: '2d' });
+        const drawCtx = getDrawContext(this.masterPunchcardCanvas.id, { contextType: '2d' });
+        // getDrawContext might return a wrapper, try to get the actual 2D context
+        if (drawCtx && typeof drawCtx.setTransform === 'function') {
+          this.masterPunchcardCtx = drawCtx;
+        } else if (drawCtx && drawCtx.canvas) {
+          // If it's a wrapper with a canvas property, get the native context
+          this.masterPunchcardCtx = drawCtx.canvas.getContext('2d');
+        } else {
+          // Fallback to native context
+          this.masterPunchcardCtx = this.masterPunchcardCanvas.getContext('2d');
+        }
       } catch (error) {
         console.warn('⚠️ Falling back to native canvas context:', error);
         this.masterPunchcardCtx = this.masterPunchcardCanvas.getContext('2d');
       }
+    }
+    // Ensure we have a valid 2D context with setTransform
+    if (this.masterPunchcardCtx && typeof this.masterPunchcardCtx.setTransform !== 'function') {
+      console.warn('⚠️ Context from getDrawContext does not have setTransform, using native context');
+      this.masterPunchcardCtx = this.masterPunchcardCanvas.getContext('2d');
     }
     return this.masterPunchcardCtx;
   }
