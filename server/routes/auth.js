@@ -85,8 +85,21 @@ router.get('/me', async (req, res) => {
         avatarUrl: testUser.avatarUrl
       });
     } catch (error) {
-      console.error('Error getting test user:', error);
-      res.status(500).json({ error: 'Failed to get test user' });
+      // If database is unavailable in test mode, return a mock test user
+      if (error.name === 'PrismaClientInitializationError' || 
+          error.message?.includes("Can't reach database")) {
+        console.warn('⚠️  Database unavailable in test mode, using mock test user');
+        res.json({
+          id: 'test-user-mock-1',
+          email: 'test@strudel.test',
+          name: 'Test User',
+          artistName: 'Test Artist',
+          avatarUrl: null
+        });
+      } else {
+        console.error('Error getting test user:', error);
+        res.status(500).json({ error: 'Failed to get test user' });
+      }
     }
   } else {
     res.status(401).json({ error: 'Not authenticated' });
@@ -153,8 +166,32 @@ router.post('/test-login', async (req, res) => {
       });
     });
   } catch (error) {
-    console.error('Test login error:', error);
-    res.status(500).json({ error: 'Test login failed', details: error.message });
+    // If database is unavailable in test mode, use a mock test user
+    if (error.name === 'PrismaClientInitializationError' || 
+        error.message?.includes("Can't reach database")) {
+      console.warn('⚠️  Database unavailable in test mode, using mock test user for test-login');
+      const mockUser = {
+        id: 'test-user-mock-1',
+        email: 'test@strudel.test',
+        name: 'Test User',
+        artistName: 'Test Artist',
+        avatarUrl: null
+      };
+      
+      // Log the mock user in
+      req.login(mockUser, (err) => {
+        if (err) {
+          return res.status(500).json({ error: 'Login failed' });
+        }
+        res.json({
+          message: 'Test login successful (mock user - database unavailable)',
+          user: mockUser
+        });
+      });
+    } else {
+      console.error('Test login error:', error);
+      res.status(500).json({ error: 'Test login failed', details: error.message });
+    }
   }
 });
 
