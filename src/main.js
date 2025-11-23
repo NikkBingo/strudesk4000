@@ -6,9 +6,8 @@ import { soundManager } from './soundManager.js';
 import { uiController } from './ui.js';
 import { soundConfig } from './config.js';
 import { initStrudelReplEditors, getStrudelEditor, getStrudelEditorValue, setStrudelEditorValue, setStrudelEditorEditable, insertStrudelEditorSnippet } from './strudelReplEditor.js';
-import { getDrawContext } from '@strudel/draw';
-import { transpiler as strudelTranspiler } from '@strudel/transpiler';
-import { evaluate as strudelCoreEvaluate } from '@strudel/core';
+// Strudel modules are loaded dynamically via soundManager to avoid duplicate loading
+// Use getStrudelModules() or window.strudel functions instead of static imports
 import { Scale, Note, Progression } from '@tonaljs/tonal';
 import { LoginModal } from './components/LoginModal.js';
 import { UserProfile } from './components/UserProfile.js';
@@ -3654,7 +3653,7 @@ class InteractiveSoundApp {
           
           if (this.selectedVisualizer && this.selectedVisualizer !== 'punchcard' && this.selectedVisualizer !== 'off') {
             console.log(`🎨 Preparing canvas for visualizer "${this.selectedVisualizer}"`);
-            this.prepareCanvasForExternalVisualizer();
+            await this.prepareCanvasForExternalVisualizer();
           } else {
             this.showMasterPunchcardPlaceholder();
           }
@@ -3857,7 +3856,7 @@ class InteractiveSoundApp {
           // When "Off" is selected, always show placeholder
           this.showMasterPunchcardPlaceholder();
         } else if (this.selectedVisualizer !== 'punchcard') {
-          this.prepareCanvasForExternalVisualizer();
+          await this.prepareCanvasForExternalVisualizer();
         } else {
           this.showMasterPunchcardPlaceholder();
         }
@@ -4222,7 +4221,7 @@ class InteractiveSoundApp {
     }
     
     // Prepare canvas for visualizers (ensure context is ready)
-    this.prepareCanvasForExternalVisualizer();
+    await this.prepareCanvasForExternalVisualizer();
     
     // Get the current master pattern without any visualizers
     let basePattern = soundManager.getMasterPatternCode();
@@ -4388,6 +4387,7 @@ class InteractiveSoundApp {
         // Register canvas with Strudel's draw system
         // getDrawContext will find our existing canvas and return its context
         // For scope/spectrum, this ensures they use our canvas instead of creating their own
+        const { getDrawContext } = await import('@strudel/draw');
         const ctx = getDrawContext(canvasId, { contextType: '2d' });
         
         window.__strudelVisualizerCtx = ctx;
@@ -4540,21 +4540,21 @@ class InteractiveSoundApp {
     
     const activeVisualizer = this.selectedVisualizer || 'punchcard';
     if (activeVisualizer === 'scope') {
-      this.prepareCanvasForExternalVisualizer();
+      await this.prepareCanvasForExternalVisualizer();
       this.startScopeVisualizerLoop();
       this.hideMasterPunchcardPlaceholder();
       this.masterPunchcardIsRendering = false;
       return;
     }
     if (activeVisualizer === 'barchart') {
-      this.prepareCanvasForExternalVisualizer();
+      await this.prepareCanvasForExternalVisualizer();
       this.startBarchartVisualizerLoop();
       this.hideMasterPunchcardPlaceholder();
       this.masterPunchcardIsRendering = false;
       return;
     }
     if (activeVisualizer === 'spectrum') {
-      this.prepareCanvasForExternalVisualizer();
+      await this.prepareCanvasForExternalVisualizer();
       this.watchForExternalVisualizerCanvas('spectrum');
       this.hideMasterPunchcardPlaceholder();
       this.masterPunchcardIsRendering = false;
@@ -4590,7 +4590,7 @@ class InteractiveSoundApp {
           this.masterPunchcardCanvas.style.display = 'none';
         }
       }
-      this.prepareCanvasForExternalVisualizer();
+      await this.prepareCanvasForExternalVisualizer();
       this.hideMasterPunchcardPlaceholder();
       this.masterPunchcardIsRendering = false;
       return;
@@ -4645,7 +4645,7 @@ class InteractiveSoundApp {
     this.drawMasterPunchcardCanvas(metrics, data);
   }
 
-  prepareCanvasForExternalVisualizer() {
+  async prepareCanvasForExternalVisualizer() {
     if (!this.masterPunchcardContainer || !this.masterPunchcardCanvas) {
       console.warn('⚠️ Canvas elements not found for visualizer');
       return;
@@ -4676,6 +4676,7 @@ class InteractiveSoundApp {
     
     let ctx;
     try {
+      const { getDrawContext } = await import('@strudel/draw');
       ctx = getDrawContext(canvasId, { contextType: '2d' });
       console.log(`✅ Got draw context via getDrawContext for ${canvasId}`);
     } catch (error) {
@@ -5200,10 +5201,11 @@ class InteractiveSoundApp {
     return options;
   }
 
-  getMasterPunchcardContext() {
+  async getMasterPunchcardContext() {
     if (!this.masterPunchcardCanvas) return null;
     if (!this.masterPunchcardCtx) {
       try {
+        const { getDrawContext } = await import('@strudel/draw');
         this.masterPunchcardCtx = getDrawContext(this.masterPunchcardCanvas.id, { contextType: '2d' });
       } catch (error) {
         console.warn('⚠️ Falling back to native canvas context:', error);
@@ -5605,6 +5607,11 @@ class InteractiveSoundApp {
     
     let patternObject;
     try {
+      // Use dynamic imports to avoid duplicate loading
+      const [{ evaluate: strudelCoreEvaluate }, { transpiler: strudelTranspiler }] = await Promise.all([
+        import('@strudel/core'),
+        import('@strudel/transpiler')
+      ]);
       const evaluation = await strudelCoreEvaluate(patternForEval, strudelTranspiler, {
         wrapAsync: false,
         addReturn: false,
