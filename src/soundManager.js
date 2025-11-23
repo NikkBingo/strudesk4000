@@ -2993,8 +2993,8 @@ class SoundManager {
           
           // Extract and evaluate any samples() calls from the pattern before evaluating the main pattern
           // This ensures samples are loaded before s() tries to use them
-          // Also remove samples() calls from the pattern since they return undefined
-          let patternWithoutSamples = pattern;
+          // Note: We'll evaluate samples() calls first, then evaluate the full pattern
+          // (samples() returns undefined which is fine as a standalone statement)
           if (window.strudel && window.strudel.evaluate) {
             try {
               // Look for samples() calls in the pattern (handle multi-line)
@@ -3119,23 +3119,18 @@ class SoundManager {
                 });
               }
               
-              // Evaluate each samples() call in REPL context and remove from pattern
+              // Evaluate each samples() call in REPL context first to load samples
+              // Then we'll remove them from the pattern since they return undefined
               for (const samplesCall of samplesCalls) {
                 try {
-                  console.log('📦 Evaluating samples() call in REPL:', samplesCall.fullCall);
-                  // Evaluate the samples() call in the REPL context
+                  console.log('📦 Pre-loading samples() call in REPL:', samplesCall.fullCall);
+                  // Evaluate the samples() call in the REPL context FIRST to load samples
                   // Strudel's samples() function handles 'github:' prefix natively per docs
                   await window.strudel.evaluate(samplesCall.fullCall);
                   console.log('✅ Samples loaded via REPL evaluation');
                   // Wait a bit for samples to be registered
                   await new Promise(resolve => setTimeout(resolve, 500));
-                  
-                  // Remove the samples() call from the pattern
-                  // Only remove if it's on its own line (not part of a larger expression)
-                  const escapedCall = samplesCall.fullCall.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                  // Match: start of line or newline, then samples() call, then optional whitespace and newline
-                  const removeRegex = new RegExp(`(^|\\n)\\s*${escapedCall}\\s*\\n?`, 'gm');
-                  patternWithoutSamples = patternWithoutSamples.replace(removeRegex, '$1').trim();
+                  // Note: We'll keep samples() in the pattern - it returns undefined which is fine
                 } catch (evalError) {
                   console.warn('Could not evaluate samples() call in REPL:', evalError);
                   // Continue - try to load samples directly as fallback
@@ -3177,11 +3172,7 @@ class SoundManager {
                           await samplesFunc(samplesMap);
                         }
                         await new Promise(resolve => setTimeout(resolve, 500));
-                        
-                        // Remove from pattern even if loaded via fallback
-                        const escapedCall = samplesCall.fullCall.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                        const removeRegex = new RegExp(`(^|\\n)\\s*${escapedCall}\\s*\\n?`, 'gm');
-                        patternWithoutSamples = patternWithoutSamples.replace(removeRegex, '$1').trim();
+                        // Note: Keep samples() in pattern - it returns undefined which is fine
                       }
                     }
                   } catch (fallbackError) {
@@ -3190,10 +3181,9 @@ class SoundManager {
                 }
               }
               
-              // Use pattern without samples() calls if we removed any
-              if (patternWithoutSamples !== pattern && samplesCalls.length > 0) {
-                console.log('📝 Pattern after removing samples() calls:', patternWithoutSamples);
-                pattern = patternWithoutSamples;
+              // Log that samples were pre-loaded
+              if (samplesCalls.length > 0) {
+                console.log(`✅ Pre-loaded ${samplesCalls.length} samples() call(s) - pattern will be evaluated with samples already loaded`);
               }
             } catch (error) {
               console.warn('Error pre-loading samples from pattern:', error);
@@ -3270,11 +3260,21 @@ class SoundManager {
             return;
           }
           
+          // Validate pattern syntax before evaluation
+          // Check for common issues that might cause "Invalid argument" errors
+          if (patternToEval.includes('undefined') && !patternToEval.includes('globalThis.undefined')) {
+            console.warn(`⚠️ Pattern contains 'undefined' - might be from removed samples() call`);
+            // Try to clean it up
+            patternToEval = patternToEval.replace(/undefined\s*[,\n;]/g, '').trim();
+            patternToEval = patternToEval.replace(/,\s*undefined/g, '').trim();
+            patternToEval = patternToEval.replace(/undefined\s*\./g, '').trim();
+          }
+          
           // Directly assign the pattern with gain/pan applied
           const assignmentCode = `${patternSlot} = ${patternToEval}`;
           console.log(`🎼 ${elementId} → ${patternSlot}:`);
-          console.log(`   Full Pattern: ${patternToEval}`);
-          console.log(`   Assignment: ${assignmentCode}`);
+          console.log(`   Full Pattern: ${patternToEval.substring(0, 200)}${patternToEval.length > 200 ? '...' : ''}`);
+          console.log(`   Assignment: ${assignmentCode.substring(0, 200)}${assignmentCode.length > 200 ? '...' : ''}`);
           
           try {
             // CRITICAL: Ensure scheduler is running before evaluating pattern
