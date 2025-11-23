@@ -2991,6 +2991,88 @@ class SoundManager {
           
           console.log('Evaluating pattern:', pattern);
           
+          // Extract and pre-load any samples() calls from the pattern before evaluation
+          // This ensures samples are loaded before s() tries to use them
+          const samplesFunc = window.strudel?.samples || globalThis.samples;
+          if (samplesFunc && typeof samplesFunc === 'function') {
+            try {
+              // Look for samples() calls in the pattern (handle multi-line)
+              // Match: samples({...}, "github:...") or samples({...}, { baseUrl: "..." })
+              // Use multiline regex to handle newlines in object literals
+              const samplesCallRegex = /samples\s*\(\s*(\{(?:[^{}]|\{[^}]*\})*?\})\s*(?:,\s*(["']?[^"')]+["']?|\{[^}]*\}))?\s*\)/gs;
+              let match;
+              
+              while ((match = samplesCallRegex.exec(pattern)) !== null) {
+                const samplesObjStr = match[1];
+                const secondParam = match[2];
+                
+                try {
+                  // Parse the samples object - handle JavaScript object literal format
+                  // Replace single quotes with double quotes for JSON parsing
+                  const normalizedObjStr = samplesObjStr
+                    .replace(/'/g, '"')  // Replace single quotes
+                    .replace(/(\w+):/g, '"$1":'); // Quote keys if not already quoted
+                  
+                  let samplesMap = {};
+                  try {
+                    samplesMap = JSON.parse(normalizedObjStr);
+                  } catch (e) {
+                    // If JSON parse fails, try evaluating it safely
+                    console.warn('Could not parse samples object as JSON, trying eval:', e);
+                    try {
+                      // Use Function constructor for safer eval
+                      samplesMap = new Function('return ' + samplesObjStr)();
+                    } catch (evalError) {
+                      console.warn('Could not parse samples object:', evalError);
+                      continue;
+                    }
+                  }
+                  
+                  // Determine baseUrl from second parameter
+                  let baseUrl = '';
+                  if (secondParam) {
+                    const cleanedParam = secondParam.trim().replace(/^["']|["']$/g, '');
+                    if (cleanedParam.startsWith('github:')) {
+                      // Convert github:user/repo to proper baseUrl
+                      const repoPath = cleanedParam.replace('github:', '');
+                      baseUrl = `https://raw.githubusercontent.com/${repoPath}/main/`;
+                    } else if (cleanedParam.startsWith('http')) {
+                      baseUrl = cleanedParam;
+                    } else if (cleanedParam.startsWith('{')) {
+                      // Parse options object
+                      try {
+                        const options = JSON.parse(cleanedParam.replace(/'/g, '"'));
+                        baseUrl = options.baseUrl || '';
+                      } catch (e) {
+                        // Ignore parse errors
+                      }
+                    } else {
+                      baseUrl = cleanedParam;
+                    }
+                  }
+                  
+                  if (Object.keys(samplesMap).length > 0) {
+                    console.log('📦 Pre-loading samples from pattern:', samplesMap, 'baseUrl:', baseUrl);
+                    if (baseUrl) {
+                      await samplesFunc(samplesMap, { baseUrl });
+                    } else {
+                      await samplesFunc(samplesMap);
+                    }
+                    console.log('✅ Samples pre-loaded from pattern');
+                    // Wait a bit for samples to be registered
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                  }
+                } catch (parseError) {
+                  console.warn('Could not parse samples() call from pattern:', parseError);
+                  // Continue - the samples() call will be evaluated as part of the pattern
+                }
+              }
+            } catch (error) {
+              console.warn('Error pre-loading samples from pattern:', error);
+              // Continue - pattern evaluation will handle samples() calls
+            }
+          }
+          
           // Get the pattern slot for this element (each element gets its own slot)
           const patternSlot = this.getPatternSlot(elementId);
           console.log(`Assigning pattern to ${patternSlot} for element ${elementId}`);
