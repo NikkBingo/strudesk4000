@@ -38,7 +38,8 @@
     "@strudel/web": "1.2.5",
     "@strudel/webaudio": "1.2.5",
     "codemirror": "^6.0.2",
-    "hydra-synth": "^1.4.0"
+    "hydra-synth": "^1.4.0",
+    "webmidi": "^3.1.14"
   },
   "overrides": {
     "@strudel/core": "1.2.5",

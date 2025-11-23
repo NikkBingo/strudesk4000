@@ -4,6 +4,7 @@
 
 import { soundConfig } from './config.js';
 import { Note, Scale, Interval } from '@tonaljs/tonal';
+import { WebMidi } from 'webmidi';
 
 // Import Strudel modules statically at top level to avoid duplicate bundling
 // Use dynamic imports but cache them to ensure single instance
@@ -592,6 +593,12 @@ class SoundManager {
     this.mediaRecorder = null;
     this.recordedChunks = [];
     this.isRecording = false;
+    
+    // MIDI state
+    this.midiEnabled = false;
+    this.midiOutputs = new Map(); // portName -> WebMidi output
+    this.selectedMidiOutput = null; // Currently selected MIDI output port
+    this.midiChannel = 0; // Default MIDI channel (0-15, where 0 = channel 1)
   }
   
   /**
@@ -3750,6 +3757,13 @@ class SoundManager {
             console.warn('⚠️ Error pre-loading preset samples:', error);
           }
           
+          // Initialize MIDI output
+          try {
+            await this.initializeMIDI();
+          } catch (error) {
+            console.warn('⚠️ Error initializing MIDI:', error);
+          }
+          
           console.log('replInstance type:', typeof replInstance);
           console.log('replInstance.evaluate available:', typeof replInstance?.evaluate);
           console.log('strudelContext keys:', Object.keys(strudelContext));
@@ -6767,6 +6781,187 @@ class SoundManager {
       
       // Return true if we attempted to load, false if no paths worked
       return loaded;
+    }
+  }
+
+  /**
+   * Initialize WebMidi for MIDI output
+   */
+  async initializeMIDI() {
+    try {
+      // Enable WebMidi
+      await WebMidi.enable();
+      this.midiEnabled = true;
+      console.log('✅ WebMidi enabled');
+      
+      // Store available MIDI outputs
+      WebMidi.outputs.forEach((output) => {
+        this.midiOutputs.set(output.name, output);
+        console.log(`🎹 MIDI Output available: ${output.name}`);
+      });
+      
+      // Auto-select first available output if any
+      if (this.midiOutputs.size > 0) {
+        const firstOutput = Array.from(this.midiOutputs.values())[0];
+        this.selectedMidiOutput = firstOutput;
+        console.log(`✅ Auto-selected MIDI output: ${firstOutput.name}`);
+      }
+      
+      // Listen for new MIDI devices
+      WebMidi.addListener('connected', (event) => {
+        if (event.port.type === 'output') {
+          this.midiOutputs.set(event.port.name, event.port);
+          console.log(`🎹 MIDI Output connected: ${event.port.name}`);
+          // Auto-select if no output is currently selected
+          if (!this.selectedMidiOutput) {
+            this.selectedMidiOutput = event.port;
+            console.log(`✅ Auto-selected MIDI output: ${event.port.name}`);
+          }
+        }
+      });
+      
+      WebMidi.addListener('disconnected', (event) => {
+        if (event.port.type === 'output') {
+          this.midiOutputs.delete(event.port.name);
+          console.log(`🎹 MIDI Output disconnected: ${event.port.name}`);
+          // Clear selection if the selected output was disconnected
+          if (this.selectedMidiOutput === event.port) {
+            this.selectedMidiOutput = null;
+            // Try to select another available output
+            if (this.midiOutputs.size > 0) {
+              this.selectedMidiOutput = Array.from(this.midiOutputs.values())[0];
+              console.log(`✅ Auto-selected new MIDI output: ${this.selectedMidiOutput.name}`);
+            }
+          }
+        }
+      });
+      
+      // Set up Strudel MIDI output handler
+      this.setupStrudelMIDIOutput();
+      
+    } catch (error) {
+      console.warn('⚠️ WebMidi initialization failed:', error);
+      this.midiEnabled = false;
+    }
+  }
+  
+  /**
+   * Set up Strudel MIDI output handler
+   * This connects Strudel's .midi() pattern functions to WebMidi
+   */
+  setupStrudelMIDIOutput() {
+    if (!this.midiEnabled || !window.strudel) {
+      return;
+    }
+    
+    try {
+      // Override or extend Strudel's MIDI output to use WebMidi
+      // Strudel patterns with .midi() will send MIDI messages
+      const originalMidiOutput = window.strudel.midiOutput;
+      
+      // Create a MIDI output handler
+      window.strudel.midiOutput = (message) => {
+        this.sendMIDIMessage(message);
+        // Call original if it exists
+        if (originalMidiOutput && typeof originalMidiOutput === 'function') {
+          originalMidiOutput(message);
+        }
+      };
+      
+      console.log('✅ Strudel MIDI output handler set up');
+    } catch (error) {
+      console.warn('⚠️ Failed to set up Strudel MIDI output:', error);
+    }
+  }
+  
+  /**
+   * Send MIDI message to selected output
+   * @param {Object} message - MIDI message object with type, channel, note, velocity, etc.
+   */
+  sendMIDIMessage(message) {
+    if (!this.midiEnabled || !this.selectedMidiOutput) {
+      return;
+    }
+    
+    try {
+      const channel = message.channel !== undefined ? message.channel : this.midiChannel;
+      
+      switch (message.type) {
+        case 'noteon':
+        case 'noteOn':
+          this.selectedMidiOutput.playNote(message.note, {
+            channel: channel + 1, // WebMidi uses 1-16, we use 0-15
+            velocity: message.velocity || 127
+          });
+          break;
+          
+        case 'noteoff':
+        case 'noteOff':
+          this.selectedMidiOutput.stopNote(message.note, {
+            channel: channel + 1
+          });
+          break;
+          
+        case 'cc':
+        case 'controlchange':
+          this.selectedMidiOutput.sendControlChange(message.controller, message.value, {
+            channel: channel + 1
+          });
+          break;
+          
+        case 'programchange':
+          this.selectedMidiOutput.sendProgramChange(message.program, {
+            channel: channel + 1
+          });
+          break;
+          
+        case 'pitchbend':
+          this.selectedMidiOutput.sendPitchBend(message.value, {
+            channel: channel + 1
+          });
+          break;
+          
+        default:
+          // Try to send raw MIDI message
+          if (message.data && Array.isArray(message.data)) {
+            this.selectedMidiOutput.send(message.data);
+          }
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to send MIDI message:', error);
+    }
+  }
+  
+  /**
+   * Get available MIDI outputs
+   * @returns {Array} Array of MIDI output port names
+   */
+  getMIDIOutputs() {
+    return Array.from(this.midiOutputs.keys());
+  }
+  
+  /**
+   * Select a MIDI output port
+   * @param {string} portName - Name of the MIDI output port
+   */
+  selectMIDIOutput(portName) {
+    if (this.midiOutputs.has(portName)) {
+      this.selectedMidiOutput = this.midiOutputs.get(portName);
+      console.log(`✅ Selected MIDI output: ${portName}`);
+      return true;
+    }
+    console.warn(`⚠️ MIDI output not found: ${portName}`);
+    return false;
+  }
+  
+  /**
+   * Set MIDI channel (0-15, where 0 = channel 1)
+   * @param {number} channel - MIDI channel (0-15)
+   */
+  setMIDIChannel(channel) {
+    if (channel >= 0 && channel <= 15) {
+      this.midiChannel = channel;
+      console.log(`✅ MIDI channel set to: ${channel + 1}`);
     }
   }
 
