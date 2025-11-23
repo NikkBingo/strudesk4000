@@ -3723,6 +3723,33 @@ class SoundManager {
           
           replInstance = strudelContext.repl || strudelContext;
           console.log('✅ initStrudel completed, replInstance:', !!replInstance);
+          
+          // Load strudel.json if it exists
+          try {
+            const response = await fetch('/strudel.json');
+            if (response.ok) {
+              const strudelConfig = await response.json();
+              if (strudelConfig.samples) {
+                const samplesFunc = window.strudel?.samples || globalThis.samples;
+                if (samplesFunc && typeof samplesFunc === 'function') {
+                  console.log('📦 Loading samples from strudel.json');
+                  await samplesFunc(strudelConfig.samples);
+                  console.log('✅ Samples loaded from strudel.json');
+                }
+              }
+            }
+          } catch (error) {
+            // strudel.json is optional, so we silently ignore errors
+            console.log('ℹ️ No strudel.json found or error loading it (this is optional)');
+          }
+          
+          // Pre-load samples from Sampler Effects presets
+          try {
+            await this.preloadPresetSamples();
+          } catch (error) {
+            console.warn('⚠️ Error pre-loading preset samples:', error);
+          }
+          
           console.log('replInstance type:', typeof replInstance);
           console.log('replInstance.evaluate available:', typeof replInstance?.evaluate);
           console.log('strudelContext keys:', Object.keys(strudelContext));
@@ -6741,6 +6768,42 @@ class SoundManager {
       // Return true if we attempted to load, false if no paths worked
       return loaded;
     }
+  }
+
+  /**
+   * Pre-load samples from Sampler Effects presets
+   * Extracts samples() calls from preset patterns and loads them
+   */
+  async preloadPresetSamples() {
+    const samplesFunc = window.strudel?.samples || globalThis.samples;
+    if (!samplesFunc || typeof samplesFunc !== 'function') {
+      console.warn('⚠️ samples() function not available for pre-loading preset samples');
+      return;
+    }
+
+    // Sample sources used in SAMPLER_EFFECT_PRESETS
+    const presetSampleSources = [
+      'github:tidalcycles/dirt-samples',  // Used in: begin, slice, splice
+      'github:switchangel/pad',            // Used in: scrub
+      'github:yaxu/clean-breaks/main'      // Used in: scrub
+    ];
+
+    console.log('📦 Pre-loading samples from Sampler Effects presets...');
+    
+    for (const source of presetSampleSources) {
+      try {
+        console.log(`   Loading: ${source}`);
+        await samplesFunc(source);
+        console.log(`   ✅ Loaded: ${source}`);
+        // Small delay between loads
+        await new Promise(resolve => setTimeout(resolve, 200));
+      } catch (error) {
+        console.warn(`   ⚠️ Failed to load ${source}:`, error.message);
+        // Continue with other sources
+      }
+    }
+    
+    console.log('✅ Finished pre-loading preset samples');
   }
 
   /**
