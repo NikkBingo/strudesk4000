@@ -7961,10 +7961,10 @@ class InteractiveSoundApp {
       presetsToggle.setAttribute('aria-expanded', expanded.toString());
       presetsContent.classList.toggle('is-open', expanded);
       presetsContent.setAttribute('aria-hidden', (!expanded).toString());
-      // Update icon based on state
-      const icon = presetsToggle.querySelector('.modal-presets-toggle-icon');
-      if (icon) {
-        icon.textContent = expanded ? '▾' : '▶';
+      // Update collapsed class for arrow rotation (like tags)
+      const presetsContainer = presetsToggle.closest('.modal-presets');
+      if (presetsContainer) {
+        presetsContainer.classList.toggle('collapsed', !expanded);
       }
     };
 
@@ -9693,10 +9693,10 @@ class InteractiveSoundApp {
         const setState = (isOpen) => {
           toggle.setAttribute('aria-expanded', String(isOpen));
           panel.classList.toggle('is-open', isOpen);
-          // Update icon based on state
-          const icon = toggle.querySelector('.modal-presets-subtoggle-icon');
-          if (icon) {
-            icon.textContent = isOpen ? '▾' : '▶';
+          // Update collapsed class for arrow rotation (like tags)
+          const group = toggle.closest('.modal-presets-group');
+          if (group) {
+            group.classList.toggle('collapsed', !isOpen);
           }
         };
 

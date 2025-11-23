@@ -594,31 +594,31 @@
           <div class="form-group">
             <div class="pattern-label-row">
               <label for="modal-pattern">Pattern</label>
+              <select id="modal-pattern-editor-select" class="control-select" style="display: none;" aria-label="Editor Type">
+                <option value="step">Step Editor</option>
+                <option value="code">Code Editor</option>
+              </select>
             </div>
             <div class="modal-presets">
-              <button type="button" id="modal-presets-toggle" class="modal-presets-toggle" aria-expanded="false">
+              <button type="button" id="modal-presets-toggle" class="modal-presets-toggle pattern-snippet-group-heading" aria-expanded="false">
                 <span>Presets</span>
-                <span class="modal-presets-toggle-icon">▶</span>
               </button>
               <div id="modal-presets-content" class="modal-presets-content" hidden>
                 <div class="modal-presets-group">
-                  <button type="button" class="modal-presets-subtoggle" data-target="modal-drum-presets" aria-expanded="false">
+                  <button type="button" class="modal-presets-subtoggle pattern-snippet-group-heading" data-target="modal-drum-presets" aria-expanded="false">
                     <span>Drum Patterns</span>
-                    <span class="modal-presets-subtoggle-icon">▶</span>
                   </button>
                   <div class="modal-presets-subcontent modal-presets-buttons" id="modal-drum-presets"></div>
                 </div>
                 <div class="modal-presets-group">
-                  <button type="button" class="modal-presets-subtoggle" data-target="modal-tonal-presets" aria-expanded="false">
+                  <button type="button" class="modal-presets-subtoggle pattern-snippet-group-heading" data-target="modal-tonal-presets" aria-expanded="false">
                     <span>Tonal Examples</span>
-                    <span class="modal-presets-subtoggle-icon">▶</span>
                   </button>
                   <div class="modal-presets-subcontent modal-presets-buttons" id="modal-tonal-presets"></div>
                 </div>
                 <div class="modal-presets-group">
-                  <button type="button" class="modal-presets-subtoggle" data-target="modal-sampler-subcontent" aria-expanded="false">
+                  <button type="button" class="modal-presets-subtoggle pattern-snippet-group-heading" data-target="modal-sampler-subcontent" aria-expanded="false">
                     <span>Sampler Effects</span>
-                    <span class="modal-presets-subtoggle-icon">▶</span>
                   </button>
                   <div class="modal-presets-subcontent" id="modal-sampler-subcontent">
                     <p class="modal-presets-description">
@@ -631,11 +631,6 @@
                   </div>
                 </div>
               </div>
-            </div>
-              <select id="modal-pattern-editor-select" class="control-select" style="display: none;" aria-label="Editor Type">
-                <option value="step">Step Editor</option>
-                <option value="code">Code Editor</option>
-              </select>
             </div>
             <div id="modal-drum-grid-section" class="drum-grid-section" style="display: none;">
               <div class="drum-grid-header">
@@ -695,10 +690,10 @@
           </div>
           <small class="sample-add-hint">Adds a samples(...) block and sound("name") to the pattern.</small>
         </div>
-        </div>
         <div class="modal-footer">
           <button class="btn-cancel">Cancel</button>
           <button class="btn-save">Save</button>
+        </div>
         </div>
       </div>
     </div>
