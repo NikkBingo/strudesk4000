@@ -20,10 +20,10 @@
         }
       }
     </script>
-  <script type="module" crossorigin src="/assets/index-DnKFqIrw.js"></script>
+  <script type="module" crossorigin src="/assets/index-d9txsq7Y.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/strudel-core-DKU3hnf1.js">
   <link rel="modulepreload" crossorigin href="/assets/strudel-web-D2TLs97f.js">
-  <link rel="stylesheet" crossorigin href="/assets/index-B9Q_g-kB.css">
+  <link rel="stylesheet" crossorigin href="/assets/index-wDHw1JIY.css">
 </head>
 <body>
   <div class="bubble-background" aria-hidden="true"></div>
@@ -400,7 +400,7 @@
           <label for="master-pattern">Master Pattern Code</label>
           <div class="header-buttons">
             <button id="clear-all-btn" class="clear-all-button" title="Clear All">Clear All</button>
-            <button id="copy-code-btn" class="copy-code-button" title="Copy Code">Copy Code</button>
+            <button id="copy-code-btn" class="copy-code-button" title="Copy">Copy</button>
           </div>
         </div>
         <textarea 
@@ -579,6 +579,7 @@
                     <option value="minor blues">Minor Blues</option>
                   </optgroup>
                 </select>
+                <div id="modal-scale-notes-display" style="font-size: 0.85em; color: #666; margin-top: 4px; font-style: italic;"></div>
               </div>
             </div>
             <div class="scale-chord-suggestions" id="modal-scale-chord-suggestions" aria-live="polite">
@@ -601,6 +602,39 @@
                 <option value="step">Step Editor</option>
                 <option value="code">Code Editor</option>
               </select>
+            </div>
+            <div class="modal-presets">
+              <button type="button" id="modal-presets-toggle" class="modal-presets-toggle pattern-snippet-group-heading" aria-expanded="false">
+                <span>Presets</span>
+              </button>
+              <div id="modal-presets-content" class="modal-presets-content" hidden>
+                <div class="modal-presets-group">
+                  <button type="button" class="modal-presets-subtoggle pattern-snippet-group-heading" data-target="modal-drum-presets" aria-expanded="false">
+                    <span>Drum Patterns</span>
+                  </button>
+                  <div class="modal-presets-subcontent modal-presets-buttons" id="modal-drum-presets"></div>
+                </div>
+                <div class="modal-presets-group">
+                  <button type="button" class="modal-presets-subtoggle pattern-snippet-group-heading" data-target="modal-tonal-presets" aria-expanded="false">
+                    <span>Tonal Examples</span>
+                  </button>
+                  <div class="modal-presets-subcontent modal-presets-buttons" id="modal-tonal-presets"></div>
+                </div>
+                <div class="modal-presets-group">
+                  <button type="button" class="modal-presets-subtoggle pattern-snippet-group-heading" data-target="modal-sampler-subcontent" aria-expanded="false">
+                    <span>Sampler Effects</span>
+                  </button>
+                  <div class="modal-presets-subcontent" id="modal-sampler-subcontent">
+                    <p class="modal-presets-description">
+                      Sampler effects are functions that change how audio files are triggered, looped, and reshaped.
+                    </p>
+                    <p class="modal-presets-description">
+                      Source: <a href="https://strudel.cc/learn/samples/" target="_blank" rel="noreferrer">https://strudel.cc/learn/samples/</a>
+                    </p>
+                    <div class="modal-presets-buttons" id="modal-sampler-presets"></div>
+                  </div>
+                </div>
+              </div>
             </div>
             <div id="modal-drum-grid-section" class="drum-grid-section" style="display: none;">
               <div class="drum-grid-header">
@@ -643,43 +677,6 @@
                 Effects examples: <a href="https://strudel.cc/learn/effects/" target="_blank">https://strudel.cc/learn/effects/</a>
               </small>
             </div>
-            <div class="modal-presets">
-              <button type="button" id="modal-presets-toggle" class="modal-presets-toggle" aria-expanded="false">
-                <span>Presets</span>
-                <span class="modal-presets-toggle-icon">▾</span>
-              </button>
-              <div id="modal-presets-content" class="modal-presets-content" hidden>
-                <div class="modal-presets-group">
-                  <button type="button" class="modal-presets-subtoggle" data-target="modal-drum-presets" aria-expanded="false">
-                    <span>Drum Patterns</span>
-                    <span class="modal-presets-subtoggle-icon">▾</span>
-                  </button>
-                  <div class="modal-presets-subcontent modal-presets-buttons" id="modal-drum-presets"></div>
-                </div>
-                <div class="modal-presets-group">
-                  <button type="button" class="modal-presets-subtoggle" data-target="modal-tonal-presets" aria-expanded="false">
-                    <span>Tonal Examples</span>
-                    <span class="modal-presets-subtoggle-icon">▾</span>
-                  </button>
-                  <div class="modal-presets-subcontent modal-presets-buttons" id="modal-tonal-presets"></div>
-                </div>
-                <div class="modal-presets-group">
-                  <button type="button" class="modal-presets-subtoggle" data-target="modal-sampler-subcontent" aria-expanded="false">
-                    <span>Sampler Effects</span>
-                    <span class="modal-presets-subtoggle-icon">▾</span>
-                  </button>
-                  <div class="modal-presets-subcontent" id="modal-sampler-subcontent">
-                    <p class="modal-presets-description">
-                      Sampler effects are functions that change how audio files are triggered, looped, and reshaped.
-                    </p>
-                    <p class="modal-presets-description">
-                      Source: <a href="https://strudel.cc/learn/samples/" target="_blank" rel="noreferrer">https://strudel.cc/learn/samples/</a>
-                    </p>
-                    <div class="modal-presets-buttons" id="modal-sampler-presets"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
           <div class="form-group">
             <label for="modal-sample-url">Sample URL:</label>
@@ -697,10 +694,10 @@
           </div>
           <small class="sample-add-hint">Adds a samples(...) block and sound("name") to the pattern.</small>
         </div>
-        </div>
         <div class="modal-footer">
           <button class="btn-cancel">Cancel</button>
           <button class="btn-save">Save</button>
+        </div>
         </div>
       </div>
     </div>

@@ -3883,6 +3883,12 @@ class InteractiveSoundApp {
       chaospadCheckbox.addEventListener('change', async (e) => {
         this.chaospadEnabled = e.target.checked;
         console.log(`🎛️ Chaospad ${this.chaospadEnabled ? 'enabled' : 'disabled'}`);
+        
+        // Update cursor style
+        if (this.masterPunchcardCanvas) {
+          this.masterPunchcardCanvas.style.cursor = this.chaospadEnabled ? 'pointer' : '';
+        }
+        
         if (!this.chaospadEnabled) {
           // Remove cutoff when disabled
           await this.removeCutoffFromMaster();
@@ -3902,6 +3908,15 @@ class InteractiveSoundApp {
     
     // Setup mouse move listener for Chaospad on canvas
     if (this.masterPunchcardCanvas) {
+      // Update cursor style based on Chaospad state
+      const updateCursor = () => {
+        if (this.chaospadEnabled) {
+          this.masterPunchcardCanvas.style.cursor = 'pointer';
+        } else {
+          this.masterPunchcardCanvas.style.cursor = '';
+        }
+      };
+      
       this.masterPunchcardCanvas.addEventListener('mousemove', (e) => {
         if (this.chaospadEnabled) {
           this.handleChaospadMouseMove(e);
@@ -3913,6 +3928,9 @@ class InteractiveSoundApp {
           this.handleChaospadMouseMove(e);
         }
       });
+      
+      // Initial cursor update
+      updateCursor();
     }
     
     // Ensure initial placeholder text reflects current steps
@@ -5066,6 +5084,7 @@ class InteractiveSoundApp {
     const canvasWidth = rect.width;
     
     if (canvasWidth === 0) {
+      console.log('⚠️ Chaospad: Canvas not sized yet');
       return; // Canvas not sized yet
     }
     
@@ -5085,11 +5104,9 @@ class InteractiveSoundApp {
       cutoffValue = 8000;
     }
 
-    // Only update if cutoff value changed
-    if (this.currentCutoffValue !== cutoffValue) {
-      this.currentCutoffValue = cutoffValue;
-      this.applyCutoffToMaster(cutoffValue);
-    }
+    // Always update to apply cutoff (don't check if changed, as pattern might need refresh)
+    this.currentCutoffValue = cutoffValue;
+    this.applyCutoffToMaster(cutoffValue);
   }
 
   /**
@@ -5101,7 +5118,7 @@ class InteractiveSoundApp {
       let basePattern = soundManager.getMasterPatternCode();
       
       if (!basePattern || basePattern.trim() === '') {
-        console.log('⚠️ No master pattern to apply cutoff to');
+        console.log('⚠️ Chaospad: No master pattern to apply cutoff to');
         return;
       }
 
@@ -5109,16 +5126,20 @@ class InteractiveSoundApp {
       basePattern = basePattern.replace(/\.\s*cutoff\s*\([^)]*\)/gi, '');
       basePattern = basePattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
 
-      // Add new cutoff modifier with pattern that cycles through all values
-      // The pattern will cycle: 500, 1000, 2000, 4000, 8000
+      // Add cutoff pattern that cycles through all values based on mouse position
+      // The pattern cycles: 500, 1000, 2000, 4000, 8000
       const cutoffPattern = `<500 1000 2000 4000 8000>`;
       const patternWithCutoff = `${basePattern}.cutoff(${cutoffPattern})`;
 
+      console.log(`🎛️ Chaospad: Applying cutoff pattern ${cutoffPattern} (mouse section: ${cutoffValue} Hz)`);
+      console.log(`🎛️ Chaospad: Pattern before: ${basePattern.substring(0, 100)}...`);
+      console.log(`🎛️ Chaospad: Pattern after: ${patternWithCutoff.substring(0, 150)}...`);
+
       // Update master pattern
       await soundManager.setMasterPatternCode(patternWithCutoff);
-      console.log(`🎛️ Applied Chaospad cutoff pattern: ${cutoffPattern} (mouse in ${cutoffValue} Hz section)`);
+      console.log(`🎛️ ✅ Chaospad: Cutoff pattern applied successfully`);
     } catch (error) {
-      console.warn('⚠️ Error applying cutoff to master pattern:', error);
+      console.warn('⚠️ Chaospad: Error applying cutoff to master pattern:', error);
     }
   }
 
