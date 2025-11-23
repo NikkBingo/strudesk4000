@@ -6809,7 +6809,11 @@ class InteractiveSoundApp {
     this.saveElementConfig(elementId, { ...existingConfig, pattern: trimmed }, true);
     
     if (this.currentEditingElementId !== elementId) {
-      this.openModal(elementId);
+      if (this.openConfigModal) {
+        this.openConfigModal(elementId);
+      } else {
+        console.warn('⚠️ openConfigModal not available, modal may not open');
+      }
     }
     
     setTimeout(() => {
