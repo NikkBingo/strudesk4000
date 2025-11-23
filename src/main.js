@@ -3287,7 +3287,7 @@ class InteractiveSoundApp {
       }
 
       if (isPlaying) {
-        // Show placeholder text only when visualizer is "off"
+        // Hide placeholder when playing (unless visualizer is "off")
         if (this.selectedVisualizer === 'off') {
           this.showMasterPunchcardPlaceholder();
         } else {
@@ -3295,8 +3295,12 @@ class InteractiveSoundApp {
         }
         this.enableNativeStrudelHighlighting();
       } else {
-        // Hide placeholder when master stops
-        this.hideMasterPunchcardPlaceholder();
+        // Show placeholder when stopped if visualizer is "off", otherwise hide
+        if (this.selectedVisualizer === 'off') {
+          this.showMasterPunchcardPlaceholder();
+        } else {
+          this.hideMasterPunchcardPlaceholder();
+        }
       }
     });
 
@@ -3846,12 +3850,8 @@ class InteractiveSoundApp {
         console.log(`🎨 Visualizer changed to: ${this.selectedVisualizer}`);
         
         if (this.selectedVisualizer === 'off') {
-          // When "Off" is selected, show placeholder only if master is playing
-          if (this.masterActive) {
-            this.showMasterPunchcardPlaceholder();
-          } else {
-            this.hideMasterPunchcardPlaceholder();
-          }
+          // When "Off" is selected, always show placeholder
+          this.showMasterPunchcardPlaceholder();
         } else if (this.selectedVisualizer !== 'punchcard') {
           this.prepareCanvasForExternalVisualizer();
         } else {
@@ -4148,12 +4148,8 @@ class InteractiveSoundApp {
       // Update the master pattern without any visualizer
       await soundManager.setMasterPatternCode(basePattern);
       
-      // Show placeholder only if master is playing
-      if (this.masterActive) {
-        this.showMasterPunchcardPlaceholder();
-      } else {
-        this.hideMasterPunchcardPlaceholder();
-      }
+      // Always show placeholder when visualizer is "off"
+      this.showMasterPunchcardPlaceholder();
       
       // Refresh the punchcard display
       this.refreshMasterPunchcard('visualizer-off').catch(err => {
