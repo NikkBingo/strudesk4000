@@ -3154,6 +3154,10 @@ class InteractiveSoundApp {
     document.addEventListener('webkitfullscreenchange', this.handleVisualizerFullscreenChange);
     document.addEventListener('mozfullscreenchange', this.handleVisualizerFullscreenChange);
     document.addEventListener('MSFullscreenChange', this.handleVisualizerFullscreenChange);
+    
+    // Chaospad state
+    this.chaospadEnabled = false;
+    this.currentCutoffValue = null;
   }
 
   /**
@@ -3874,8 +3878,33 @@ class InteractiveSoundApp {
       this.updateVisualizerFullscreenButton(false);
     }
     
+    // Setup Chaospad checkbox
+    const chaospadCheckbox = document.getElementById('chaospad-checkbox');
+    if (chaospadCheckbox) {
+      chaospadCheckbox.addEventListener('change', (e) => {
+        this.chaospadEnabled = e.target.checked;
+        if (!this.chaospadEnabled) {
+          // Remove cutoff when disabled
+          this.removeCutoffFromMaster();
+        }
+      });
+    }
+    
+    // Setup mouse move listener for Chaospad on canvas
+    if (this.masterPunchcardCanvas) {
+      this.masterPunchcardCanvas.addEventListener('mousemove', (e) => {
+        if (this.chaospadEnabled) {
+          this.handleChaospadMouseMove(e);
+        }
+      });
+    }
+    
     // Ensure initial placeholder text reflects current steps
     this.showMasterPunchcardPlaceholder();
+    
+    // Chaospad mouse move handler
+    this.handleChaospadMouseMove = this.handleChaospadMouseMove.bind(this);
+    this.removeCutoffFromMaster = this.removeCutoffFromMaster.bind(this);
     
     window.addEventListener('resize', () => {
       if (this.masterPunchcardResizeTimer) {
@@ -5003,6 +5032,92 @@ class InteractiveSoundApp {
   hideMasterPunchcardPlaceholder() {
     if (this.masterPunchcardPlaceholder) {
       this.masterPunchcardPlaceholder.classList.add('hidden');
+    }
+  }
+
+  /**
+   * Handle mouse move on canvas for Chaospad cutoff control
+   */
+  handleChaospadMouseMove(e) {
+    if (!this.masterPunchcardCanvas || !this.chaospadEnabled) {
+      return;
+    }
+
+    const rect = this.masterPunchcardCanvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const canvasWidth = rect.width;
+    const percentage = mouseX / canvasWidth;
+
+    // Determine which section (20% each): 0-20%, 20-40%, 40-60%, 60-80%, 80-100%
+    let cutoffValue;
+    if (percentage < 0.2) {
+      cutoffValue = 500;
+    } else if (percentage < 0.4) {
+      cutoffValue = 1000;
+    } else if (percentage < 0.6) {
+      cutoffValue = 2000;
+    } else if (percentage < 0.8) {
+      cutoffValue = 4000;
+    } else {
+      cutoffValue = 8000;
+    }
+
+    // Only update if cutoff value changed
+    if (this.currentCutoffValue !== cutoffValue) {
+      this.currentCutoffValue = cutoffValue;
+      this.applyCutoffToMaster(cutoffValue);
+    }
+  }
+
+  /**
+   * Apply cutoff modifier to master pattern
+   */
+  async applyCutoffToMaster(cutoffValue) {
+    try {
+      // Get base pattern without cutoff
+      let basePattern = soundManager.getMasterPatternCode();
+      
+      if (!basePattern || basePattern.trim() === '') {
+        return;
+      }
+
+      // Remove existing cutoff modifier
+      basePattern = basePattern.replace(/\.\s*cutoff\s*\([^)]*\)/gi, '');
+      basePattern = basePattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
+
+      // Add new cutoff modifier with pattern
+      const cutoffPattern = `<500 1000 2000 4000 8000>`;
+      const patternWithCutoff = `${basePattern}.cutoff(${cutoffPattern})`;
+
+      // Update master pattern
+      await soundManager.setMasterPatternCode(patternWithCutoff);
+      console.log(`🎛️ Applied Chaospad cutoff pattern`);
+    } catch (error) {
+      console.warn('⚠️ Error applying cutoff to master pattern:', error);
+    }
+  }
+
+  /**
+   * Remove cutoff modifier from master pattern
+   */
+  async removeCutoffFromMaster() {
+    try {
+      let pattern = soundManager.getMasterPatternCode();
+      
+      if (!pattern || pattern.trim() === '') {
+        return;
+      }
+
+      // Remove cutoff modifier
+      pattern = pattern.replace(/\.\s*cutoff\s*\([^)]*\)/gi, '');
+      pattern = pattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
+
+      // Update master pattern
+      await soundManager.setMasterPatternCode(pattern);
+      this.currentCutoffValue = null;
+      console.log('🎛️ Removed Chaospad cutoff from master pattern');
+    } catch (error) {
+      console.warn('⚠️ Error removing cutoff from master pattern:', error);
     }
   }
 
