@@ -185,28 +185,22 @@ export class LoginModal {
       if (!email || !password) return;
       try {
         this.setStatus('Signing in...', 'info');
+        let responseUser = null;
         const response = await authAPI.login(email, password);
-        console.log('Login response:', response);
-        this.setStatus('Login successful!', 'success');
-        // Use the user from login response if available, otherwise fetch
         if (response?.user) {
-          console.log('Using user from login response:', response.user);
-          if (this.onLoginSuccess) {
-            this.onLoginSuccess(response.user, true);
-          } else {
-            console.warn('onLoginSuccess callback not set');
-          }
+          responseUser = response.user;
         } else {
-          console.log('No user in response, fetching from server...');
-          // If no user in response, fetch it
-          const hasUser = await this.checkAuthStatus(true);
-          if (!hasUser) {
-            console.warn('Failed to get user after login');
-          }
+          const { getCurrentUser } = await import('../api.js');
+          responseUser = await getCurrentUser();
+        }
+        this.setStatus('Login successful!', 'success');
+        if (responseUser && this.onLoginSuccess) {
+          this.onLoginSuccess(responseUser, true);
+        } else {
+          await this.checkAuthStatus(true);
         }
         this.hide();
       } catch (error) {
-        console.error('Login error:', error);
         this.setStatus(error.message || 'Login failed.', 'error');
       }
     });
@@ -299,17 +293,13 @@ export class LoginModal {
     if (urlParams.get('auth') === 'success') {
       // Wait a moment for session to be established after redirect
       setTimeout(async () => {
-        await this.checkAuthStatus(true);
-        // If still no user after check, try once more after a short delay
-        const { getCurrentUser } = await import('../api.js');
-        const user = await getCurrentUser();
-        if (!user && this.onLoginSuccess) {
-          setTimeout(async () => {
-            await this.checkAuthStatus(true);
-          }, 500);
+        const success = await this.checkAuthStatus(true);
+        if (!success) {
+          setTimeout(() => this.checkAuthStatus(true), 500);
         }
       }, 200);
-      window.history.replaceState({}, document.title, window.location.pathname);
+      const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
+      window.history.replaceState({}, document.title, cleanUrl);
     }
   }
 
@@ -341,17 +331,12 @@ export class LoginModal {
     try {
       const { getCurrentUser } = await import('../api.js');
       const user = await getCurrentUser();
-      console.log('checkAuthStatus: user =', user);
       if (user && this.onLoginSuccess) {
-        console.log('checkAuthStatus: calling onLoginSuccess with user');
         this.onLoginSuccess(user, force);
         return true;
-      } else if (user) {
-        console.warn('checkAuthStatus: user found but onLoginSuccess callback not set');
       }
       return !!user;
     } catch (error) {
-      console.error('checkAuthStatus error:', error);
       if (force) {
         this.setStatus(error.message || 'Authentication failed.', 'error');
       }
