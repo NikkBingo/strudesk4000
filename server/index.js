@@ -26,6 +26,7 @@ log('✅ [2/5] Dependencies loaded');
 
 log('📦 [3/5] Loading routes...');
 import './config/passport.js'; // Initialize passport strategies
+import prisma from './db.js'; // Import shared Prisma client instance
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import patternRoutes from './routes/patterns.js';
@@ -37,9 +38,6 @@ log('✅ [5/5] Environment variables loaded');
 log('🚀 Starting Express app setup...');
 
 const app = express();
-
-// Import shared Prisma client instance
-import prisma from './db.js';
 
 // Test database connection (non-blocking)
 prisma.$connect().then(() => {
