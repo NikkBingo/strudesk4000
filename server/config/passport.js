@@ -137,6 +137,7 @@ passport.serializeUser((user, done) => {
 // Deserialize user from session
 passport.deserializeUser(async (id, done) => {
   try {
+    console.log('[passport.deserializeUser] Attempting to deserialize user ID:', id);
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
@@ -153,8 +154,14 @@ passport.deserializeUser(async (id, done) => {
         createdAt: true
       }
     });
+    if (!user) {
+      console.log('[passport.deserializeUser] User not found for ID:', id);
+    } else {
+      console.log('[passport.deserializeUser] Successfully deserialized user:', user.email);
+    }
     done(null, user);
   } catch (error) {
+    console.error('[passport.deserializeUser] Error deserializing user:', error);
     done(error, null);
   }
 });
