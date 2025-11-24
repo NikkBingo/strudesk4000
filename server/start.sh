@@ -25,6 +25,10 @@ npx prisma generate >&2 || {
 if [ -n "$DATABASE_URL" ]; then
   echo "Running migrations..." >&2
   
+  # Wait a bit for database to be ready (Railway may need a moment)
+  echo "Waiting 2 seconds for database to be ready..." >&2
+  sleep 2
+  
   # Try to deploy migrations
   MIGRATION_OUTPUT=$(npx prisma migrate deploy 2>&1)
   MIGRATION_EXIT_CODE=$?
@@ -85,9 +89,26 @@ if [ -n "$DATABASE_URL" ]; then
       fi
     # Check if database is completely empty (can't reach or no tables)
     elif echo "$MIGRATION_OUTPUT" | grep -qi "Can't reach database\|P1001"; then
-      echo "⚠️ Database connection error. Migrations will be skipped." >&2
+      echo "⚠️ Database connection error during migrations." >&2
+      echo "⚠️ Retrying after delay..." >&2
+      sleep 5
+      
+      # Retry migration deployment
+      echo "Retrying migrations..." >&2
+      RETRY_OUTPUT=$(npx prisma migrate deploy 2>&1)
+      RETRY_EXIT=$?
+      
+      if [ $RETRY_EXIT -eq 0 ]; then
+        echo "$RETRY_OUTPUT" >&2
+        echo "✅ Migrations completed successfully on retry" >&2
+      else
+        echo "$RETRY_OUTPUT" >&2
+        echo "❌ Migrations still failing after retry. Server will start but may have issues." >&2
+      fi
     else
-      echo "⚠️ Migration failed with unknown error. Continuing..." >&2
+      echo "⚠️ Migration failed with unknown error:" >&2
+      echo "$MIGRATION_OUTPUT" >&2
+      echo "⚠️ Attempting to continue anyway..." >&2
     fi
   else
     echo "$MIGRATION_OUTPUT" >&2
