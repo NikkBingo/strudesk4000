@@ -2,7 +2,7 @@ import express from 'express';
 import passport from 'passport';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import prisma from '../db.js';
+import prisma, { prismaReady } from '../db.js';
 import '../config/passport.js';
 import { isTestMode } from '../utils/config.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -129,6 +129,9 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
 // Email/password registration
 router.post('/register', async (req, res) => {
   try {
+    // Ensure Prisma is connected before using it
+    await prismaReady;
+    
     const { email, password, name } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
@@ -164,7 +167,33 @@ router.post('/register', async (req, res) => {
     });
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ error: 'Failed to register user' });
+    console.error('Registration error details:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      meta: error.meta
+    });
+    
+    // Check for specific error types
+    if (error.code === 'P1001' || error.message?.includes("Can't reach database")) {
+      return res.status(503).json({ 
+        error: 'Database connection failed. Please try again in a moment.',
+        details: 'The database server is currently unreachable'
+      });
+    }
+    
+    if (error.code === 'P2002') {
+      // Unique constraint violation
+      const target = error.meta?.target || [];
+      if (target.includes('email')) {
+        return res.status(409).json({ error: 'Email is already registered' });
+      }
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to register user',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
