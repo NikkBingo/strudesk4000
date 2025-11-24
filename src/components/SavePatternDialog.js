@@ -425,10 +425,29 @@ export class SavePatternDialog {
       
       rawPattern = lines.slice(codeStart, codeEnd).join('\n').trim();
 
+      // Remove master-injected modifiers (postgain, pan, fast, slow, cpm) before saving
+      // These are added dynamically during playback but shouldn't be persisted
+      // Use case-insensitive and global flags to catch ALL instances - critical to prevent duplicates
+      let cleanedPattern = rawPattern;
+      // Remove ALL instances of postgain() - loop until no more are found to handle nested/duplicated cases
+      let previousPattern = '';
+      while (previousPattern !== cleanedPattern) {
+        previousPattern = cleanedPattern;
+        cleanedPattern = cleanedPattern.replace(/\.postgain\s*\([^)]*\)/gi, '');
+      }
+      cleanedPattern = cleanedPattern.replace(/\.pan\s*\([^)]*\)/gi, '');
+      cleanedPattern = cleanedPattern.replace(/\.fast\s*\([^)]*\)/gi, '');
+      cleanedPattern = cleanedPattern.replace(/\.slow\s*\([^)]*\)/gi, '');
+      cleanedPattern = cleanedPattern.replace(/\.cpm\s*\([^)]*\)/gi, '');
+      // Clean up any double dots, trailing dots, or extra whitespace that might result
+      cleanedPattern = cleanedPattern.replace(/\.\.+/g, '.').trim();
+      cleanedPattern = cleanedPattern.replace(/\.+$/, '').trim();
+      cleanedPattern = cleanedPattern.replace(/\s+\./g, '.');
+
       const patternData = {
         type: this.patternType,
         elementId: this.elementId,
-        patternCode: rawPattern,
+        patternCode: cleanedPattern,
         title,
         artistName,
         versionName,

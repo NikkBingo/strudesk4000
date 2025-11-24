@@ -162,8 +162,13 @@ export class UserProfile {
    */
   async loadUserData() {
     try {
-      const user = await getCurrentUser();
-      console.log('loadUserData: getCurrentUser returned:', user);
+      let user = this.user;
+      if (!user) {
+        user = await getCurrentUser();
+        console.log('loadUserData: fetched user via API:', user);
+      } else {
+        console.log('loadUserData: using existing user:', user);
+      }
       if (!user) {
         throw new Error('Not authenticated');
       }
@@ -331,13 +336,23 @@ export class UserProfile {
   /**
    * Show modal
    */
-  async show() {
+  async show(userOverride = null) {
     if (!this.modal) {
       console.error('Profile modal not initialized');
       return;
     }
 
     try {
+      if (!userOverride && !this.user) {
+        const current = await getCurrentUser();
+        if (!current) {
+          throw new Error('Please log in to view your profile.');
+        }
+        this.user = current;
+      }
+      if (userOverride) {
+        this.user = userOverride;
+      }
       const userData = await this.loadUserData();
       if (!userData && !this.user) {
         alert('Unable to load user profile. Please try logging in again.');
