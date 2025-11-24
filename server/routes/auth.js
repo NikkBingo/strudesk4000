@@ -1,18 +1,69 @@
 import express from 'express';
 import passport from 'passport';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { PrismaClient } from '@prisma/client';
 import '../config/passport.js';
 import { isTestMode } from '../utils/config.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
+const prisma = new PrismaClient();
+
+const VERIFICATION_EXPIRY_HOURS = 24;
+const RESET_EXPIRY_HOURS = 1;
+
+const sanitizeUser = (user) => {
+  if (!user) return null;
+  const {
+    passwordHash,
+    verificationToken,
+    verificationTokenExpires,
+    resetToken,
+    resetTokenExpires,
+    ...rest
+  } = user;
+  return rest;
+};
+
+const generateToken = (bytes = 32) => crypto.randomBytes(bytes).toString('hex');
+
+async function setVerificationToken(userId) {
+  const token = generateToken();
+  const expiresAt = new Date(Date.now() + VERIFICATION_EXPIRY_HOURS * 60 * 60 * 1000);
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      verificationToken: token,
+      verificationTokenExpires: expiresAt
+    }
+  });
+  console.log(`📧 Email verification token for user ${userId}: ${token}`);
+  return token;
+}
+
+async function setResetToken(userId) {
+  const token = generateToken();
+  const expiresAt = new Date(Date.now() + RESET_EXPIRY_HOURS * 60 * 60 * 1000);
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      resetToken: token,
+      resetTokenExpires: expiresAt
+    }
+  });
+  console.log(`🔐 Password reset token for user ${userId}: ${token}`);
+  return token;
+}
 
 // Google OAuth routes (only if configured)
 if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET) {
   router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 
-  router.get('/google/callback',
+  router.get(
+    '/google/callback',
     passport.authenticate('google', { failureRedirect: process.env.FRONTEND_URL || 'http://localhost:3000' }),
     (req, res) => {
-      // Successful authentication
       res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/?auth=success`);
     }
   );
@@ -25,30 +76,175 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
   });
 }
 
-// GitHub OAuth routes (only if configured)
-if (process.env.OAUTH_GITHUB_CLIENT_ID && process.env.OAUTH_GITHUB_CLIENT_SECRET) {
-  router.get('/github', passport.authenticate('github', { scope: ['user:email'] }));
-
-  router.get('/github/callback',
-    passport.authenticate('github', { failureRedirect: process.env.FRONTEND_URL || 'http://localhost:3000' }),
-    (req, res) => {
-      // Successful authentication
-      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/?auth=success`);
+// Email/password registration
+router.post('/register', async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
     }
-  );
-} else {
-  router.get('/github', (req, res) => {
-    res.status(503).json({ error: 'GitHub OAuth is not configured' });
-  });
-  router.get('/github/callback', (req, res) => {
-    res.status(503).json({ error: 'GitHub OAuth is not configured' });
-  });
-}
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (existingUser) {
+      return res.status(409).json({ error: 'Email is already registered' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = await prisma.user.create({
+      data: {
+        email: normalizedEmail,
+        name: name?.trim() || normalizedEmail.split('@')[0],
+        oauthProvider: 'local',
+        oauthId: normalizedEmail,
+        passwordHash,
+        artistName: null,
+        profileCompleted: false
+      }
+    });
+
+    await setVerificationToken(user.id);
+
+    res.json({
+      message: 'Account created. Please verify your email before logging in.',
+      requiresVerification: true
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Failed to register user' });
+  }
+});
+
+// Email verification
+router.post('/verify-email', async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: 'Verification token is required' });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        verificationToken: token,
+        verificationTokenExpires: {
+          gt: new Date()
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(400).json({ error: 'Invalid or expired verification token' });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerifiedAt: new Date(),
+        verificationToken: null,
+        verificationTokenExpires: null
+      }
+    });
+
+    res.json({ message: 'Email verified successfully', user: sanitizeUser(updated) });
+  } catch (error) {
+    console.error('Email verification error:', error);
+    res.status(500).json({ error: 'Failed to verify email' });
+  }
+});
+
+router.post('/resend-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (user.emailVerifiedAt) {
+      return res.status(400).json({ error: 'Email is already verified' });
+    }
+    await setVerificationToken(user.id);
+    res.json({ message: 'Verification email sent' });
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    res.status(500).json({ error: 'Failed to resend verification email' });
+  }
+});
+
+// Email/password login
+router.post('/login', (req, res, next) => {
+  passport.authenticate('local', (err, user, info) => {
+    if (err) {
+      return next(err);
+    }
+    if (!user) {
+      return res.status(401).json({ error: info?.message || 'Invalid email or password' });
+    }
+    req.logIn(user, (loginErr) => {
+      if (loginErr) {
+        return next(loginErr);
+      }
+      res.json({ message: 'Login successful', user: sanitizeUser(user) });
+    });
+  })(req, res, next);
+});
+
+// Password reset request
+router.post('/request-password-reset', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+    if (user && user.passwordHash) {
+      await setResetToken(user.id);
+    }
+    res.json({ message: 'If the account exists, a password reset link has been sent.' });
+  } catch (error) {
+    console.error('Password reset request error:', error);
+    res.status(500).json({ error: 'Failed to process password reset request' });
+  }
+});
+
+// Password reset
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) {
+      return res.status(400).json({ error: 'Token and new password are required' });
+    }
+    const user = await prisma.user.findFirst({
+      where: {
+        resetToken: token,
+        resetTokenExpires: { gt: new Date() }
+      }
+    });
+    if (!user) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+    const passwordHash = await bcrypt.hash(password, 12);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        resetToken: null,
+        resetTokenExpires: null
+      }
+    });
+    res.json({ message: 'Password updated successfully' });
+  } catch (error) {
+    console.error('Password reset error:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
 
 // Get current user
 router.get('/me', async (req, res) => {
   if (req.isAuthenticated && req.isAuthenticated()) {
-    res.json(req.user);
+    return res.json(req.user);
   } else if (isTestMode()) {
     // In test mode, return a test user if not authenticated
     try {
@@ -77,13 +273,7 @@ router.get('/me', async (req, res) => {
         });
       }
 
-      res.json({
-        id: testUser.id,
-        email: testUser.email,
-        name: testUser.name,
-        artistName: testUser.artistName,
-        avatarUrl: testUser.avatarUrl
-      });
+      return res.json(sanitizeUser(testUser));
     } catch (error) {
       // If database is unavailable in test mode, return a mock test user
       const isDbConnectionError = 
@@ -95,12 +285,15 @@ router.get('/me', async (req, res) => {
       
       if (isDbConnectionError) {
         console.warn('⚠️  Database unavailable in test mode, using mock test user');
-        res.json({
+        return res.json({
           id: 'test-user-mock-1',
           email: 'test@strudel.test',
           name: 'Test User',
           artistName: 'Test Artist',
-          avatarUrl: null
+          avatarUrl: null,
+          role: 'user',
+          status: 'active',
+          profileCompleted: false
         });
       } else {
         console.error('Error getting test user:', error);
@@ -108,7 +301,7 @@ router.get('/me', async (req, res) => {
       }
     }
   } else {
-    res.status(401).json({ error: 'Not authenticated' });
+    return res.status(401).json({ error: 'Not authenticated' });
   }
 });
 
@@ -120,6 +313,19 @@ router.post('/logout', (req, res) => {
     }
     res.json({ message: 'Logged out successfully' });
   });
+});
+
+// Delete own account
+router.post('/delete-account', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    await prisma.user.delete({ where: { id: userId } });
+    req.logout(() => {});
+    res.json({ message: 'Account deleted successfully' });
+  } catch (error) {
+    console.error('Delete account error:', error);
+    res.status(500).json({ error: 'Failed to delete account' });
+  }
 });
 
 // Test mode: Create a test user and log them in (only in development/test mode)
@@ -162,13 +368,7 @@ router.post('/test-login', async (req, res) => {
       }
       res.json({
         message: 'Test login successful',
-        user: {
-          id: testUser.id,
-          email: testUser.email,
-          name: testUser.name,
-          artistName: testUser.artistName,
-          avatarUrl: testUser.avatarUrl
-        }
+        user: sanitizeUser(testUser)
       });
     });
   } catch (error) {

@@ -6,37 +6,12 @@ import { isTestMode } from '../utils/config.js';
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Get user profile
-router.get('/:id', async (req, res) => {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.params.id },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        avatarUrl: true,
-        artistName: true,
-        socialLinks: true,
-        createdAt: true,
-        _count: {
-          select: {
-            patterns: true
-          }
-        }
-      }
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.json(user);
-  } catch (error) {
-    console.error('Error fetching user:', error);
-    res.status(500).json({ error: 'Failed to fetch user' });
+const requireAdmin = (req, res, next) => {
+  if (req.isAuthenticated && req.isAuthenticated() && req.user?.role === 'admin') {
+    return next();
   }
-});
+  return res.status(403).json({ error: 'Admin privileges required' });
+};
 
 // Update user profile (requires auth, and must be own profile)
 // In test mode, allows updating test user profile without strict auth check
@@ -49,14 +24,16 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Cannot update another user\'s profile' });
     }
 
-    const { avatarUrl, artistName, socialLinks } = req.body;
+    const { avatarUrl, artistName, socialLinks, profileCompleted, name } = req.body;
 
     const updatedUser = await prisma.user.update({
       where: { id: req.params.id },
       data: {
         ...(avatarUrl !== undefined && { avatarUrl }),
         ...(artistName !== undefined && { artistName }),
-        ...(socialLinks !== undefined && { socialLinks })
+        ...(socialLinks !== undefined && { socialLinks }),
+        ...(profileCompleted !== undefined && { profileCompleted: !!profileCompleted }),
+        ...(name !== undefined && { name })
       },
       select: {
         id: true,
@@ -65,6 +42,7 @@ router.put('/:id', requireAuth, async (req, res) => {
         avatarUrl: true,
         artistName: true,
         socialLinks: true,
+        profileCompleted: true,
         createdAt: true,
         updatedAt: true
       }
@@ -99,6 +77,9 @@ router.get('/', async (req, res) => {
         email: true,
         avatarUrl: true,
         artistName: true,
+        role: true,
+        status: true,
+        profileCompleted: true,
         socialLinks: true,
         createdAt: true,
         _count: {
@@ -154,6 +135,110 @@ router.get('/search/:query', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error searching users:', error);
     res.status(500).json({ error: 'Failed to search users' });
+  }
+});
+
+// Admin: list users with moderation info
+router.get('/admin/all', requireAdmin, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        avatarUrl: true,
+        artistName: true,
+        role: true,
+        status: true,
+        profileCompleted: true,
+        createdAt: true,
+        emailVerifiedAt: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(users);
+  } catch (error) {
+    console.error('Admin list users error:', error);
+    res.status(500).json({ error: 'Failed to load users' });
+  }
+});
+
+router.post('/:id/block', requireAdmin, async (req, res) => {
+  try {
+    const updated = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { status: 'blocked' }
+    });
+    res.json({ message: 'User blocked', user: sanitizeAdminUser(updated) });
+  } catch (error) {
+    console.error('Block user error:', error);
+    res.status(500).json({ error: 'Failed to block user' });
+  }
+});
+
+router.post('/:id/unblock', requireAdmin, async (req, res) => {
+  try {
+    const updated = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { status: 'active' }
+    });
+    res.json({ message: 'User unblocked', user: sanitizeAdminUser(updated) });
+  } catch (error) {
+    console.error('Unblock user error:', error);
+    res.status(500).json({ error: 'Failed to unblock user' });
+  }
+});
+
+router.delete('/:id', requireAdmin, async (req, res) => {
+  try {
+    await prisma.user.delete({ where: { id: req.params.id } });
+    res.json({ message: 'User deleted' });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+const sanitizeAdminUser = (user) => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  status: user.status,
+  role: user.role
+});
+
+// Get user profile (keep last so admin routes take precedence)
+router.get('/:id', async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+        artistName: true,
+        socialLinks: true,
+        role: true,
+        status: true,
+        profileCompleted: true,
+        createdAt: true,
+        _count: {
+          select: {
+            patterns: true
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json(user);
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(500).json({ error: 'Failed to fetch user' });
   }
 });
 

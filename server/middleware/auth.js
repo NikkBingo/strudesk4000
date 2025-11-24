@@ -8,6 +8,9 @@ import { isTestMode } from '../utils/config.js';
 
 export const requireAuth = async (req, res, next) => {
   if (req.isAuthenticated && req.isAuthenticated()) {
+    if (req.user?.status === 'blocked') {
+      return res.status(403).json({ error: 'Account is blocked' });
+    }
     return next();
   }
   
