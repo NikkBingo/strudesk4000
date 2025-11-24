@@ -83,6 +83,10 @@ app.use(cors({
   exposedHeaders: ['Set-Cookie']
 }));
 
+// Trust proxy (Railway uses reverse proxy that terminates SSL)
+// This is critical for express-session to correctly set secure cookies
+app.set('trust proxy', 1);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
