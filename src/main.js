@@ -13393,25 +13393,14 @@ async function initUserAuth() {
 }
 
 function updateUserUI(user) {
-  console.log('updateUserUI called with user:', user);
   const loginBtn = document.getElementById('header-login-btn');
   const userMenu = document.getElementById('user-menu');
   const userName = document.getElementById('user-name');
   const userAvatar = document.getElementById('user-avatar');
   const adminLink = document.getElementById('user-admin-link');
 
-  console.log('updateUserUI: loginBtn =', loginBtn, 'userMenu =', userMenu);
-  
-  if (loginBtn) {
-    loginBtn.style.display = 'none';
-    console.log('updateUserUI: hid login button');
-  }
-  if (userMenu) {
-    userMenu.style.display = 'block';
-    console.log('updateUserUI: showed user menu');
-  } else {
-    console.error('updateUserUI: user-menu element not found!');
-  }
+  if (loginBtn) loginBtn.style.display = 'none';
+  if (userMenu) userMenu.style.display = 'block';
   if (userName) userName.textContent = user.name || user.email;
   if (userAvatar && user.avatarUrl) {
     userAvatar.src = user.avatarUrl;
@@ -13434,13 +13423,8 @@ function showLoginButton() {
 }
 
 function handleAuthenticatedUser(user) {
-  console.log('handleAuthenticatedUser called with user:', user);
-  if (!user) {
-    console.warn('handleAuthenticatedUser: user is null/undefined, returning early');
-    return;
-  }
+  if (!user) return;
   currentUser = user;
-  console.log('handleAuthenticatedUser: calling updateUserUI');
   updateUserUI(user);
   if (!user.profileCompleted && profileOnboardingModal) {
     profileOnboardingModal.show(user);

@@ -58,13 +58,15 @@ async function setResetToken(userId) {
 
 // Google OAuth routes (only if configured)
 if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET) {
+  const getFrontendUrl = () => (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
   router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 
   router.get(
     '/google/callback',
-    passport.authenticate('google', { failureRedirect: process.env.FRONTEND_URL || 'http://localhost:3000' }),
+    passport.authenticate('google', { failureRedirect: getFrontendUrl() }),
     (req, res) => {
-      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/?auth=success`);
+      const frontendUrl = getFrontendUrl();
+      res.redirect(`${frontendUrl}/?auth=success`);
     }
   );
 } else {
