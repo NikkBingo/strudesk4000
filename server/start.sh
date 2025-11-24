@@ -32,22 +32,21 @@ if [ -n "$DATABASE_URL" ]; then
   CONNECTED=0
   
   while [ $WAIT_TIME -lt $MAX_WAIT ]; do
-    # Test connection using a simple query (works even if tables don't exist)
-    # Use prisma db execute which is lightweight
-    CONNECTION_TEST=$(timeout 5 npx prisma db execute --stdin <<'EOF' 2>&1 || true
-SELECT 1;
-EOF
-    )
+    # Test connection by trying to run migrate deploy (it will fail fast if DB is unreachable)
+    # Capture output but don't fail the script
+    TEST_OUTPUT=$(npx prisma migrate deploy --skip-seed 2>&1 || true)
     
-    # If we don't see connection errors, we're connected
-    # Success looks like query output, failure has error messages
-    if ! echo "$CONNECTION_TEST" | grep -qi "Can't reach database\|P1001\|connection.*refused\|ECONNREFUSED\|timeout"; then
-      # Additional check: if we see query output or schema-related errors (not connection errors), we're connected
-      if echo "$CONNECTION_TEST" | grep -qi "SELECT\|error\|syntax" || [ -z "$CONNECTION_TEST" ]; then
-        echo "✅ Database connection established after ${WAIT_TIME}s" >&2
-        CONNECTED=1
+    # If we see migration-related output (not connection errors), DB is reachable
+    if ! echo "$TEST_OUTPUT" | grep -qi "Can't reach database\|P1001\|connection.*refused\|ECONNREFUSED"; then
+      echo "✅ Database connection established after ${WAIT_TIME}s" >&2
+      CONNECTED=1
+      # If migrations actually ran successfully during the test, that's even better
+      if echo "$TEST_OUTPUT" | grep -qi "All migrations have been applied\|migrations found"; then
+        echo "✅ Migrations already applied!" >&2
+        echo "Migrations done" >&2
         break
       fi
+      break
     fi
     
     echo "⏳ Still waiting for database... (${WAIT_TIME}s / ${MAX_WAIT}s)" >&2
