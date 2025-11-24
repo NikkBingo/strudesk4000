@@ -10174,6 +10174,33 @@ class InteractiveSoundApp {
       });
     }
 
+    // Setup samples collapsible toggle
+    const samplesToggle = document.getElementById('modal-samples-toggle');
+    const samplesContent = document.getElementById('modal-samples-content');
+    if (samplesToggle && samplesContent) {
+      const updateSamplesSectionState = (expanded) => {
+        samplesToggle.setAttribute('aria-expanded', expanded.toString());
+        samplesContent.classList.toggle('is-open', expanded);
+        samplesContent.setAttribute('aria-hidden', (!expanded).toString());
+        const samplesContainer = samplesToggle.closest('.modal-presets');
+        if (samplesContainer) {
+          samplesContainer.classList.toggle('collapsed', !expanded);
+        }
+      };
+
+      // Initialize as closed
+      if (samplesContent.hasAttribute('hidden')) {
+        samplesContent.removeAttribute('hidden');
+      }
+      updateSamplesSectionState(false);
+
+      samplesToggle.addEventListener('click', () => {
+        const expanded = samplesToggle.getAttribute('aria-expanded') === 'true';
+        const nextExpanded = !expanded;
+        updateSamplesSectionState(nextExpanded);
+      });
+    }
+
     renderPresetButtons(drumPresetsContainer, DRUM_PATTERN_PRESETS);
     renderPresetButtons(tonalPresetsContainer, TONAL_PATTERN_PRESETS);
     renderPresetButtons(samplerPresetsContainer, SAMPLER_EFFECT_PRESETS);
