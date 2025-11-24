@@ -32,23 +32,39 @@ If you see a migration error like "column already exists", you can manually reso
    npx prisma migrate deploy
    ```
 
-**Option 2: Using Railway Dashboard Shell (Actually works!)**
+**Option 2: Using Railway Dashboard (Web UI)**
 
-The `railway shell` CLI command only sets environment variables locally - it doesn't give you network access to Railway's internal services. To actually access the database, you need to use Railway's web dashboard:
+Railway's web interface doesn't have a direct "Shell" tab. Instead, you have these options:
 
-1. Go to your Railway dashboard: https://railway.app
-2. Select your **`strudesk4000`** service (not Postgres)
-3. Click on the **"Deployments"** tab
-4. Find the latest deployment and click on it
-5. Click the **"Shell"** tab (this opens a shell **inside** the container)
-6. Run:
+**Method A: Use Railway CLI with correct service**
+
+1. Link to the correct service:
    ```bash
-   cd server
-   npx prisma migrate resolve --applied 20241124_add_email_auth_fields
-   npx prisma migrate deploy
+   railway link
+   ```
+   When prompted, select:
+   - Project: **Strudesk 4000**
+   - Service: **strudesk4000** (NOT Postgres)
+
+2. Then run the command through Railway's network:
+   ```bash
+   railway run cd server && npx prisma migrate resolve --applied 20241124_add_email_auth_fields
+   railway run cd server && npx prisma migrate deploy
    ```
 
-**Note:** Make sure you're in the `strudesk4000` service shell, not the Postgres service!
+**Method B: Wait for automatic resolution (Easiest)**
+
+The updated `start.sh` script will automatically resolve the migration on the next deployment. Just push your code and wait for the deployment to complete - the script will handle it automatically!
+
+**Method C: Use Railway API/CLI to execute command in container**
+
+If you have Railway CLI installed:
+```bash
+railway run --service strudesk4000 -- npx prisma migrate resolve --applied 20241124_add_email_auth_fields
+railway run --service strudesk4000 -- npx prisma migrate deploy
+```
+
+**Note:** The migration resolution script in `start.sh` should handle this automatically on the next deployment!
 
 ## Alternative: Automatic Resolution
 
