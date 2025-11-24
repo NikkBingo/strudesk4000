@@ -3999,6 +3999,9 @@ class InteractiveSoundApp {
       
       // Initial cursor update
       updateCursor();
+      
+      // Setup mouse trail effect on canvas
+      this.setupMouseTrail();
     }
     
     // Ensure initial placeholder text reflects current steps
@@ -4021,6 +4024,44 @@ class InteractiveSoundApp {
     
     this.refreshMasterPunchcard('initial').catch(err => {
       console.warn('⚠️ Unable to render initial punchcard:', err);
+    });
+  }
+
+  /**
+   * Setup mouse trail effect on the visualizer canvas
+   */
+  setupMouseTrail() {
+    if (!this.masterPunchcardCanvas) return;
+
+    const createSmoke = (x, y) => {
+      const puff = document.createElement('div');
+      puff.className = 'smoke';
+
+      // random sizing + distortion
+      const size = Math.random() * 12 + 8;
+      puff.style.width = size + 'px';
+      puff.style.height = size + 'px';
+      puff.style.left = x - size/2 + 'px';
+      puff.style.top = y - size/2 + 'px';
+      puff.style.transform += ` rotate(${Math.random()*360}deg)`;
+
+      document.body.appendChild(puff);
+
+      // remove after animation
+      setTimeout(() => puff.remove(), 800);
+    };
+
+    // Get canvas position relative to viewport for accurate coordinates
+    const getCanvasPosition = () => {
+      const rect = this.masterPunchcardCanvas.getBoundingClientRect();
+      return { left: rect.left, top: rect.top };
+    };
+
+    this.masterPunchcardCanvas.addEventListener('mousemove', (e) => {
+      const canvasPos = getCanvasPosition();
+      const x = e.clientX;
+      const y = e.clientY;
+      createSmoke(x, y);
     });
   }
 

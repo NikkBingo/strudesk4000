@@ -119,6 +119,18 @@ export class UserProfilesListing {
     const patternCount = user._count?.patterns || 0;
     const socialLinks = user.socialLinks || {};
     const socialLinksHtml = this.renderSocialLinks(socialLinks);
+    
+    // Format date joined
+    let dateJoinedHtml = '';
+    if (user.createdAt) {
+      const joinedDate = new Date(user.createdAt);
+      const formattedDate = joinedDate.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+      dateJoinedHtml = `<div class="user-card-date">Joined ${formattedDate}</div>`;
+    }
 
     return `
       <div class="user-card" data-user-id="${user.id}">
@@ -128,7 +140,7 @@ export class UserProfilesListing {
         <div class="user-card-info">
           <div class="user-card-name">${this.escapeHtml(user.name)}</div>
           ${artistName}
-          <div class="user-card-email">${this.escapeHtml(user.email)}</div>
+          ${dateJoinedHtml}
           <div class="user-card-stats">
             <span class="user-card-patterns">${patternCount} pattern${patternCount !== 1 ? 's' : ''}</span>
           </div>
