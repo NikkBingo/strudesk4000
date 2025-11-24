@@ -14,6 +14,13 @@ node --version >&2 || {
   exit 1
 }
 
+# Always regenerate Prisma client to ensure schema changes are picked up
+echo "Generating Prisma client..." >&2
+npx prisma generate >&2 || {
+  echo "ERROR: Prisma generate failed" >&2
+  exit 1
+}
+
 # Run migrations (this is what we see in logs)
 if [ -n "$DATABASE_URL" ]; then
   echo "Running migrations..." >&2

@@ -45,6 +45,6 @@ RUN chmod +x start.sh
 # Expose port
 EXPOSE 3001
 
-# Start server directly - migrations will run in Node.js
-CMD ["node", "index.js"]
+# Start via start.sh to handle Prisma generation/migrations on boot
+CMD ["./start.sh"]
 
