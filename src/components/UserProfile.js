@@ -276,25 +276,49 @@ export class UserProfile {
    */
   async saveProfile() {
     console.log('saveProfile called, this.user =', this.user);
-    if (!this.user) {
-      console.error('saveProfile: this.user is null/undefined');
-      // Try to reload user data
+    
+    // First verify authentication and get fresh user data
+    let currentUser;
+    try {
+      currentUser = await getCurrentUser();
+      if (!currentUser || !currentUser.id) {
+        alert('Your session has expired. Please log in again.');
+        window.location.reload();
+        return;
+      }
+    } catch (error) {
+      console.error('saveProfile: Failed to verify authentication:', error);
+      alert('Your session has expired. Please log in again.');
+      window.location.reload();
+      return;
+    }
+
+    // Use the authenticated user's ID instead of potentially stale this.user
+    const userIdToUpdate = currentUser.id;
+    
+    // Reload user data to ensure we have the latest
+    if (!this.user || this.user.id !== userIdToUpdate) {
       try {
         await this.loadUserData();
-        if (!this.user) {
-          alert('User not loaded. Please close and reopen the profile modal.');
-          return;
+        // If loadUserData still doesn't have the right user, use currentUser
+        if (!this.user || this.user.id !== userIdToUpdate) {
+          this.user = currentUser;
         }
       } catch (error) {
-        console.error('saveProfile: Failed to reload user data:', error);
-        alert('User not loaded. Please try logging in again.');
-        return;
+        console.warn('saveProfile: Failed to reload user data, using current user:', error);
+        this.user = currentUser;
       }
     }
 
-    if (!this.user.id) {
-      console.error('saveProfile: this.user.id is missing', this.user);
+    if (!this.user || !this.user.id) {
+      console.error('saveProfile: User ID missing', this.user);
       alert('User ID missing. Please try logging in again.');
+      return;
+    }
+
+    // Verify the user ID matches the authenticated user
+    if (this.user.id !== userIdToUpdate) {
+      alert('You can only edit your own profile. Please refresh the page.');
       return;
     }
 
@@ -312,8 +336,8 @@ export class UserProfile {
         }
       });
 
-      // Update user
-      const updated = await usersAPI.updateUser(this.user.id, {
+      // Update user - use verified user ID
+      const updated = await usersAPI.updateUser(userIdToUpdate, {
         avatarUrl,
         artistName,
         socialLinks
@@ -329,7 +353,12 @@ export class UserProfile {
       alert('Profile updated successfully!');
     } catch (error) {
       console.error('Error saving profile:', error);
-      alert('Failed to save profile: ' + (error.message || 'Unknown error'));
+      if (error.status === 401) {
+        alert('Your session has expired. Please log in again.');
+        window.location.reload();
+      } else {
+        alert('Failed to save profile: ' + (error.message || 'Unknown error'));
+      }
     }
   }
 
