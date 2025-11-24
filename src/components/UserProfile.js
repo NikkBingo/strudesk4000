@@ -84,8 +84,8 @@ export class UserProfile {
 
               <div class="form-group">
                 <div class="user-profile-info">
-                  <p><strong>Name:</strong> <span id="profile-display-name"></span></p>
-                  <p><strong>Email:</strong> <span id="profile-display-email"></span></p>
+                  <p><strong>Display Name:</strong> <span id="profile-display-name"></span></p>
+                  <p><strong>Joined:</strong> <span id="profile-display-joined"></span></p>
                 </div>
               </div>
 
@@ -242,12 +242,21 @@ export class UserProfile {
 
       const displayName = document.getElementById('profile-display-name');
       if (displayName) {
-        displayName.textContent = this.user.name || this.user.email || 'Not set';
+        // Show Artist name if available, otherwise show name
+        const displayNameValue = this.user.artistName || this.user.name || 'Not set';
+        displayName.textContent = displayNameValue;
       }
 
-      const displayEmail = document.getElementById('profile-display-email');
-      if (displayEmail) {
-        displayEmail.textContent = this.user.email || 'Not set';
+      const displayJoined = document.getElementById('profile-display-joined');
+      if (displayJoined && this.user.createdAt) {
+        const joinedDate = new Date(this.user.createdAt);
+        displayJoined.textContent = joinedDate.toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        });
+      } else if (displayJoined) {
+        displayJoined.textContent = 'Unknown';
       }
 
       // Load social links
