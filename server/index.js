@@ -20,6 +20,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readdirSync } from 'fs';
+import { createRequire } from 'module';
 import { PrismaClient } from '@prisma/client';
 
 log('✅ [2/5] Dependencies loaded');
@@ -109,10 +110,33 @@ const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAIL
 // Only use 'none' if frontend and backend are on different domains
 // Note: Don't set domain attribute - let browser use current domain automatically
 
+// Configure PostgreSQL session store for persistent sessions
+// connect-pg-simple is CommonJS - use createRequire for ES modules
+let sessionStore;
+if (process.env.DATABASE_URL) {
+  try {
+    // Use createRequire for CommonJS module in ES module context
+    const require = createRequire(import.meta.url);
+    const pgSession = require('connect-pg-simple');
+    const PgSessionStore = pgSession(session);
+    sessionStore = new PgSessionStore({
+      conString: process.env.DATABASE_URL,
+      createTableIfMissing: true, // Automatically create sessions table if it doesn't exist
+      tableName: 'user_sessions' // Custom table name
+    });
+    console.log('✅ PostgreSQL session store configured');
+  } catch (error) {
+    console.error('❌ Failed to configure PostgreSQL session store:', error.message);
+    console.log('⚠️ Falling back to MemoryStore (sessions will not persist across restarts)');
+    sessionStore = undefined;
+  }
+}
+
 const sessionConfig = {
   name: 'strudel.session',
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
-  resave: true, // Save session even if not modified (helps with persistence)
+  store: sessionStore, // Use PostgreSQL store instead of MemoryStore
+  resave: false, // Don't save session if unmodified (PostgreSQL handles this better)
   saveUninitialized: false, // Don't save empty sessions
   rolling: true, // Reset expiration on every request
   cookie: {
@@ -127,6 +151,7 @@ const sessionConfig = {
 
 console.log('🍪 Session config:', {
   name: sessionConfig.name,
+  store: sessionStore ? 'PostgreSQL (persistent)' : 'MemoryStore (temporary)',
   secure: sessionConfig.cookie.secure,
   sameSite: sessionConfig.cookie.sameSite,
   httpOnly: sessionConfig.cookie.httpOnly,
