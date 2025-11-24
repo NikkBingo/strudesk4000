@@ -290,7 +290,8 @@ export class LoginModal {
     });
 
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('auth') === 'success') {
+    const authStatus = urlParams.get('auth');
+    if (authStatus === 'success') {
       // Wait a moment for session to be established after redirect
       setTimeout(async () => {
         const success = await this.checkAuthStatus(true);
@@ -298,6 +299,12 @@ export class LoginModal {
           setTimeout(() => this.checkAuthStatus(true), 500);
         }
       }, 200);
+      const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
+      window.history.replaceState({}, document.title, cleanUrl);
+    } else if (authStatus === 'error') {
+      const errorMessage = urlParams.get('message') || 'Authentication failed';
+      this.show();
+      this.setStatus(errorMessage, 'error');
       const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
       window.history.replaceState({}, document.title, cleanUrl);
     }

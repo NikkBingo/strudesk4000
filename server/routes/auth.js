@@ -63,10 +63,28 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
 
   router.get(
     '/google/callback',
-    passport.authenticate('google', { failureRedirect: getFrontendUrl() }),
-    (req, res) => {
-      const frontendUrl = getFrontendUrl();
-      res.redirect(`${frontendUrl}/?auth=success`);
+    (req, res, next) => {
+      passport.authenticate('google', (err, user, info) => {
+        if (err) {
+          console.error('Google OAuth authentication error:', err);
+          const frontendUrl = getFrontendUrl();
+          return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(err.message || 'Authentication failed')}`);
+        }
+        if (!user) {
+          console.error('Google OAuth: No user returned', info);
+          const frontendUrl = getFrontendUrl();
+          return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(info?.message || 'Authentication failed')}`);
+        }
+        req.logIn(user, (loginErr) => {
+          if (loginErr) {
+            console.error('Google OAuth login error:', loginErr);
+            const frontendUrl = getFrontendUrl();
+            return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(loginErr.message || 'Login failed')}`);
+          }
+          const frontendUrl = getFrontendUrl();
+          res.redirect(`${frontendUrl}/?auth=success`);
+        });
+      })(req, res, next);
     }
   );
 } else {

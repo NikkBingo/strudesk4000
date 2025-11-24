@@ -27,45 +27,58 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
     clientSecret: process.env.OAUTH_GOOGLE_CLIENT_SECRET,
     callbackURL: process.env.OAUTH_GOOGLE_CALLBACK_URL || '/api/auth/google/callback'
   }, async (accessToken, refreshToken, profile, done) => {
-  try {
-    // Find or create user
-    let user = await prisma.user.findUnique({
-      where: {
-        oauthProvider_oauthId: {
-          oauthProvider: 'google',
-          oauthId: profile.id
-        }
+    try {
+      if (!profile || !profile.id) {
+        console.error('Google OAuth: Invalid profile received', profile);
+        return done(new Error('Invalid profile from Google'), null);
       }
-    });
 
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email: profile.emails[0].value,
-          name: profile.displayName,
-          oauthProvider: 'google',
-          oauthId: profile.id,
-          avatarUrl: profile.photos[0]?.value,
-          emailVerifiedAt: new Date()
+      if (!profile.emails || !profile.emails[0] || !profile.emails[0].value) {
+        console.error('Google OAuth: Missing email in profile', profile);
+        return done(new Error('Email not provided by Google'), null);
+      }
+
+      // Find or create user
+      let user = await prisma.user.findUnique({
+        where: {
+          oauthProvider_oauthId: {
+            oauthProvider: 'google',
+            oauthId: profile.id
+          }
         }
       });
-    } else {
-      // Update user info in case it changed
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          name: profile.displayName,
-          avatarUrl: profile.photos[0]?.value,
-          email: profile.emails[0].value,
-          emailVerifiedAt: user.emailVerifiedAt || new Date()
-        }
-      });
+
+      if (!user) {
+        user = await prisma.user.create({
+          data: {
+            email: profile.emails[0].value.toLowerCase().trim(),
+            name: profile.displayName || profile.emails[0].value.split('@')[0],
+            oauthProvider: 'google',
+            oauthId: profile.id,
+            avatarUrl: profile.photos?.[0]?.value || null,
+            emailVerifiedAt: new Date()
+          }
+        });
+        console.log('Google OAuth: Created new user', user.email);
+      } else {
+        // Update user info in case it changed
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            name: profile.displayName || user.name,
+            avatarUrl: profile.photos?.[0]?.value || user.avatarUrl,
+            email: profile.emails[0].value.toLowerCase().trim(),
+            emailVerifiedAt: user.emailVerifiedAt || new Date()
+          }
+        });
+        console.log('Google OAuth: Updated existing user', user.email);
+      }
+
+      return done(null, user);
+    } catch (error) {
+      console.error('Google OAuth error:', error);
+      return done(error, null);
     }
-
-    return done(null, user);
-  } catch (error) {
-    return done(error, null);
-  }
   }));
 } else {
   console.warn('Google OAuth not configured: OAUTH_GOOGLE_CLIENT_ID and OAUTH_GOOGLE_CLIENT_SECRET are required');

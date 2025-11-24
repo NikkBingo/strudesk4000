@@ -163,63 +163,90 @@ export class UserProfile {
   async loadUserData() {
     try {
       const user = await getCurrentUser();
+      console.log('loadUserData: getCurrentUser returned:', user);
       if (!user) {
         throw new Error('Not authenticated');
       }
 
-      this.user = user;
+      if (!user.id) {
+        throw new Error('User object missing ID');
+      }
 
-      // Load user data
-      const fullUser = await usersAPI.getUser(user.id);
-      this.user = fullUser;
+      // Set user immediately so saveProfile can work even if fetch fails
+      this.user = user;
+      console.log('loadUserData: this.user set to:', this.user);
+
+      // Load user data - use current user data if getUser fails
+      let fullUser = user;
+      try {
+        fullUser = await usersAPI.getUser(user.id);
+        // Update this.user with full user data
+        this.user = fullUser;
+      } catch (fetchError) {
+        console.warn('Failed to fetch full user data, using current user data:', fetchError);
+        // Continue with the user data we already have from getCurrentUser
+        // this.user is already set above
+      }
+
+      // Ensure we have a user object before populating form
+      if (!this.user) {
+        throw new Error('No user data available');
+      }
 
       // Populate form
       const avatarUrlInput = document.getElementById('profile-avatar-url');
       const avatarPreview = document.getElementById('profile-avatar-preview');
       if (avatarUrlInput) {
-        avatarUrlInput.value = fullUser.avatarUrl || '';
-        // Update preview when URL changes
-        avatarUrlInput.addEventListener('input', (e) => {
-          const url = e.target.value.trim();
-          if (avatarPreview) {
-            if (url) {
-              avatarPreview.src = url;
-              avatarPreview.style.display = 'block';
-              avatarPreview.onerror = () => {
+        avatarUrlInput.value = this.user.avatarUrl || '';
+        
+        // Update preview when URL changes (only add listener once)
+        if (!avatarUrlInput.dataset.listenerAttached) {
+          avatarUrlInput.dataset.listenerAttached = 'true';
+          avatarUrlInput.addEventListener('input', (e) => {
+            const url = e.target.value.trim();
+            if (avatarPreview) {
+              if (url) {
+                avatarPreview.src = url;
+                avatarPreview.style.display = 'block';
+                avatarPreview.onerror = () => {
+                  avatarPreview.style.display = 'none';
+                };
+              } else {
                 avatarPreview.style.display = 'none';
-              };
-            } else {
-              avatarPreview.style.display = 'none';
+              }
             }
-          }
-        });
+          });
+        }
+        
         // Initial preview
-        if (fullUser.avatarUrl && avatarPreview) {
-          avatarPreview.src = fullUser.avatarUrl;
+        if (this.user.avatarUrl && avatarPreview) {
+          avatarPreview.src = this.user.avatarUrl;
           avatarPreview.style.display = 'block';
           avatarPreview.onerror = () => {
             avatarPreview.style.display = 'none';
           };
+        } else if (avatarPreview) {
+          avatarPreview.style.display = 'none';
         }
       }
 
       const artistNameInput = document.getElementById('profile-artist-name');
       if (artistNameInput) {
-        artistNameInput.value = fullUser.artistName || '';
+        artistNameInput.value = this.user.artistName || '';
       }
 
       const displayName = document.getElementById('profile-display-name');
       if (displayName) {
-        displayName.textContent = fullUser.name;
+        displayName.textContent = this.user.name || this.user.email || 'Not set';
       }
 
       const displayEmail = document.getElementById('profile-display-email');
       if (displayEmail) {
-        displayEmail.textContent = fullUser.email;
+        displayEmail.textContent = this.user.email || 'Not set';
       }
 
       // Load social links
-      const socialLinks = fullUser.socialLinks || {};
+      const socialLinks = this.user.socialLinks || {};
       const socialFields = ['twitter', 'instagram', 'soundcloud', 'bandcamp', 'youtube', 'spotify', 'website'];
       socialFields.forEach(field => {
         const input = document.getElementById(`social-${field}`);
@@ -228,11 +255,14 @@ export class UserProfile {
         }
       });
 
-      return fullUser;
+      return this.user;
     } catch (error) {
       console.error('Error loading user data:', error);
-      alert('Failed to load profile data');
-      return null;
+      // Only show alert if we don't have any user data at all
+      if (!this.user) {
+        alert('Failed to load profile data: ' + (error.message || 'Unknown error'));
+      }
+      return this.user || null;
     }
   }
 
@@ -240,8 +270,26 @@ export class UserProfile {
    * Save profile
    */
   async saveProfile() {
+    console.log('saveProfile called, this.user =', this.user);
     if (!this.user) {
-      alert('User not loaded');
+      console.error('saveProfile: this.user is null/undefined');
+      // Try to reload user data
+      try {
+        await this.loadUserData();
+        if (!this.user) {
+          alert('User not loaded. Please close and reopen the profile modal.');
+          return;
+        }
+      } catch (error) {
+        console.error('saveProfile: Failed to reload user data:', error);
+        alert('User not loaded. Please try logging in again.');
+        return;
+      }
+    }
+
+    if (!this.user.id) {
+      console.error('saveProfile: this.user.id is missing', this.user);
+      alert('User ID missing. Please try logging in again.');
       return;
     }
 
@@ -284,10 +332,24 @@ export class UserProfile {
    * Show modal
    */
   async show() {
-    if (this.modal) {
-      await this.loadUserData();
+    if (!this.modal) {
+      console.error('Profile modal not initialized');
+      return;
+    }
+
+    try {
+      const userData = await this.loadUserData();
+      if (!userData && !this.user) {
+        alert('Unable to load user profile. Please try logging in again.');
+        return;
+      }
       this.modal.style.display = 'flex';
       document.body.style.overflow = 'hidden';
+    } catch (error) {
+      console.error('Error showing profile modal:', error);
+      if (!this.user) {
+        alert('Failed to load profile: ' + (error.message || 'Unknown error'));
+      }
     }
   }
 
