@@ -24,6 +24,9 @@ npx prisma generate >&2 || {
 # Run migrations (this is what we see in logs)
 if [ -n "$DATABASE_URL" ]; then
   echo "Running migrations..." >&2
+  # Log database host for debugging (but hide password)
+  DB_HOST=$(echo "$DATABASE_URL" | sed -E 's|postgresql://[^@]+@([^/]+)/.*|\1|')
+  echo "Database host: $DB_HOST" >&2
   
   # Wait for database to be ready (Railway may need time for internal network)
   echo "Waiting for database to be ready (up to 30 seconds)..." >&2
