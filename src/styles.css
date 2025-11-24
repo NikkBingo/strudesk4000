@@ -4836,7 +4836,7 @@ header h1 {
   pointer-events: none;
   width: 8px;
   height: 8px;
-  background: radial-gradient(circle, rgba(200,200,200,0.8) 0%, rgba(100,100,100,0) 70%);
+  background: radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 70%);
   border-radius: 50%;
   animation: smoke-fade 0.8s ease-out forwards;
   filter: blur(2px);
