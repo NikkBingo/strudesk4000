@@ -110,8 +110,9 @@ const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAIL
 const sessionConfig = {
   name: 'strudel.session',
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
-  resave: false,
-  saveUninitialized: false,
+  resave: true, // Save session even if not modified (helps with persistence)
+  saveUninitialized: false, // Don't save empty sessions
+  rolling: true, // Reset expiration on every request
   cookie: {
     secure: isProduction, // HTTPS only in production
     httpOnly: true,

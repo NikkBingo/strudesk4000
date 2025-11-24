@@ -75,34 +75,30 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
           const frontendUrl = getFrontendUrl();
           return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(info?.message || 'Authentication failed')}`);
         }
-        // Regenerate session to prevent session fixation
-        req.session.regenerate((regenErr) => {
-          if (regenErr) {
-            console.error('Session regeneration error after Google OAuth:', regenErr);
+        req.logIn(user, (loginErr) => {
+          if (loginErr) {
+            console.error('Google OAuth login error:', loginErr);
             const frontendUrl = getFrontendUrl();
-            return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session error')}`);
+            return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(loginErr.message || 'Login failed')}`);
           }
           
-          req.logIn(user, (loginErr) => {
-            if (loginErr) {
-              console.error('Google OAuth login error:', loginErr);
+          console.log('Google login successful for user:', user.email, 'Session ID:', req.sessionID);
+          console.log('Session after Google login:', {
+            passport: req.session.passport,
+            sessionID: req.sessionID,
+            cookie: req.session.cookie
+          });
+          
+          // Explicitly save session to ensure it persists
+          req.session.save((saveErr) => {
+            if (saveErr) {
+              console.error('Session save error after Google login:', saveErr);
               const frontendUrl = getFrontendUrl();
-              return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(loginErr.message || 'Login failed')}`);
+              return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session save failed')}`);
             }
-            
-            console.log('Google login successful for user:', user.email, 'Session ID:', req.sessionID);
-            
-            // Explicitly save session to ensure it persists
-            req.session.save((saveErr) => {
-              if (saveErr) {
-                console.error('Session save error after Google login:', saveErr);
-                const frontendUrl = getFrontendUrl();
-                return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session save failed')}`);
-              }
-              console.log('Session saved successfully after Google login');
-              const frontendUrl = getFrontendUrl();
-              res.redirect(`${frontendUrl}/?auth=success`);
-            });
+            console.log('Session saved successfully after Google login');
+            const frontendUrl = getFrontendUrl();
+            res.redirect(`${frontendUrl}/?auth=success`);
           });
         });
       })(req, res, next);
@@ -235,30 +231,27 @@ router.post('/login', (req, res, next) => {
       return res.status(401).json({ error: info?.message || 'Invalid email or password' });
     }
     
-    // Regenerate session to prevent session fixation
-    req.session.regenerate((regenErr) => {
-      if (regenErr) {
-        console.error('Session regeneration error:', regenErr);
-        return next(regenErr);
+    req.logIn(user, (loginErr) => {
+      if (loginErr) {
+        console.error('Login error:', loginErr);
+        return next(loginErr);
       }
       
-      req.logIn(user, (loginErr) => {
-        if (loginErr) {
-          console.error('Login error after regeneration:', loginErr);
-          return next(loginErr);
+      console.log('Login successful for user:', user.email, 'Session ID:', req.sessionID);
+      console.log('Session after login:', {
+        passport: req.session.passport,
+        sessionID: req.sessionID,
+        cookie: req.session.cookie
+      });
+      
+      // Explicitly save session to ensure it persists
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          console.error('Session save error after login:', saveErr);
+          return next(saveErr);
         }
-        
-        console.log('Login successful for user:', user.email, 'Session ID:', req.sessionID);
-        
-        // Explicitly save session to ensure it persists
-        req.session.save((saveErr) => {
-          if (saveErr) {
-            console.error('Session save error after login:', saveErr);
-            return next(saveErr);
-          }
-          console.log('Session saved successfully after login');
-          res.json({ message: 'Login successful', user: sanitizeUser(user) });
-        });
+        console.log('Session saved successfully after login');
+        res.json({ message: 'Login successful', user: sanitizeUser(user) });
       });
     });
   })(req, res, next);
