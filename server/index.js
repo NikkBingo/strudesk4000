@@ -119,7 +119,7 @@ const sessionConfig = {
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
   store: sessionStore, // Use PostgreSQL store instead of MemoryStore
   resave: false, // Don't save session if unmodified (PostgreSQL handles this better)
-  saveUninitialized: false, // Don't save empty sessions
+  saveUninitialized: true, // Save new sessions even if they haven't been modified (needed for cookies)
   rolling: true, // Reset expiration on every request
   cookie: {
     // Don't set domain - browser will use current domain automatically (better for same-origin)
@@ -146,11 +146,34 @@ app.use(session(sessionConfig));
 // Middleware to log cookie setting for debugging
 app.use((req, res, next) => {
   const originalEnd = res.end;
+  const originalWriteHead = res.writeHead;
+  
+  // Log when headers are written (cookies should be set by then)
+  res.writeHead = function(statusCode, statusMessage, headers) {
+    const setCookieHeaders = res.getHeader('Set-Cookie') || (headers && headers['Set-Cookie']);
+    if (setCookieHeaders) {
+      console.log('🍪 [RESPONSE WRITEHEAD] Set-Cookie header:', Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders]);
+    } else {
+      // Check all headers
+      const allHeaders = res.getHeaders();
+      if (Object.keys(allHeaders).length > 0) {
+        console.log('🍪 [RESPONSE WRITEHEAD] All headers:', Object.keys(allHeaders));
+      }
+    }
+    if (typeof statusCode === 'number') {
+      return originalWriteHead.call(this, statusCode, statusMessage, headers);
+    } else {
+      return originalWriteHead.call(this, statusCode, statusMessage);
+    }
+  };
+  
   res.end = function(...args) {
     // Log Set-Cookie headers being sent
     const setCookieHeaders = res.getHeader('Set-Cookie');
     if (setCookieHeaders) {
-      console.log('🍪 [RESPONSE] Set-Cookie header:', Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders]);
+      console.log('🍪 [RESPONSE END] Set-Cookie header:', Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders]);
+    } else {
+      console.log('🍪 [RESPONSE END] No Set-Cookie header found');
     }
     originalEnd.apply(this, args);
   };
