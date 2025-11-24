@@ -3,7 +3,7 @@
  * Handles user profile editing with social media links and artist name
  */
 
-import { usersAPI, getCurrentUser } from '../api.js';
+import { usersAPI, getCurrentUser, authAPI } from '../api.js';
 
 export class UserProfile {
   constructor() {
@@ -90,8 +90,13 @@ export class UserProfile {
               </div>
 
               <div class="user-profile-modal-footer">
-                <button type="button" class="btn-cancel" id="profile-cancel-btn">Cancel</button>
-                <button type="submit" class="btn-save" id="profile-save-btn">Save Changes</button>
+                <div>
+                  <button type="button" class="btn-danger" id="profile-delete-account-btn">Delete Account</button>
+                </div>
+                <div>
+                  <button type="button" class="btn-cancel" id="profile-cancel-btn">Cancel</button>
+                  <button type="submit" class="btn-save" id="profile-save-btn">Save Changes</button>
+                </div>
               </div>
             </form>
           </div>
@@ -111,6 +116,20 @@ export class UserProfile {
     const closeBtn = document.getElementById('user-profile-modal-close');
     if (closeBtn) {
       closeBtn.addEventListener('click', () => this.hide());
+    }
+
+    const deleteBtn = document.getElementById('profile-delete-account-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', async () => {
+        if (!confirm('Delete your account and all patterns? This action cannot be undone.')) return;
+        try {
+          await authAPI.deleteAccount();
+          window.location.reload();
+        } catch (error) {
+          console.error('Delete account error:', error);
+          alert(error.message || 'Failed to delete account');
+        }
+      });
     }
 
     // Cancel button

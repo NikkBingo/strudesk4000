@@ -13,6 +13,8 @@ import { LoginModal } from './components/LoginModal.js';
 import { UserProfile } from './components/UserProfile.js';
 import { UserProfilesListing } from './components/UserProfilesListing.js';
 import { SavePatternDialog } from './components/SavePatternDialog.js';
+import { ProfileOnboardingModal } from './components/ProfileOnboardingModal.js';
+import { AdminUserManager } from './components/AdminUserManager.js';
 import { getCurrentUser, authAPI } from './api.js';
 
 // Drum abbreviation mapping
@@ -13141,24 +13143,33 @@ let loginModal = null;
 let userProfile = null;
 let userProfilesListing = null;
 let savePatternDialog = null;
+let profileOnboardingModal = null;
+let adminUserManager = null;
 
 async function initUserAuth() {
   loginModal = new LoginModal();
   loginModal.init();
   loginModal.setOnLoginSuccess((user) => {
-    currentUser = user;
-    updateUserUI(user);
+    handleAuthenticatedUser(user);
   });
 
   // Check if user is already logged in
   try {
     const user = await getCurrentUser();
     if (user) {
-      currentUser = user;
-      updateUserUI(user);
+      handleAuthenticatedUser(user);
     } else {
       showLoginButton();
     }
+  profileOnboardingModal = new ProfileOnboardingModal();
+  profileOnboardingModal.init();
+  profileOnboardingModal.setOnComplete((updatedUser) => {
+    handleAuthenticatedUser(updatedUser);
+  });
+
+  adminUserManager = new AdminUserManager();
+  adminUserManager.init();
+
   } catch (error) {
     showLoginButton();
   }
@@ -13198,7 +13209,7 @@ async function initUserAuth() {
         await authAPI.logout();
         currentUser = null;
         showLoginButton();
-        userMenuDropdown.classList.remove('active');
+        userMenuDropdown?.classList.remove('active');
       } catch (error) {
         console.error('Logout error:', error);
       }
@@ -13213,7 +13224,7 @@ async function initUserAuth() {
       if (userProfile) {
         await userProfile.show();
       }
-      userMenuDropdown.classList.remove('active');
+      userMenuDropdown?.classList.remove('active');
     });
   }
 
@@ -13221,8 +13232,7 @@ async function initUserAuth() {
   userProfile = new UserProfile();
   userProfile.init();
   userProfile.setOnUpdate((updatedUser) => {
-    currentUser = updatedUser;
-    updateUserUI(updatedUser);
+    handleAuthenticatedUser(updatedUser);
   });
 
   // Initialize user profiles listing
@@ -13237,7 +13247,18 @@ async function initUserAuth() {
       if (userProfilesListing) {
         await userProfilesListing.show();
       }
-      userMenuDropdown.classList.remove('active');
+      userMenuDropdown?.classList.remove('active');
+    });
+  }
+
+  const adminLink = document.getElementById('user-admin-link');
+  if (adminLink) {
+    adminLink.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (adminUserManager) {
+        await adminUserManager.show();
+      }
+      userMenuDropdown?.classList.remove('active');
     });
   }
 
@@ -13252,6 +13273,7 @@ function updateUserUI(user) {
   const userMenu = document.getElementById('user-menu');
   const userName = document.getElementById('user-name');
   const userAvatar = document.getElementById('user-avatar');
+  const adminLink = document.getElementById('user-admin-link');
 
   if (loginBtn) loginBtn.style.display = 'none';
   if (userMenu) userMenu.style.display = 'block';
@@ -13259,14 +13281,30 @@ function updateUserUI(user) {
   if (userAvatar && user.avatarUrl) {
     userAvatar.src = user.avatarUrl;
     userAvatar.style.display = 'block';
+  } else if (userAvatar) {
+    userAvatar.style.display = 'none';
+  }
+  if (adminLink) {
+    adminLink.style.display = user.role === 'admin' ? 'block' : 'none';
   }
 }
 
 function showLoginButton() {
   const loginBtn = document.getElementById('header-login-btn');
   const userMenu = document.getElementById('user-menu');
+  const adminLink = document.getElementById('user-admin-link');
   if (loginBtn) loginBtn.style.display = 'block';
   if (userMenu) userMenu.style.display = 'none';
+  if (adminLink) adminLink.style.display = 'none';
+}
+
+function handleAuthenticatedUser(user) {
+  if (!user) return;
+  currentUser = user;
+  updateUserUI(user);
+  if (!user.profileCompleted && profileOnboardingModal) {
+    profileOnboardingModal.show(user);
+  }
 }
 
 // Initialize app when DOM is ready

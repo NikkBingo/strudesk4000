@@ -1,7 +1,8 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
-import { Strategy as GitHubStrategy } from 'passport-github2';
+import { Strategy as LocalStrategy } from 'passport-local';
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 // Initialize Prisma client with error handling
 let prisma;
@@ -44,7 +45,8 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
           name: profile.displayName,
           oauthProvider: 'google',
           oauthId: profile.id,
-          avatarUrl: profile.photos[0]?.value
+          avatarUrl: profile.photos[0]?.value,
+          emailVerifiedAt: new Date()
         }
       });
     } else {
@@ -54,7 +56,8 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
         data: {
           name: profile.displayName,
           avatarUrl: profile.photos[0]?.value,
-          email: profile.emails[0].value
+          email: profile.emails[0].value,
+          emailVerifiedAt: user.emailVerifiedAt || new Date()
         }
       });
     }
@@ -68,58 +71,50 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
   console.warn('Google OAuth not configured: OAUTH_GOOGLE_CLIENT_ID and OAUTH_GOOGLE_CLIENT_SECRET are required');
 }
 
-// Configure GitHub OAuth Strategy (only if credentials are provided)
-if (process.env.OAUTH_GITHUB_CLIENT_ID && process.env.OAUTH_GITHUB_CLIENT_SECRET) {
-  passport.use('github', new GitHubStrategy({
-    clientID: process.env.OAUTH_GITHUB_CLIENT_ID,
-    clientSecret: process.env.OAUTH_GITHUB_CLIENT_SECRET,
-    callbackURL: process.env.OAUTH_GITHUB_CALLBACK_URL || '/api/auth/github/callback',
-    scope: ['user:email']
-  }, async (accessToken, refreshToken, profile, done) => {
-  try {
-    // Get email from GitHub profile
-    const email = profile.emails?.[0]?.value || `${profile.username}@users.noreply.github.com`;
-
-    // Find or create user
-    let user = await prisma.user.findUnique({
-      where: {
-        oauthProvider_oauthId: {
-          oauthProvider: 'github',
-          oauthId: profile.id.toString()
+// Local email/password strategy
+passport.use(
+  'local',
+  new LocalStrategy(
+    {
+      usernameField: 'email',
+      passwordField: 'password',
+      passReqToCallback: false
+    },
+    async (email, password, done) => {
+      try {
+        const normalizedEmail = email?.toLowerCase().trim();
+        if (!normalizedEmail) {
+          return done(null, false, { message: 'Email is required' });
         }
+
+        const user = await prisma.user.findUnique({
+          where: { email: normalizedEmail }
+        });
+
+        if (!user || !user.passwordHash) {
+          return done(null, false, { message: 'Invalid email or password' });
+        }
+
+        if (user.status === 'blocked') {
+          return done(null, false, { message: 'Account is blocked' });
+        }
+
+        if (!user.emailVerifiedAt) {
+          return done(null, false, { message: 'Please verify your email before logging in' });
+        }
+
+        const isValid = await bcrypt.compare(password, user.passwordHash);
+        if (!isValid) {
+          return done(null, false, { message: 'Invalid email or password' });
+        }
+
+        return done(null, user);
+      } catch (error) {
+        return done(error);
       }
-    });
-
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email,
-          name: profile.displayName || profile.username,
-          oauthProvider: 'github',
-          oauthId: profile.id.toString(),
-          avatarUrl: profile.photos?.[0]?.value
-        }
-      });
-    } else {
-      // Update user info
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          name: profile.displayName || profile.username,
-          avatarUrl: profile.photos?.[0]?.value,
-          email
-        }
-      });
     }
-
-    return done(null, user);
-  } catch (error) {
-    return done(error, null);
-  }
-  }));
-} else {
-  console.warn('GitHub OAuth not configured: OAUTH_GITHUB_CLIENT_ID and OAUTH_GITHUB_CLIENT_SECRET are required');
-}
+  )
+);
 
 // Serialize user for session
 passport.serializeUser((user, done) => {
@@ -138,6 +133,10 @@ passport.deserializeUser(async (id, done) => {
         avatarUrl: true,
         artistName: true,
         socialLinks: true,
+        role: true,
+        status: true,
+        profileCompleted: true,
+        emailVerifiedAt: true,
         createdAt: true
       }
     });

@@ -70,8 +70,52 @@ export const authAPI = {
     return `${API_URL}/auth/google`;
   },
 
-  getGithubLoginUrl() {
-    return `${API_URL}/auth/github`;
+  async login(email, password) {
+    return apiRequest('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    });
+  },
+
+  async register({ email, password, name }) {
+    return apiRequest('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, name })
+    });
+  },
+
+  async verifyEmail(token) {
+    return apiRequest('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token })
+    });
+  },
+
+  async resendVerification(email) {
+    return apiRequest('/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
+  },
+
+  async requestPasswordReset(email) {
+    return apiRequest('/auth/request-password-reset', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
+  },
+
+  async resetPassword(token, password) {
+    return apiRequest('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password })
+    });
+  },
+
+  async deleteAccount() {
+    return apiRequest('/auth/delete-account', {
+      method: 'POST'
+    });
   }
 };
 
@@ -111,6 +155,28 @@ export const usersAPI = {
    */
   async searchUsers(query) {
     return apiRequest(`/users/search/${encodeURIComponent(query)}`);
+  },
+
+  async listAdminUsers() {
+    return apiRequest('/users/admin/all');
+  },
+
+  async blockUser(userId) {
+    return apiRequest(`/users/${userId}/block`, {
+      method: 'POST'
+    });
+  },
+
+  async unblockUser(userId) {
+    return apiRequest(`/users/${userId}/unblock`, {
+      method: 'POST'
+    });
+  },
+
+  async deleteUser(userId) {
+    return apiRequest(`/users/${userId}`, {
+      method: 'DELETE'
+    });
   }
 };
 

@@ -2803,6 +2803,7 @@ header h1 {
   color: #4c51bf;
 }
 
+
 .sample-add-row {
   display: flex;
   gap: 8px;
@@ -3927,6 +3928,54 @@ header h1 {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
+.login-modal-body .auth-form .form-group input[type="email"],
+.login-modal-body .auth-form .form-group input[type="password"],
+.login-modal-body .auth-form .form-group input[type="text"] {
+  width: 100%;
+  padding: 12px 18px;
+  border: 2px solid rgba(102, 126, 234, 0.25);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.95);
+  font-size: 1rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.login-modal-body .auth-form .form-group input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-danger {
+  background: #dc2626;
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: opacity 0.2s ease;
+}
+
+.btn-danger:hover {
+  opacity: 0.85;
+}
+
 .user-menu {
   position: relative;
 }
@@ -4063,30 +4112,111 @@ header h1 {
   text-align: center;
 }
 
+.login-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.login-tab {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid rgba(76, 81, 191, 0.3);
+  background: #fff;
+  color: #4c51bf;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.login-tab.active {
+  background: #4c51bf;
+  color: #fff;
+  box-shadow: 0 6px 12px rgba(76, 81, 191, 0.25);
+}
+
+.auth-form {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.auth-form-active {
+  display: flex;
+}
+
+.auth-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.auth-links button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #4c51bf;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.auth-status {
+  min-height: 18px;
+  font-size: 0.85rem;
+  margin-top: 6px;
+}
+
+.auth-status[data-status-type="error"] {
+  color: #dc2626;
+}
+
+.auth-status[data-status-type="success"] {
+  color: #16a34a;
+}
+
+.login-separator {
+  margin: 16px 0;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.85rem;
+  position: relative;
+}
+
+.login-separator::before,
+.login-separator::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 40%;
+  height: 1px;
+  background: rgba(156, 163, 175, 0.5);
+}
+
+.login-separator::before {
+  left: 0;
+}
+
+.login-separator::after {
+  right: 0;
+}
+
 .login-buttons {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.login-button-google,
-.login-button-github {
-  width: 100%;
-  justify-content: center;
+  margin-top: 12px;
 }
 
 .login-button-google {
-  background: white;
-  border: 1px solid #ddd;
-}
-
-.login-button-github {
-  background: #24292e;
-  color: white;
-}
-
-.login-button-github:hover {
-  background: #2f363d;
+  width: 100%;
+  justify-content: center;
+  background: #fff;
+  border: 1px solid #e5e7eb;
 }
 
 /* User Profile Modal Styles */
