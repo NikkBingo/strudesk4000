@@ -39,30 +39,15 @@ log('🚀 Starting Express app setup...');
 
 const app = express();
 
-// Initialize Prisma client with error handling and connection timeout
-let prisma;
-try {
-  prisma = new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-    datasources: {
-      db: {
-        url: process.env.DATABASE_URL
-      }
-    }
-  });
-  log('✅ Prisma client initialized');
-  
-  // Test database connection (non-blocking)
-  prisma.$connect().then(() => {
-    log('✅ Database connection successful');
-  }).catch((err) => {
-    console.error('⚠️  Database connection warning (server will continue):', err.message);
-  });
-} catch (error) {
-  console.error('❌ Failed to initialize Prisma client:', error);
-  // Create a stub that will fail gracefully on use
-  prisma = null;
-}
+// Import shared Prisma client instance
+import prisma from './db.js';
+
+// Test database connection (non-blocking)
+prisma.$connect().then(() => {
+  log('✅ Database connection successful');
+}).catch((err) => {
+  console.error('⚠️  Database connection warning (server will continue):', err.message);
+});
 
 // Get directory name for ES modules
 const __filename = fileURLToPath(import.meta.url);
