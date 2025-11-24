@@ -72,8 +72,8 @@ if [ -n "$DATABASE_URL" ]; then
     # Try to deploy migrations
     MIGRATION_OUTPUT=$(npx prisma migrate deploy 2>&1)
     MIGRATION_EXIT_CODE=$?
-  
-  if [ $MIGRATION_EXIT_CODE -ne 0 ]; then
+    
+    if [ $MIGRATION_EXIT_CODE -ne 0 ]; then
     echo "$MIGRATION_OUTPUT" >&2
     
     # Check if error is about failed migrations preventing new ones
@@ -167,9 +167,10 @@ if [ -n "$DATABASE_URL" ]; then
         echo "❌ Database push also failed. Attempting to continue anyway..." >&2
       fi
     fi
-  else
-    echo "$MIGRATION_OUTPUT" >&2
-    echo "✅ Migrations completed successfully" >&2
+    else
+      echo "$MIGRATION_OUTPUT" >&2
+      echo "✅ Migrations completed successfully" >&2
+    fi
   fi
   
   echo "Migrations done" >&2
