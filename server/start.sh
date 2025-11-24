@@ -31,30 +31,35 @@ if [ -n "$DATABASE_URL" ]; then
     echo "$MIGRATION_OUTPUT" >&2
     
     # Check if the error is about columns already existing
-    if echo "$MIGRATION_OUTPUT" | grep -q "already exists"; then
-      echo "Migration failed due to existing columns. Attempting to resolve..." >&2
+    if echo "$MIGRATION_OUTPUT" | grep -qi "already exists"; then
+      echo "⚠️ Migration failed due to existing columns. Attempting to resolve..." >&2
       
       # Extract migration name from error (format: "Migration name: 20241124_add_email_auth_fields")
-      # Try multiple patterns to extract the migration name
       MIGRATION_NAME=$(echo "$MIGRATION_OUTPUT" | grep -i "Migration name:" | sed -E 's/.*[Mm]igration [Nn]ame: *([^ ]+).*/\1/' | head -1)
       
-      # If that didn't work, try extracting from the directory name pattern
+      # Fallback: try extracting from directory pattern
       if [ -z "$MIGRATION_NAME" ]; then
-        MIGRATION_NAME=$(echo "$MIGRATION_OUTPUT" | grep -oE '[0-9]{8}_[a-z_]+' | head -1)
+        MIGRATION_NAME=$(echo "$MIGRATION_OUTPUT" | grep -oE '[0-9]{8}_[a-zA-Z_]+' | head -1)
       fi
       
       if [ -n "$MIGRATION_NAME" ]; then
-        echo "Resolving migration: $MIGRATION_NAME" >&2
-        npx prisma migrate resolve --applied "$MIGRATION_NAME" >&2
+        echo "✅ Resolving migration: $MIGRATION_NAME" >&2
+        RESOLVE_OUTPUT=$(npx prisma migrate resolve --applied "$MIGRATION_NAME" 2>&1)
+        RESOLVE_EXIT=$?
+        echo "$RESOLVE_OUTPUT" >&2
         
-        # Try migrations again after resolving
-        echo "Retrying migrations after resolution..." >&2
-        npx prisma migrate deploy >&2 || echo "Migration warning (continuing)..." >&2
+        if [ $RESOLVE_EXIT -eq 0 ]; then
+          echo "✅ Migration resolved. Retrying migrations..." >&2
+          # Retry migrations after resolving
+          npx prisma migrate deploy >&2
+        else
+          echo "❌ Failed to resolve migration. Continuing anyway..." >&2
+        fi
       else
-        echo "Could not extract migration name from error. Continuing..." >&2
+        echo "❌ Could not extract migration name from error. Continuing..." >&2
       fi
     else
-      echo "Migration failed with unknown error. Continuing..." >&2
+      echo "⚠️ Migration failed with unknown error. Continuing..." >&2
     fi
   else
     echo "$MIGRATION_OUTPUT" >&2
