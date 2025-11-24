@@ -81,8 +81,16 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
             const frontendUrl = getFrontendUrl();
             return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(loginErr.message || 'Login failed')}`);
           }
-          const frontendUrl = getFrontendUrl();
-          res.redirect(`${frontendUrl}/?auth=success`);
+          // Explicitly save session to ensure it persists
+          req.session.save((saveErr) => {
+            if (saveErr) {
+              console.error('Session save error after Google login:', saveErr);
+              const frontendUrl = getFrontendUrl();
+              return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session save failed')}`);
+            }
+            const frontendUrl = getFrontendUrl();
+            res.redirect(`${frontendUrl}/?auth=success`);
+          });
         });
       })(req, res, next);
     }
@@ -215,7 +223,14 @@ router.post('/login', (req, res, next) => {
       if (loginErr) {
         return next(loginErr);
       }
-      res.json({ message: 'Login successful', user: sanitizeUser(user) });
+      // Explicitly save session to ensure it persists
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          console.error('Session save error after login:', saveErr);
+          return next(saveErr);
+        }
+        res.json({ message: 'Login successful', user: sanitizeUser(user) });
+      });
     });
   })(req, res, next);
 });
@@ -272,6 +287,13 @@ router.post('/reset-password', async (req, res) => {
 
 // Get current user
 router.get('/me', async (req, res) => {
+  // Log session info for debugging
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[auth/me] Session ID:', req.sessionID);
+    console.log('[auth/me] Is authenticated:', req.isAuthenticated ? req.isAuthenticated() : false);
+    console.log('[auth/me] User:', req.user ? req.user.id : 'none');
+  }
+  
   if (req.isAuthenticated && req.isAuthenticated()) {
     return res.json(sanitizeUser(req.user));
   } else if (isTestMode()) {
