@@ -286,7 +286,7 @@ router.post('/login', (req, res, next) => {
         cookie: req.session.cookie
       });
       
-      // Mark session as modified so express-session saves it
+      // Explicitly save session and ensure it's persisted
       req.session.save((saveErr) => {
         if (saveErr) {
           console.error('Session save error after login:', saveErr);
@@ -295,7 +295,13 @@ router.post('/login', (req, res, next) => {
         
         console.log('Session saved successfully after login');
         console.log('🍪 Session ID:', req.sessionID);
+        console.log('🍪 Session passport:', req.session.passport);
         console.log('🍪 Session cookie config:', req.session.cookie);
+        
+        // Log Set-Cookie header to verify it's being set
+        const setCookieHeaders = res.getHeader('Set-Cookie');
+        console.log('🍪 [LOGIN RESPONSE] Set-Cookie header:', setCookieHeaders);
+        
         res.json({ message: 'Login successful', user: sanitizeUser(user) });
       });
     });
