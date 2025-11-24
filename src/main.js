@@ -1022,23 +1022,39 @@ const createPatternHistoryModal = () => {
 
     let entry = currentEntries.find((item) => item.id === entryId);
     
-    // If cloud pattern, fetch full pattern
+    // If cloud pattern, fetch full pattern (requires authentication)
     if (isCloud && entry) {
       try {
-        const { patternsAPI } = await import('./api.js');
+        const { patternsAPI, getCurrentUser } = await import('./api.js');
+        const user = await getCurrentUser();
+        if (!user) {
+          alert('Please log in to load patterns from cloud');
+          return;
+        }
         const fullPattern = await patternsAPI.getPattern(entryId);
         entry = fullPattern;
       } catch (error) {
         console.error('Error loading cloud pattern:', error);
-        alert('Failed to load pattern');
+        alert('Failed to load pattern: ' + (error.message || 'Please check your login status'));
         return;
       }
     }
     
     if (!entry) return;
 
-    const patternCode = entry.patternCode || entry.pattern;
+    let patternCode = entry.patternCode || entry.pattern;
     if (!patternCode) return;
+
+    // Clean master-injected modifiers (postgain, pan, fast, slow, cpm) from loaded pattern
+    // These shouldn't be in saved patterns, but clean them if they exist
+    patternCode = patternCode.replace(/\.postgain\s*\([^)]*\)/gi, '');
+    patternCode = patternCode.replace(/\.pan\s*\([^)]*\)/gi, '');
+    patternCode = patternCode.replace(/\.fast\s*\([^)]*\)/gi, '');
+    patternCode = patternCode.replace(/\.slow\s*\([^)]*\)/gi, '');
+    patternCode = patternCode.replace(/\.cpm\s*\([^)]*\)/gi, '');
+    // Clean up any double dots or trailing dots
+    patternCode = patternCode.replace(/\.\.+/g, '.').trim();
+    patternCode = patternCode.replace(/\.+$/, '').trim();
 
     if (context?.type === 'channel') {
       interactiveSoundAppInstance.applyChannelHistoryEntry(context.elementId, patternCode);
@@ -3310,6 +3326,23 @@ class InteractiveSoundApp {
         } else {
           masterActiveDot.classList.remove('active');
         }
+      }
+      
+      // Update status message
+      if (isPlaying) {
+        uiController.updateStatus('Playing Master');
+      } else {
+        // Restore normal status when master stops
+        const hasActiveElements = this.activeElements.size > 0;
+        if (!hasActiveElements) {
+          uiController.updateStatus('Ready - Click elements to start/stop patterns (Press Escape to stop all)');
+        }
+      }
+      
+      // Hide/show pattern slots display based on master state
+      const patternSlotsDiv = document.getElementById('pattern-slots');
+      if (patternSlotsDiv) {
+        patternSlotsDiv.style.display = isPlaying ? 'none' : 'block';
       }
       
       // Update all tracked element circles and status dots
@@ -6816,15 +6849,18 @@ class InteractiveSoundApp {
     
     // Remove master-injected modifiers (postgain, pan, fast, slow, cpm) that shouldn't be in saved patterns
     // These are added dynamically when playing through master, but shouldn't be persisted
+    // Use case-insensitive and global flags to catch all instances
     let cleanedPattern = basePattern;
-    cleanedPattern = cleanedPattern.replace(/\.postgain\s*\([^)]*\)/g, '');
-    cleanedPattern = cleanedPattern.replace(/\.pan\s*\([^)]*\)/g, '');
-    cleanedPattern = cleanedPattern.replace(/\.fast\s*\([^)]*\)/g, '');
-    cleanedPattern = cleanedPattern.replace(/\.slow\s*\([^)]*\)/g, '');
-    cleanedPattern = cleanedPattern.replace(/\.cpm\s*\([^)]*\)/g, '');
-    // Clean up any double dots that might result
+    // Remove all instances of postgain() - must remove all occurrences
+    cleanedPattern = cleanedPattern.replace(/\.postgain\s*\([^)]*\)/gi, '');
+    cleanedPattern = cleanedPattern.replace(/\.pan\s*\([^)]*\)/gi, '');
+    cleanedPattern = cleanedPattern.replace(/\.fast\s*\([^)]*\)/gi, '');
+    cleanedPattern = cleanedPattern.replace(/\.slow\s*\([^)]*\)/gi, '');
+    cleanedPattern = cleanedPattern.replace(/\.cpm\s*\([^)]*\)/gi, '');
+    // Clean up any double dots or extra whitespace that might result
     cleanedPattern = cleanedPattern.replace(/\.\.+/g, '.').trim();
     cleanedPattern = cleanedPattern.replace(/\.+$/, '').trim();
+    cleanedPattern = cleanedPattern.replace(/\s+\./g, '.');
     
     // Get effects, filters, and synthesis
     const effects = this.elementEffects?.[elementId] || {};
@@ -7012,6 +7048,15 @@ class InteractiveSoundApp {
   }
 
   async saveChannelWithEffects(elementId) {
+    // Check if user is logged in - required for saving
+    const { getCurrentUser } = await import('./api.js');
+    const user = await getCurrentUser();
+    
+    if (!user) {
+      alert('Please log in to save patterns');
+      return;
+    }
+
     const savedConfig = this.loadElementConfig(elementId);
     if (!savedConfig || !savedConfig.pattern) {
       this.uiController?.updateStatus?.('Nothing to save for this channel.');
@@ -7019,11 +7064,7 @@ class InteractiveSoundApp {
     }
     const finalPattern = this.getPatternWithEffects(elementId, savedConfig.pattern);
     
-    // Check if user is logged in
-    const { getCurrentUser } = await import('./api.js');
-    const user = await getCurrentUser();
-    
-    if (user && window.savePatternDialog) {
+    if (window.savePatternDialog) {
       // Show save dialog for cloud save
       await window.savePatternDialog.show(finalPattern, 'channel', elementId);
       window.savePatternDialog.setOnSave(async (savedPattern) => {
@@ -7034,15 +7075,20 @@ class InteractiveSoundApp {
         this.uiController?.updateStatus?.(`Saved channel ${elementId} to cloud.`);
       });
     } else {
-      // Fallback to local save
-      const updatedConfig = { ...savedConfig, pattern: finalPattern };
-      this.saveElementConfig(elementId, updatedConfig, false);
-      patternHistoryStore.markChannelSnapshot(elementId, finalPattern);
-      this.uiController?.updateStatus?.(`Saved channel ${elementId} locally.`);
+      this.uiController?.updateStatus?.('Save dialog not available.');
     }
   }
 
   async saveMasterHistoryEntry() {
+    // Check if user is logged in - required for saving
+    const { getCurrentUser } = await import('./api.js');
+    const user = await getCurrentUser();
+    
+    if (!user) {
+      alert('Please log in to save patterns');
+      return;
+    }
+
     const masterTextarea = document.getElementById('master-pattern');
     const pattern = masterTextarea ? masterTextarea.value : '';
     const trimmed = (pattern || '').trim();
@@ -7051,11 +7097,7 @@ class InteractiveSoundApp {
       return;
     }
     
-    // Check if user is logged in
-    const { getCurrentUser } = await import('./api.js');
-    const user = await getCurrentUser();
-    
-    if (user && window.savePatternDialog) {
+    if (window.savePatternDialog) {
       // Show save dialog for cloud save
       await window.savePatternDialog.show(trimmed, 'master', null);
       window.savePatternDialog.setOnSave(async (savedPattern) => {
@@ -7067,12 +7109,7 @@ class InteractiveSoundApp {
         this.uiController?.updateStatus?.(`Saved master pattern to cloud.`);
       });
     } else {
-      // Fallback to local save
-      patternHistoryStore.saveMasterVersion(trimmed);
-      patternHistoryStore.markMasterSnapshot(trimmed);
-      soundManager.masterPattern = trimmed;
-      this.updateMasterPatternDisplay();
-      this.uiController?.updateStatus?.('Saved master pattern locally.');
+      this.uiController?.updateStatus?.('Save dialog not available.');
     }
   }
   
@@ -12912,6 +12949,27 @@ class InteractiveSoundApp {
           console.log(`⚠️ Key/Scale not applied - pattern: ${!!pattern}, hasNoteCall: ${pattern ? containsNoteCall(pattern) : false}, elementKey: ${elementKey}, elementScale: ${elementScale}`);
         }
         
+        // Remove master-injected modifiers (postgain, pan, fast, slow, cpm) before saving
+        // These are added dynamically during playback but shouldn't be persisted
+        if (pattern) {
+          let cleanedPattern = pattern;
+          // Remove ALL instances of postgain() - loop until no more are found to handle nested/duplicated cases
+          let previousPattern = '';
+          while (previousPattern !== cleanedPattern) {
+            previousPattern = cleanedPattern;
+            cleanedPattern = cleanedPattern.replace(/\.postgain\s*\([^)]*\)/gi, '');
+          }
+          cleanedPattern = cleanedPattern.replace(/\.pan\s*\([^)]*\)/gi, '');
+          cleanedPattern = cleanedPattern.replace(/\.fast\s*\([^)]*\)/gi, '');
+          cleanedPattern = cleanedPattern.replace(/\.slow\s*\([^)]*\)/gi, '');
+          cleanedPattern = cleanedPattern.replace(/\.cpm\s*\([^)]*\)/gi, '');
+          // Clean up any double dots, trailing dots, or extra whitespace that might result
+          cleanedPattern = cleanedPattern.replace(/\.\.+/g, '.').trim();
+          cleanedPattern = cleanedPattern.replace(/\.+$/, '').trim();
+          cleanedPattern = cleanedPattern.replace(/\s+\./g, '.');
+          pattern = cleanedPattern;
+        }
+        
         const sampleUrl = document.getElementById('modal-sample-url').value.trim();
         const fileInput = document.getElementById('modal-sample-file');
         const bankValue = bankSelect ? bankSelect.value : '';
@@ -13345,8 +13403,18 @@ async function initUserAuth() {
   if (profileLink) {
     profileLink.addEventListener('click', async (e) => {
       e.preventDefault();
+      if (!currentUser) {
+        alert('Please log in to view your profile.');
+        if (loginModal) {
+          loginModal.show();
+        } else {
+          showLoginButton();
+        }
+        userMenuDropdown?.classList.remove('active');
+        return;
+      }
       if (userProfile) {
-        await userProfile.show();
+        await userProfile.show(currentUser);
       }
       userMenuDropdown?.classList.remove('active');
     });
