@@ -50,11 +50,33 @@ If you see a migration error like "column already exists", you can manually reso
 
 The `start.sh` script now automatically detects and resolves "already exists" errors during deployment. After the next deployment with the updated script, migrations should resolve automatically.
 
+## Quick Fix Script
+
+You can use the provided script to easily connect to Railway:
+
+```bash
+./resolve-migration-railway.sh
+```
+
+Then run:
+```bash
+cd server
+npx prisma migrate resolve --applied 20241124_add_email_auth_fields
+npx prisma migrate deploy
+```
+
 ## Important Note
 
 **The internal Railway database URL (`postgres.railway.internal:5432`) is NOT accessible from your local machine.** 
 
-- ❌ **Don't run** `prisma migrate resolve` locally with `DATABASE_URL` - it will fail with "Can't reach database server"
-- ✅ **Do run** the command inside Railway shell where the internal URL works
+- ❌ **Don't run** `prisma migrate resolve` locally - it will fail with "Can't reach database server at `postgres.railway.internal:5432`"
+- ✅ **Do run** the command inside Railway shell (using `railway shell`) where the internal URL works
 - ✅ **Or wait** for the automatic resolution on next deployment
+
+**The error you're seeing:**
+```
+Error: P1001: Can't reach database server at `postgres.railway.internal:5432`
+```
+
+This is **normal** when running locally. You **must** use `railway shell` to connect to Railway's network first.
 
