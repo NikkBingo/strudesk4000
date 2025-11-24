@@ -178,24 +178,35 @@ app.use((req, res, next) => {
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Debug middleware to log session retrieval
+// Debug middleware to log session retrieval and handle stale cookies
 app.use((req, res, next) => {
   // Log session info after passport.session() middleware
   if (req.session) {
+    const cookieHeader = req.headers.cookie || '';
+    const sessionCookieMatch = cookieHeader.match(/strudel\.session=([^;]+)/);
+    const cookieSessionId = sessionCookieMatch ? sessionCookieMatch[1] : null;
+    
     console.log('[session-middleware] Session ID:', req.sessionID);
+    console.log('[session-middleware] Cookie session ID:', cookieSessionId || 'none');
     console.log('[session-middleware] Session passport:', req.session.passport);
     console.log('[session-middleware] Request user:', req.user ? req.user.id : 'none');
     
-    // Check if cookie matches session
-    const cookieHeader = req.headers.cookie || '';
-    const sessionCookieMatch = cookieHeader.match(/strudel\.session=([^;]+)/);
-    if (sessionCookieMatch) {
-      const cookieSessionId = sessionCookieMatch[1];
-      if (cookieSessionId !== req.sessionID) {
-        console.log('[session-middleware] WARNING: Cookie session ID does not match req.sessionID!');
-        console.log('[session-middleware] Cookie ID:', cookieSessionId);
-        console.log('[session-middleware] Session ID:', req.sessionID);
-      }
+    // Check if cookie session ID doesn't match the loaded session ID
+    // This happens when the cookie references a session that doesn't exist in the store
+    // (e.g., old MemoryStore sessions that don't exist in PostgreSQL)
+    if (cookieSessionId && cookieSessionId !== req.sessionID && !req.session.passport) {
+      console.log('[session-middleware] WARNING: Stale cookie detected!');
+      console.log('[session-middleware] Cookie ID:', cookieSessionId, 'does not match session ID:', req.sessionID);
+      console.log('[session-middleware] This old session likely came from MemoryStore before the PostgreSQL switch.');
+      console.log('[session-middleware] Clearing stale cookie - a new session cookie will be set on the next request.');
+      
+      // Clear the stale cookie - express-session will create a new session and cookie automatically
+      res.clearCookie('strudel.session', {
+        path: '/',
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'lax'
+      });
     }
   }
   next();
