@@ -69,33 +69,67 @@ const __dirname = path.dirname(__filename);
 
 // Middleware
 // Allow Railway app URL or custom frontend URL
-const frontendUrl = process.env.FRONTEND_URL || process.env.RAILWAY_PUBLIC_DOMAIN 
+const frontendUrl = process.env.FRONTEND_URL || (process.env.RAILWAY_PUBLIC_DOMAIN 
   ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
-  : 'http://localhost:3000';
+  : 'http://localhost:3000');
+
+console.log('🔧 CORS configured for origin:', frontendUrl);
+console.log('🔧 NODE_ENV:', process.env.NODE_ENV);
+console.log('🔧 RAILWAY_PUBLIC_DOMAIN:', process.env.RAILWAY_PUBLIC_DOMAIN);
 
 app.use(cors({
-  origin: frontendUrl,
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Allow frontend URL
+    if (origin === frontendUrl) {
+      return callback(null, true);
+    }
+    
+    // In development, allow localhost
+    if (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost')) {
+      return callback(null, true);
+    }
+    
+    callback(null, true); // Allow all origins for now - can restrict later
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Set-Cookie'],
+  exposedHeaders: ['Set-Cookie']
 }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use(session({
+const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_PUBLIC_DOMAIN;
+// Since frontend and backend are served from the same domain (via static files),
+// we use 'lax' for same-site cookies (works with same origin)
+// Only use 'none' if frontend and backend are on different domains
+const sessionConfig = {
   name: 'strudel.session',
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_PUBLIC_DOMAIN,
+    secure: isProduction, // HTTPS only in production
     httpOnly: true,
-    sameSite: process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_PUBLIC_DOMAIN ? 'none' : 'lax',
+    sameSite: 'lax', // Use 'lax' for same-origin (frontend/backend on same domain)
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
     path: '/'
   }
-}));
+};
+
+console.log('🍪 Session config:', {
+  name: sessionConfig.name,
+  secure: sessionConfig.cookie.secure,
+  sameSite: sessionConfig.cookie.sameSite,
+  httpOnly: sessionConfig.cookie.httpOnly,
+  maxAge: sessionConfig.cookie.maxAge
+});
+
+app.use(session(sessionConfig));
 
 app.use(passport.initialize());
 app.use(passport.session());

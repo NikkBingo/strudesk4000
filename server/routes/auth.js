@@ -75,21 +75,34 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
           const frontendUrl = getFrontendUrl();
           return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(info?.message || 'Authentication failed')}`);
         }
-        req.logIn(user, (loginErr) => {
-          if (loginErr) {
-            console.error('Google OAuth login error:', loginErr);
+        // Regenerate session to prevent session fixation
+        req.session.regenerate((regenErr) => {
+          if (regenErr) {
+            console.error('Session regeneration error after Google OAuth:', regenErr);
             const frontendUrl = getFrontendUrl();
-            return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(loginErr.message || 'Login failed')}`);
+            return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session error')}`);
           }
-          // Explicitly save session to ensure it persists
-          req.session.save((saveErr) => {
-            if (saveErr) {
-              console.error('Session save error after Google login:', saveErr);
+          
+          req.logIn(user, (loginErr) => {
+            if (loginErr) {
+              console.error('Google OAuth login error:', loginErr);
               const frontendUrl = getFrontendUrl();
-              return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session save failed')}`);
+              return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(loginErr.message || 'Login failed')}`);
             }
-            const frontendUrl = getFrontendUrl();
-            res.redirect(`${frontendUrl}/?auth=success`);
+            
+            console.log('Google login successful for user:', user.email, 'Session ID:', req.sessionID);
+            
+            // Explicitly save session to ensure it persists
+            req.session.save((saveErr) => {
+              if (saveErr) {
+                console.error('Session save error after Google login:', saveErr);
+                const frontendUrl = getFrontendUrl();
+                return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session save failed')}`);
+              }
+              console.log('Session saved successfully after Google login');
+              const frontendUrl = getFrontendUrl();
+              res.redirect(`${frontendUrl}/?auth=success`);
+            });
           });
         });
       })(req, res, next);
@@ -214,22 +227,38 @@ router.post('/resend-verification', async (req, res) => {
 router.post('/login', (req, res, next) => {
   passport.authenticate('local', (err, user, info) => {
     if (err) {
+      console.error('Login authentication error:', err);
       return next(err);
     }
     if (!user) {
+      console.log('Login failed - no user:', info?.message);
       return res.status(401).json({ error: info?.message || 'Invalid email or password' });
     }
-    req.logIn(user, (loginErr) => {
-      if (loginErr) {
-        return next(loginErr);
+    
+    // Regenerate session to prevent session fixation
+    req.session.regenerate((regenErr) => {
+      if (regenErr) {
+        console.error('Session regeneration error:', regenErr);
+        return next(regenErr);
       }
-      // Explicitly save session to ensure it persists
-      req.session.save((saveErr) => {
-        if (saveErr) {
-          console.error('Session save error after login:', saveErr);
-          return next(saveErr);
+      
+      req.logIn(user, (loginErr) => {
+        if (loginErr) {
+          console.error('Login error after regeneration:', loginErr);
+          return next(loginErr);
         }
-        res.json({ message: 'Login successful', user: sanitizeUser(user) });
+        
+        console.log('Login successful for user:', user.email, 'Session ID:', req.sessionID);
+        
+        // Explicitly save session to ensure it persists
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            console.error('Session save error after login:', saveErr);
+            return next(saveErr);
+          }
+          console.log('Session saved successfully after login');
+          res.json({ message: 'Login successful', user: sanitizeUser(user) });
+        });
       });
     });
   })(req, res, next);
@@ -288,13 +317,14 @@ router.post('/reset-password', async (req, res) => {
 // Get current user
 router.get('/me', async (req, res) => {
   // Log session info for debugging
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[auth/me] Session ID:', req.sessionID);
-    console.log('[auth/me] Is authenticated:', req.isAuthenticated ? req.isAuthenticated() : false);
-    console.log('[auth/me] User:', req.user ? req.user.id : 'none');
-  }
+  console.log('[auth/me] Session ID:', req.sessionID);
+  console.log('[auth/me] Is authenticated:', req.isAuthenticated ? req.isAuthenticated() : false);
+  console.log('[auth/me] User:', req.user ? req.user.id : 'none');
+  console.log('[auth/me] Cookies:', req.headers.cookie ? 'Present' : 'Missing');
+  console.log('[auth/me] Session exists:', !!req.session);
   
   if (req.isAuthenticated && req.isAuthenticated()) {
+    console.log('[auth/me] Returning authenticated user:', req.user.email);
     return res.json(sanitizeUser(req.user));
   } else if (isTestMode()) {
     // In test mode, return a test user if not authenticated
