@@ -4,67 +4,33 @@ If you see a migration error like "column already exists", you can manually reso
 
 ## On Railway (Recommended)
 
-**Option 1: Using Railway Shell (Easiest)**
+**Option 1: Using Railway CLI `run` command (Actually works!)**
 
-1. Make sure you're linked to the correct Railway project:
+**Important:** `railway shell` only sets environment variables - it doesn't connect you to Railway's network. You need to use `railway run` which executes commands **inside** the Railway container.
+
+1. Make sure you're linked to the correct Railway service:
    ```bash
    railway link
    ```
-   (If you see "Project: strudesk4000", you're good. If not, select the project.)
+   Select: Project "Strudesk 4000", Service "strudesk4000" (NOT Postgres)
 
-2. Connect to Railway shell:
+2. Run the command **inside** Railway's container:
    ```bash
-   railway shell
+   railway run --service strudesk4000 -- sh -c "cd server && npx prisma migrate resolve --applied 20241124_add_email_auth_fields"
    ```
 
-3. Navigate to server directory:
+3. Verify migrations are applied:
    ```bash
-   cd server
+   railway run --service strudesk4000 -- sh -c "cd server && npx prisma migrate deploy"
    ```
 
-4. Resolve the specific migration:
-   ```bash
-   npx prisma migrate resolve --applied 20241124_add_email_auth_fields
-   ```
+**Note:** The `--service strudesk4000` flag ensures you're running it in the correct service (where DATABASE_URL is accessible).
 
-5. Verify migrations are applied:
-   ```bash
-   npx prisma migrate deploy
-   ```
-
-**Option 2: Using Railway Dashboard (Web UI)**
-
-Railway's web interface doesn't have a direct "Shell" tab. Instead, you have these options:
-
-**Method A: Use Railway CLI with correct service**
-
-1. Link to the correct service:
-   ```bash
-   railway link
-   ```
-   When prompted, select:
-   - Project: **Strudesk 4000**
-   - Service: **strudesk4000** (NOT Postgres)
-
-2. Then run the command through Railway's network:
-   ```bash
-   railway run cd server && npx prisma migrate resolve --applied 20241124_add_email_auth_fields
-   railway run cd server && npx prisma migrate deploy
-   ```
-
-**Method B: Wait for automatic resolution (Easiest)**
+**Option 2: Wait for Automatic Resolution (Recommended - Easiest!)**
 
 The updated `start.sh` script will automatically resolve the migration on the next deployment. Just push your code and wait for the deployment to complete - the script will handle it automatically!
 
-**Method C: Use Railway API/CLI to execute command in container**
-
-If you have Railway CLI installed:
-```bash
-railway run --service strudesk4000 -- npx prisma migrate resolve --applied 20241124_add_email_auth_fields
-railway run --service strudesk4000 -- npx prisma migrate deploy
-```
-
-**Note:** The migration resolution script in `start.sh` should handle this automatically on the next deployment!
+No manual intervention needed! ✨
 
 ## Alternative: Automatic Resolution
 
@@ -85,18 +51,21 @@ npx prisma migrate resolve --applied 20241124_add_email_auth_fields
 npx prisma migrate deploy
 ```
 
-## Important Note
+## Important Notes
 
-**The internal Railway database URL (`postgres.railway.internal:5432`) is NOT accessible from your local machine.** 
-
-- ❌ **Don't run** `prisma migrate resolve` locally - it will fail with "Can't reach database server at `postgres.railway.internal:5432`"
-- ✅ **Do run** the command inside Railway shell (using `railway shell`) where the internal URL works
-- ✅ **Or wait** for the automatic resolution on next deployment
+**Why `railway shell` doesn't work:**
+- `railway shell` only sets environment variables locally - it doesn't give you network access
+- The internal Railway database URL (`postgres.railway.internal:5432`) is **only** accessible from **inside** Railway containers
+- You need `railway run` to execute commands inside the container
 
 **The error you're seeing:**
 ```
 Error: P1001: Can't reach database server at `postgres.railway.internal:5432`
 ```
 
-This is **normal** when running locally. You **must** use `railway shell` to connect to Railway's network first.
+This happens because:
+- ❌ **`railway shell`** - only sets env vars locally (no network access)
+- ✅ **`railway run`** - executes commands inside Railway's container (has network access)
+
+**Recommended:** Just wait for automatic resolution on the next deployment - it's the easiest option!
 
