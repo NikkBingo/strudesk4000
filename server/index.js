@@ -21,7 +21,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readdirSync } from 'fs';
 import { createRequire } from 'module';
-import { PrismaClient } from '@prisma/client';
 
 log('✅ [2/5] Dependencies loaded');
 
