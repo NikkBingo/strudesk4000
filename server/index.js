@@ -152,6 +152,29 @@ app.use((req, res, next) => {
 app.use(passport.initialize());
 app.use(passport.session());
 
+// Debug middleware to log session retrieval
+app.use((req, res, next) => {
+  // Log session info after passport.session() middleware
+  if (req.session) {
+    console.log('[session-middleware] Session ID:', req.sessionID);
+    console.log('[session-middleware] Session passport:', req.session.passport);
+    console.log('[session-middleware] Request user:', req.user ? req.user.id : 'none');
+    
+    // Check if cookie matches session
+    const cookieHeader = req.headers.cookie || '';
+    const sessionCookieMatch = cookieHeader.match(/strudel\.session=([^;]+)/);
+    if (sessionCookieMatch) {
+      const cookieSessionId = sessionCookieMatch[1];
+      if (cookieSessionId !== req.sessionID) {
+        console.log('[session-middleware] WARNING: Cookie session ID does not match req.sessionID!');
+        console.log('[session-middleware] Cookie ID:', cookieSessionId);
+        console.log('[session-middleware] Session ID:', req.sessionID);
+      }
+    }
+  }
+  next();
+});
+
 // API Routes (must come before static file serving)
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
