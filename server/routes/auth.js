@@ -94,25 +94,10 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
             cookie: req.session.cookie
           });
           
-          // Ensure session is saved before redirect
-          req.session.save((saveErr) => {
-            if (saveErr) {
-              console.error('Session save error after Google login:', saveErr);
-              const frontendUrl = getFrontendUrl();
-              return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session save failed')}`);
-            }
-            
-            console.log('Session saved successfully after Google login');
-            console.log('🍪 Session ID:', req.sessionID);
-            console.log('🍪 Session cookie config:', req.session.cookie);
-            
-            // Log Set-Cookie header before redirect to verify it's being set
-            const setCookieHeaders = res.getHeader('Set-Cookie');
-            console.log('🍪 [BEFORE REDIRECT] Set-Cookie header:', setCookieHeaders);
-            
-            const frontendUrl = getFrontendUrl();
-            res.redirect(`${frontendUrl}/?auth=success`);
-          });
+          // req.logIn() automatically modifies the session
+          // Express-session will save it and set the cookie automatically
+          const frontendUrl = getFrontendUrl();
+          res.redirect(`${frontendUrl}/?auth=success`);
         });
       })(req, res, next);
     }
