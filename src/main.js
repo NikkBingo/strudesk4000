@@ -3185,6 +3185,12 @@ class InteractiveSoundApp {
     this.chaospadEnabled = false;
     this.currentCutoffValue = null;
     this.lastCutoffUpdate = null;
+    this.currentResonanceValue = null;
+    this.lastResonanceUpdate = null;
+    this.chaospadDefaults = {
+      cutoff: 4040,
+      resonance: 0
+    };
   }
 
   /**
@@ -3918,28 +3924,14 @@ class InteractiveSoundApp {
         }
         
         if (!this.chaospadEnabled) {
-          // Remove cutoff when disabled
-          console.log('🎛️ Chaospad: Disabled - removing cutoff');
+          // Remove modifiers when disabled
+          console.log('🎛️ Chaospad: Disabled - removing cutoff and resonance');
           await this.removeCutoffFromMaster();
+          await this.removeResonanceFromMaster();
         } else {
-          // Apply initial cutoff when enabled (use center = 4040 Hz)
-          console.log('🎛️ Chaospad: Enabled - applying initial cutoff');
-          if (this.masterPunchcardCanvas) {
-            const rect = this.masterPunchcardCanvas.getBoundingClientRect();
-            if (rect.width > 0) {
-              // Simulate mouse at center to apply initial cutoff (50% = 4040 Hz)
-              const fakeEvent = { clientX: rect.left + rect.width / 2 };
-              this.handleChaospadMouseMove(fakeEvent);
-            } else {
-              // Canvas not ready yet, apply default center cutoff directly (4040 Hz = center of 80-8000 range)
-              console.log('🎛️ Chaospad: Canvas not ready, applying default cutoff 4040 Hz');
-              await this.applyCutoffToMaster(4040);
-            }
-          } else {
-            // No canvas, apply default center cutoff directly (4040 Hz = center of 80-8000 range)
-            console.log('🎛️ Chaospad: No canvas, applying default cutoff 4040 Hz');
-            await this.applyCutoffToMaster(4040);
-          }
+          // Apply defaults when enabled
+          console.log('🎛️ Chaospad: Enabled - applying default cutoff and resonance');
+          await this.resetChaospadToDefaults();
         }
       });
     }
@@ -3964,6 +3956,11 @@ class InteractiveSoundApp {
       this.masterPunchcardCanvas.addEventListener('mouseenter', (e) => {
         if (this.chaospadEnabled) {
           this.handleChaospadMouseMove(e);
+        }
+      });
+      this.masterPunchcardCanvas.addEventListener('mouseleave', () => {
+        if (this.chaospadEnabled) {
+          this.resetChaospadToDefaults();
         }
       });
       
@@ -5183,16 +5180,24 @@ class InteractiveSoundApp {
       return;
     }
 
+    const pointerEvent = e.touches && e.touches.length ? e.touches[0] : e;
+    if (typeof pointerEvent.clientX !== 'number' || typeof pointerEvent.clientY !== 'number') {
+      return;
+    }
+
     const rect = this.masterPunchcardCanvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
+    const mouseX = pointerEvent.clientX - rect.left;
+    const mouseYFromBottom = rect.bottom - pointerEvent.clientY;
     const canvasWidth = rect.width;
+    const canvasHeight = rect.height;
     
-    if (canvasWidth === 0) {
+    if (canvasWidth === 0 || canvasHeight === 0) {
       console.log('⚠️ Chaospad: Canvas not sized yet');
       return; // Canvas not sized yet
     }
     
     const percentage = Math.max(0, Math.min(1, mouseX / canvasWidth));
+    const verticalPercentage = Math.max(0, Math.min(1, mouseYFromBottom / canvasHeight));
 
     // Smoothly interpolate cutoff frequency from 80 Hz (left) to 8000 Hz (right)
     const minFreq = 80;
@@ -5214,6 +5219,23 @@ class InteractiveSoundApp {
       this.currentCutoffValue = cutoffValue;
       this.lastCutoffUpdate = now;
       this.applyCutoffToMaster(cutoffValue);
+    }
+
+    // Resonance control (vertical)
+    const minResonance = 0;
+    const maxResonance = 20;
+    const resonanceValueRaw = minResonance + (maxResonance - minResonance) * verticalPercentage;
+    const resonanceValue = Math.round(resonanceValueRaw * 10) / 10; // match slider precision
+    const shouldUpdateResonance =
+      this.currentResonanceValue === null ||
+      Math.abs(this.currentResonanceValue - resonanceValue) > 0.2 ||
+      (this.lastResonanceUpdate && (now - this.lastResonanceUpdate) > 120);
+
+    if (shouldUpdateResonance) {
+      console.log(`🎛️ Chaospad: Vertical ${(verticalPercentage * 100).toFixed(1)}% - updating resonance to ${resonanceValue}`);
+      this.currentResonanceValue = resonanceValue;
+      this.lastResonanceUpdate = now;
+      this.applyResonanceToMaster(resonanceValue);
     }
   }
 
@@ -5300,9 +5322,88 @@ class InteractiveSoundApp {
 
       // Update master pattern
       await soundManager.setMasterPatternCode(patternWithCutoff);
+      this.currentCutoffValue = cutoffValue;
+      this.lastCutoffUpdate = Date.now();
       console.log(`🎛️ ✅ Chaospad: Cutoff ${cutoffValue} Hz applied successfully`);
     } catch (error) {
       console.error('⚠️ Chaospad: Error applying cutoff to master pattern:', error);
+    }
+  }
+
+  /**
+   * Apply resonance modifier to master pattern based on Chaospad input
+   */
+  async applyResonanceToMaster(resonanceValue) {
+    try {
+      let basePattern = soundManager.getMasterPatternCode();
+
+      if (!basePattern || basePattern.trim() === '') {
+        console.log('⚠️ Chaospad: No master pattern to apply resonance to - using silence');
+        basePattern = 'silence';
+      }
+
+      // Remove existing resonance modifier before applying new value
+      basePattern = basePattern.replace(/\.\s*resonance\s*\([^)]*\)/gi, '');
+      basePattern = basePattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
+
+      let patternWithResonance;
+      const stackMatch = basePattern.match(/stack\s*\(/);
+
+      if (stackMatch) {
+        let stackStart = stackMatch.index + stackMatch[0].length - 1;
+        let depth = 1;
+        let stackEnd = stackStart + 1;
+        let inString = false;
+        let stringChar = null;
+
+        while (stackEnd < basePattern.length && depth > 0) {
+          const char = basePattern[stackEnd];
+          if (!inString && (char === '"' || char === "'")) {
+            inString = true;
+            stringChar = char;
+          } else if (inString && char === stringChar && basePattern[stackEnd - 1] !== '\\') {
+            inString = false;
+            stringChar = null;
+          }
+
+          if (!inString) {
+            if (char === '(') depth++;
+            else if (char === ')') depth--;
+          }
+
+          if (depth > 0) stackEnd++;
+        }
+
+        if (depth === 0) {
+          const beforeStackEnd = basePattern.substring(0, stackEnd + 1);
+          const afterStackEnd = basePattern.substring(stackEnd + 1);
+          patternWithResonance = `${beforeStackEnd}.resonance(${resonanceValue})${afterStackEnd}`;
+        } else {
+          patternWithResonance = `${basePattern}.resonance(${resonanceValue})`;
+        }
+      } else {
+        patternWithResonance = `${basePattern}.resonance(${resonanceValue})`;
+      }
+
+      await soundManager.setMasterPatternCode(patternWithResonance);
+      this.currentResonanceValue = resonanceValue;
+      this.lastResonanceUpdate = Date.now();
+      console.log(`🎛️ ✅ Chaospad: Resonance ${resonanceValue} applied successfully`);
+    } catch (error) {
+      console.error('⚠️ Chaospad: Error applying resonance to master pattern:', error);
+    }
+  }
+
+  /**
+   * Reset Chaospad-controlled modifiers back to defaults
+   */
+  async resetChaospadToDefaults() {
+    if (!this.chaospadEnabled) return;
+    try {
+      await this.applyCutoffToMaster(this.chaospadDefaults.cutoff);
+      await this.applyResonanceToMaster(this.chaospadDefaults.resonance);
+    } catch (error) {
+      console.warn('⚠️ Chaospad: Unable to reset to default values', error);
     }
   }
 
@@ -5328,6 +5429,29 @@ class InteractiveSoundApp {
       console.log('🎛️ Removed Chaospad cutoff from master pattern');
     } catch (error) {
       console.warn('⚠️ Error removing cutoff from master pattern:', error);
+    }
+  }
+
+  /**
+   * Remove resonance modifier from master pattern
+   */
+  async removeResonanceFromMaster() {
+    try {
+      let pattern = soundManager.getMasterPatternCode();
+
+      if (!pattern || pattern.trim() === '') {
+        return;
+      }
+
+      pattern = pattern.replace(/\.\s*resonance\s*\([^)]*\)/gi, '');
+      pattern = pattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
+
+      await soundManager.setMasterPatternCode(pattern);
+      this.currentResonanceValue = null;
+      this.lastResonanceUpdate = null;
+      console.log('🎛️ Removed Chaospad resonance from master pattern');
+    } catch (error) {
+      console.warn('⚠️ Error removing resonance from master pattern:', error);
     }
   }
 
