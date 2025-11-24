@@ -80,43 +80,39 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
           const frontendUrl = getFrontendUrl();
           return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(info?.message || 'Authentication failed')}`);
         }
-        // Regenerate session to prevent session fixation attacks
-        req.session.regenerate((regenerateErr) => {
-          if (regenerateErr) {
-            console.error('Session regenerate error:', regenerateErr);
+        // Log in the user (session will be created/updated by req.logIn)
+        req.logIn(user, (loginErr) => {
+          if (loginErr) {
+            console.error('Google OAuth login error:', loginErr);
             const frontendUrl = getFrontendUrl();
-            return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session error')}`);
+            return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(loginErr.message || 'Login failed')}`);
           }
           
-          req.logIn(user, (loginErr) => {
-            if (loginErr) {
-              console.error('Google OAuth login error:', loginErr);
+          console.log('Google login successful for user:', user.email, 'Session ID:', req.sessionID);
+          console.log('Session after Google login:', {
+            passport: req.session.passport,
+            sessionID: req.sessionID,
+            cookie: req.session.cookie
+          });
+          
+          // Ensure session is saved before redirect
+          req.session.save((saveErr) => {
+            if (saveErr) {
+              console.error('Session save error after Google login:', saveErr);
               const frontendUrl = getFrontendUrl();
-              return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(loginErr.message || 'Login failed')}`);
+              return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session save failed')}`);
             }
             
-            console.log('Google login successful for user:', user.email, 'Session ID:', req.sessionID);
-            console.log('Session after Google login:', {
-              passport: req.session.passport,
-              sessionID: req.sessionID,
-              cookie: req.session.cookie
-            });
+            console.log('Session saved successfully after Google login');
+            console.log('🍪 Session ID:', req.sessionID);
+            console.log('🍪 Session cookie config:', req.session.cookie);
             
-            // Ensure session is saved before redirect
-            req.session.save((saveErr) => {
-              if (saveErr) {
-                console.error('Session save error after Google login:', saveErr);
-                const frontendUrl = getFrontendUrl();
-                return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session save failed')}`);
-              }
-              
-              console.log('Session saved successfully after Google login');
-              console.log('🍪 Session ID:', req.sessionID);
-              console.log('🍪 Session cookie config:', req.session.cookie);
-              
-              const frontendUrl = getFrontendUrl();
-              res.redirect(`${frontendUrl}/?auth=success`);
-            });
+            // Log Set-Cookie header before redirect to verify it's being set
+            const setCookieHeaders = res.getHeader('Set-Cookie');
+            console.log('🍪 [BEFORE REDIRECT] Set-Cookie header:', setCookieHeaders);
+            
+            const frontendUrl = getFrontendUrl();
+            res.redirect(`${frontendUrl}/?auth=success`);
           });
         });
       })(req, res, next);
