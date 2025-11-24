@@ -1,7 +1,7 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as LocalStrategy } from 'passport-local';
-import prisma from './db.js';
+import prisma from '../db.js';
 import bcrypt from 'bcryptjs';
 
 // Configure Google OAuth Strategy (only if credentials are provided)
