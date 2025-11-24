@@ -80,49 +80,43 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
           const frontendUrl = getFrontendUrl();
           return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(info?.message || 'Authentication failed')}`);
         }
-        req.logIn(user, (loginErr) => {
-          if (loginErr) {
-            console.error('Google OAuth login error:', loginErr);
+        // Regenerate session to prevent session fixation attacks
+        req.session.regenerate((regenerateErr) => {
+          if (regenerateErr) {
+            console.error('Session regenerate error:', regenerateErr);
             const frontendUrl = getFrontendUrl();
-            return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(loginErr.message || 'Login failed')}`);
+            return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session error')}`);
           }
           
-          console.log('Google login successful for user:', user.email, 'Session ID:', req.sessionID);
-          console.log('Session after Google login:', {
-            passport: req.session.passport,
-            sessionID: req.sessionID,
-            cookie: req.session.cookie
-          });
-          
-          // Explicitly save session to ensure it persists
-          req.session.save((saveErr) => {
-            if (saveErr) {
-              console.error('Session save error after Google login:', saveErr);
+          req.logIn(user, (loginErr) => {
+            if (loginErr) {
+              console.error('Google OAuth login error:', loginErr);
               const frontendUrl = getFrontendUrl();
-              return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session save failed')}`);
+              return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent(loginErr.message || 'Login failed')}`);
             }
             
-            // Manually set the session cookie since express-session might not set it before redirect
-            const cookieOptions = {
-              maxAge: 24 * 60 * 60 * 1000, // 24 hours
-              httpOnly: true,
-              secure: process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_PUBLIC_DOMAIN,
-              sameSite: 'lax',
-              path: '/'
-            };
-            
-            res.cookie('strudel.session', req.sessionID, cookieOptions);
-            
-            console.log('Session saved successfully after Google login');
-            console.log('🍪 Manually set session cookie:', req.sessionID);
-            console.log('🍪 Cookie options:', cookieOptions);
-            console.log('🍪 Response headers after setting cookie:', {
-              'Set-Cookie': res.getHeader('Set-Cookie'),
-              'sessionID': req.sessionID
+            console.log('Google login successful for user:', user.email, 'Session ID:', req.sessionID);
+            console.log('Session after Google login:', {
+              passport: req.session.passport,
+              sessionID: req.sessionID,
+              cookie: req.session.cookie
             });
             
-            const frontendUrl = getFrontendUrl();
-            res.redirect(`${frontendUrl}/?auth=success`);
+            // Ensure session is saved before redirect
+            req.session.save((saveErr) => {
+              if (saveErr) {
+                console.error('Session save error after Google login:', saveErr);
+                const frontendUrl = getFrontendUrl();
+                return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session save failed')}`);
+              }
+              
+              console.log('Session saved successfully after Google login');
+              console.log('🍪 Session ID:', req.sessionID);
+              console.log('🍪 Session cookie config:', req.session.cookie);
+              
+              const frontendUrl = getFrontendUrl();
+              res.redirect(`${frontendUrl}/?auth=success`);
+            });
           });
         });
       })(req, res, next);
@@ -268,26 +262,16 @@ router.post('/login', (req, res, next) => {
         cookie: req.session.cookie
       });
       
-      // Explicitly save session to ensure it persists
+      // Mark session as modified so express-session saves it
       req.session.save((saveErr) => {
         if (saveErr) {
           console.error('Session save error after login:', saveErr);
           return next(saveErr);
         }
         
-        // Manually set the session cookie to ensure it's sent
-        const cookieOptions = {
-          maxAge: 24 * 60 * 60 * 1000, // 24 hours
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_PUBLIC_DOMAIN,
-          sameSite: 'lax',
-          path: '/'
-        };
-        
-        res.cookie('strudel.session', req.sessionID, cookieOptions);
-        
         console.log('Session saved successfully after login');
-        console.log('🍪 Manually set session cookie:', req.sessionID);
+        console.log('🍪 Session ID:', req.sessionID);
+        console.log('🍪 Session cookie config:', req.session.cookie);
         res.json({ message: 'Login successful', user: sanitizeUser(user) });
       });
     });
@@ -350,8 +334,24 @@ router.get('/me', async (req, res) => {
   console.log('[auth/me] Session ID:', req.sessionID);
   console.log('[auth/me] Is authenticated:', req.isAuthenticated ? req.isAuthenticated() : false);
   console.log('[auth/me] User:', req.user ? req.user.id : 'none');
-  console.log('[auth/me] Cookies:', req.headers.cookie ? 'Present' : 'Missing');
+  console.log('[auth/me] Cookies header:', req.headers.cookie || 'Missing');
   console.log('[auth/me] Session exists:', !!req.session);
+  console.log('[auth/me] Session passport:', req.session?.passport);
+  
+  // Extract cookie value to verify it matches session ID
+  const cookieHeader = req.headers.cookie || '';
+  const sessionCookieMatch = cookieHeader.match(/strudel\.session=([^;]+)/);
+  if (sessionCookieMatch) {
+    const cookieSessionId = sessionCookieMatch[1];
+    console.log('[auth/me] Session cookie value:', cookieSessionId);
+    console.log('[auth/me] Session ID from cookie matches req.sessionID:', cookieSessionId === req.sessionID);
+  }
+  
+  // Check if passport.user exists in session but req.user is missing
+  if (req.session?.passport?.user && !req.user) {
+    console.log('[auth/me] WARNING: Session has passport.user but req.user is missing. User ID:', req.session.passport.user);
+    console.log('[auth/me] This suggests deserialization may have failed.');
+  }
   
   if (req.isAuthenticated && req.isAuthenticated()) {
     console.log('[auth/me] Returning authenticated user:', req.user.email);
