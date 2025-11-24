@@ -13286,6 +13286,12 @@ class InteractiveSoundApp {
         }
       }
       
+      // Update load/save button visibility based on login state
+      const historyButtonRow = newElement.querySelector('.history-button-row');
+      if (historyButtonRow) {
+        historyButtonRow.style.display = currentUser ? '' : 'none';
+      }
+      
       console.log(`✅ Element ${newElementId} created and fully initialized`);
     }
   }
@@ -13499,6 +13505,21 @@ async function initUserAuth() {
   window.savePatternDialog = savePatternDialog; // Make globally accessible
 }
 
+function updateLoadSaveButtonsVisibility(isLoggedIn) {
+  // Hide/show master load/save buttons
+  const loadMasterBtn = document.getElementById('load-master-history-btn');
+  const saveMasterBtn = document.getElementById('save-master-history-btn');
+  
+  if (loadMasterBtn) loadMasterBtn.style.display = isLoggedIn ? '' : 'none';
+  if (saveMasterBtn) saveMasterBtn.style.display = isLoggedIn ? '' : 'none';
+  
+  // Hide/show element load/save buttons
+  const historyButtonRows = document.querySelectorAll('.sound-element .history-button-row');
+  historyButtonRows.forEach(row => {
+    row.style.display = isLoggedIn ? '' : 'none';
+  });
+}
+
 function updateUserUI(user) {
   const loginBtn = document.getElementById('header-login-btn');
   const userMenu = document.getElementById('user-menu');
@@ -13518,6 +13539,9 @@ function updateUserUI(user) {
   if (adminLink) {
     adminLink.style.display = user.role === 'admin' ? 'block' : 'none';
   }
+  
+  // Show load/save buttons when logged in
+  updateLoadSaveButtonsVisibility(true);
 }
 
 function showLoginButton() {
@@ -13527,6 +13551,9 @@ function showLoginButton() {
   if (loginBtn) loginBtn.style.display = 'block';
   if (userMenu) userMenu.style.display = 'none';
   if (adminLink) adminLink.style.display = 'none';
+  
+  // Hide load/save buttons when not logged in
+  updateLoadSaveButtonsVisibility(false);
 }
 
 function handleAuthenticatedUser(user) {
