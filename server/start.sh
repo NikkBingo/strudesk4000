@@ -103,12 +103,29 @@ if [ -n "$DATABASE_URL" ]; then
         echo "✅ Migrations completed successfully on retry" >&2
       else
         echo "$RETRY_OUTPUT" >&2
-        echo "❌ Migrations still failing after retry. Server will start but may have issues." >&2
+        echo "❌ Migrations still failing after retry." >&2
+        echo "⚠️ Attempting to use db push as fallback..." >&2
+        PUSH_OUTPUT=$(npx prisma db push --accept-data-loss --skip-generate 2>&1)
+        PUSH_EXIT=$?
+        echo "$PUSH_OUTPUT" >&2
+        if [ $PUSH_EXIT -eq 0 ]; then
+          echo "✅ Database schema pushed successfully" >&2
+        else
+          echo "❌ Database push also failed. Server will start but may have issues." >&2
+        fi
       fi
     else
       echo "⚠️ Migration failed with unknown error:" >&2
       echo "$MIGRATION_OUTPUT" >&2
-      echo "⚠️ Attempting to continue anyway..." >&2
+      echo "⚠️ Attempting db push as fallback..." >&2
+      PUSH_OUTPUT=$(npx prisma db push --accept-data-loss --skip-generate 2>&1)
+      PUSH_EXIT=$?
+      echo "$PUSH_OUTPUT" >&2
+      if [ $PUSH_EXIT -eq 0 ]; then
+        echo "✅ Database schema pushed successfully" >&2
+      else
+        echo "❌ Database push also failed. Attempting to continue anyway..." >&2
+      fi
     fi
   else
     echo "$MIGRATION_OUTPUT" >&2
