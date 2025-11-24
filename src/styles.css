@@ -2393,7 +2393,8 @@ header h1 {
   margin-bottom: 12px;
 }
 
-.pattern-snippet-container.disabled {
+.pattern-snippet-container.disabled,
+.modal-presets.disabled {
   opacity: 0.55;
   pointer-events: none;
 }

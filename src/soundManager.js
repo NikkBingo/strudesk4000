@@ -2253,6 +2253,7 @@ class SoundManager {
       return;
     }
     
+    this._lastAppliedPatterns = this._lastAppliedPatterns || new Map();
     try {
       // Process the new pattern (remove scope, check banks, apply gain/pan/tempo)
       // Clean up pattern: remove newlines, normalize whitespace, and fix dot spacing
@@ -2290,9 +2291,16 @@ class SoundManager {
         applyGainInPattern: this.masterActive
       });
       
+      const lastApplied = this._lastAppliedPatterns.get(elementId);
+      if (lastApplied === patternToEval) {
+        __safeRouteLog(this, `⚡ Skipping re-evaluation for ${elementId}; pattern unchanged.`);
+        return;
+      }
+      
       // Update the pattern slot directly without stopping
       await window.strudel.evaluate(`${patternSlot} = ${patternToEval}`);
       console.log(`✅ Updated ${patternSlot} pattern in place: ${patternToEval.substring(0, 60)}...`);
+      this._lastAppliedPatterns.set(elementId, patternToEval);
     } catch (error) {
       console.warn(`Could not update pattern in place for ${elementId}:`, error);
     }
