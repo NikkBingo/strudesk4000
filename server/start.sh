@@ -24,14 +24,39 @@ npx prisma generate >&2 || {
 # Run migrations (this is what we see in logs)
 if [ -n "$DATABASE_URL" ]; then
   echo "Running migrations..." >&2
+  
+  # Try to deploy migrations
   MIGRATION_OUTPUT=$(npx prisma migrate deploy 2>&1)
   MIGRATION_EXIT_CODE=$?
   
   if [ $MIGRATION_EXIT_CODE -ne 0 ]; then
     echo "$MIGRATION_OUTPUT" >&2
     
+    # Check if error is about failed migrations preventing new ones
+    if echo "$MIGRATION_OUTPUT" | grep -qi "failed migrations in the target database\|found failed migrations"; then
+      echo "⚠️ Failed migrations detected. Attempting to resolve..." >&2
+      
+      # Extract failed migration name - try multiple patterns
+      FAILED_MIGRATION=$(echo "$MIGRATION_OUTPUT" | grep -i "migration.*started at\|The.*migration.*failed" | sed -E 's/.*`([^`]+)`.*/\1/' | head -1)
+      
+      # Try alternative extraction
+      if [ -z "$FAILED_MIGRATION" ]; then
+        FAILED_MIGRATION=$(echo "$MIGRATION_OUTPUT" | grep -oE '[0-9]{8}_[a-zA-Z_]+|add_[a-zA-Z_]+' | head -1)
+      fi
+      
+      if [ -n "$FAILED_MIGRATION" ]; then
+        echo "Resolving failed migration: $FAILED_MIGRATION" >&2
+        npx prisma migrate resolve --rolled-back "$FAILED_MIGRATION" 2>&1 || {
+          echo "Could not resolve as rolled-back, trying as applied..." >&2
+          npx prisma migrate resolve --applied "$FAILED_MIGRATION" 2>&1 || true
+        }
+        echo "Retrying migrations..." >&2
+        npx prisma migrate deploy >&2 || echo "Migration retry failed, continuing..." >&2
+      else
+        echo "Could not extract failed migration name from output" >&2
+      fi
     # Check if the error is about columns already existing
-    if echo "$MIGRATION_OUTPUT" | grep -qi "already exists"; then
+    elif echo "$MIGRATION_OUTPUT" | grep -qi "already exists"; then
       echo "⚠️ Migration failed due to existing columns. Attempting to resolve..." >&2
       
       # Extract migration name from error (format: "Migration name: 20241124_add_email_auth_fields")
@@ -58,11 +83,15 @@ if [ -n "$DATABASE_URL" ]; then
       else
         echo "❌ Could not extract migration name from error. Continuing..." >&2
       fi
+    # Check if database is completely empty (can't reach or no tables)
+    elif echo "$MIGRATION_OUTPUT" | grep -qi "Can't reach database\|P1001"; then
+      echo "⚠️ Database connection error. Migrations will be skipped." >&2
     else
       echo "⚠️ Migration failed with unknown error. Continuing..." >&2
     fi
   else
     echo "$MIGRATION_OUTPUT" >&2
+    echo "✅ Migrations completed successfully" >&2
   fi
   
   echo "Migrations done" >&2
