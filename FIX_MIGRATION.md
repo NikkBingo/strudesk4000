@@ -14,16 +14,16 @@ If you see a migration error like "column already exists", you can manually reso
    ```
    Select: Project "Strudesk 4000", Service "strudesk4000" (NOT Postgres)
 
-2. Run the command **inside** Railway's container:
+2. Run the command **inside** Railway's container (with explicit schema path):
    ```bash
-   railway run --service strudesk4000 -- sh -c "cd /app && npx prisma migrate resolve --applied 20241124_add_email_auth_fields --schema=./prisma/schema.prisma"
+   railway run --service strudesk4000 -- npx prisma migrate resolve --applied 20241124_add_email_auth_fields --schema=/app/prisma/schema.prisma
    ```
    
    (The Prisma schema is at `/app/prisma/schema.prisma` in the container)
 
 3. Verify migrations are applied:
    ```bash
-   railway run --service strudesk4000 -- sh -c "cd /app && npx prisma migrate deploy --schema=./prisma/schema.prisma"
+   railway run --service strudesk4000 -- npx prisma migrate deploy --schema=/app/prisma/schema.prisma
    ```
 
 **Note:** The `--service strudesk4000` flag ensures you're running it in the correct service (where DATABASE_URL is accessible).
