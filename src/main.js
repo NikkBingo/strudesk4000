@@ -62,6 +62,31 @@ const SPECIAL_SAMPLE_BANKS = [
 ];
 const SPECIAL_SAMPLE_BANK_VALUES = new Set(SPECIAL_SAMPLE_BANKS.map(bank => bank.value.toLowerCase()));
 
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1']);
+const isServerDeployment = typeof window !== 'undefined'
+  ? !LOCAL_HOSTNAMES.has(window.location.hostname)
+  : false;
+const getSliderDebounceDelay = () => (isServerDeployment ? 60 : 150);
+const requestFrame = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+  ? window.requestAnimationFrame.bind(window)
+  : (callback) => setTimeout(callback, 16);
+const sliderDisplayUpdateMap = new Map();
+let sliderDisplayRaf = null;
+const queueSliderDisplayUpdate = (displayEl, text) => {
+  if (!displayEl) return;
+  sliderDisplayUpdateMap.set(displayEl, text);
+  if (sliderDisplayRaf !== null) {
+    return;
+  }
+  sliderDisplayRaf = requestFrame(() => {
+    sliderDisplayUpdateMap.forEach((value, target) => {
+      target.textContent = value;
+    });
+    sliderDisplayUpdateMap.clear();
+    sliderDisplayRaf = null;
+  });
+};
+
 const parseBankSelectionValue = (rawValue) => {
   if (!rawValue || typeof rawValue !== 'string') {
     return { rawValue: '', bankValue: '', isVcslInstrument: false, vcslInstrument: '' };
@@ -6337,21 +6362,23 @@ class InteractiveSoundApp {
             const slider = sliderRow.querySelector('.filter-slider');
             if (slider && !slider.dataset.hasListener) {
               slider.dataset.hasListener = 'true';
-              slider.addEventListener('input', async (e) => {
+              slider.addEventListener('input', (e) => {
                 const value = parseFloat(e.target.value);
                 const display = sliderRow.querySelector('.slider-value');
                 if (display) {
+                  let formatted;
                   if (param.key.includes('f')) {
-                    display.textContent = Math.round(value) + ' Hz';
+                    formatted = Math.round(value) + ' Hz';
                   } else if (param.key === 'bpg' && param.unit === 'dB') {
                     // Show dB with +/- sign
                     const sign = value >= 0 ? '+' : '';
-                    display.textContent = `${sign}${value.toFixed(1)} dB`;
+                    formatted = `${sign}${value.toFixed(1)} dB`;
                   } else {
-                    display.textContent = value.toFixed(1) + (param.unit ? ' ' + param.unit : '');
+                    formatted = value.toFixed(1) + (param.unit ? ' ' + param.unit : '');
                   }
+                  queueSliderDisplayUpdate(display, formatted);
                 }
-                await this.updateElementFilters(elementId);
+                this.updateElementFilters(elementId);
               });
             }
           });
@@ -6455,13 +6482,14 @@ class InteractiveSoundApp {
             const slider = sliderRow.querySelector('.effect-slider');
             if (slider && !slider.dataset.hasListener) {
               slider.dataset.hasListener = 'true';
-              slider.addEventListener('input', async (e) => {
+              slider.addEventListener('input', (e) => {
                 const value = parseFloat(e.target.value);
                 const display = sliderRow.querySelector('.slider-value');
                 if (display) {
-                  display.textContent = value.toFixed(2) + (paramConfig.unit ? ' ' + paramConfig.unit : '');
+                  const formatted = value.toFixed(2) + (paramConfig.unit ? ' ' + paramConfig.unit : '');
+                  queueSliderDisplayUpdate(display, formatted);
                 }
-                await this.updateElementEffects(elementId);
+                this.updateElementEffects(elementId);
               });
             }
           });
@@ -6512,13 +6540,14 @@ class InteractiveSoundApp {
       const slider = sliderRow.querySelector('.synth-slider');
       if (slider && !slider.dataset.hasListener) {
         slider.dataset.hasListener = 'true';
-        slider.addEventListener('input', async (e) => {
+        slider.addEventListener('input', (e) => {
           const value = parseFloat(e.target.value);
           const display = sliderRow.querySelector('.slider-value');
           if (display) {
-            display.textContent = value.toFixed(2) + (param.unit ? ' ' + param.unit : '');
+            const formatted = value.toFixed(2) + (param.unit ? ' ' + param.unit : '');
+            queueSliderDisplayUpdate(display, formatted);
           }
-          await this.updateElementSynthesis(elementId);
+          this.updateElementSynthesis(elementId);
         });
       }
     });
@@ -6562,16 +6591,7 @@ class InteractiveSoundApp {
     
     console.log(`🎛️ Effects updated for ${elementId}:`, this.elementEffects[elementId]);
     
-    // Debounce apply to avoid rapid re-evaluation clicks while dragging
-    this._effectsApplyTimers = this._effectsApplyTimers || new Map();
-    if (this._effectsApplyTimers.has(elementId)) {
-      clearTimeout(this._effectsApplyTimers.get(elementId));
-    }
-    const timer = setTimeout(() => {
-      this.applyEffectsAndFiltersToPattern(elementId);
-      this._effectsApplyTimers.delete(elementId);
-    }, 150);
-    this._effectsApplyTimers.set(elementId, timer);
+    this.scheduleElementPatternApply(elementId);
   }
   
   /**
@@ -6610,16 +6630,7 @@ class InteractiveSoundApp {
     
     console.log(`🔊 Filters updated for ${elementId}:`, this.elementFilters[elementId]);
     
-    // Debounce apply to avoid rapid re-evaluation clicks while dragging
-    this._filtersApplyTimers = this._filtersApplyTimers || new Map();
-    if (this._filtersApplyTimers.has(elementId)) {
-      clearTimeout(this._filtersApplyTimers.get(elementId));
-    }
-    const timer = setTimeout(() => {
-      this.applyEffectsAndFiltersToPattern(elementId);
-      this._filtersApplyTimers.delete(elementId);
-    }, 150);
-    this._filtersApplyTimers.set(elementId, timer);
+    this.scheduleElementPatternApply(elementId);
   }
   
   /**
@@ -6654,16 +6665,20 @@ class InteractiveSoundApp {
     
     console.log(`🎹 Synthesis updated for ${elementId}:`, this.elementSynthesis[elementId]);
     
-    // Debounce apply to avoid rapid re-evaluation clicks while dragging
-    this._synthApplyTimers = this._synthApplyTimers || new Map();
-    if (this._synthApplyTimers.has(elementId)) {
-      clearTimeout(this._synthApplyTimers.get(elementId));
+    this.scheduleElementPatternApply(elementId);
+  }
+  
+  scheduleElementPatternApply(elementId) {
+    if (!elementId) return;
+    this._parameterApplyTimers = this._parameterApplyTimers || new Map();
+    if (this._parameterApplyTimers.has(elementId)) {
+      clearTimeout(this._parameterApplyTimers.get(elementId));
     }
     const timer = setTimeout(() => {
       this.applyEffectsAndFiltersToPattern(elementId);
-      this._synthApplyTimers.delete(elementId);
-    }, 150);
-    this._synthApplyTimers.set(elementId, timer);
+      this._parameterApplyTimers.delete(elementId);
+    }, getSliderDebounceDelay());
+    this._parameterApplyTimers.set(elementId, timer);
   }
   
   /**
@@ -6769,9 +6784,25 @@ class InteractiveSoundApp {
    * Apply effects, filters, and synthesis to the current pattern
    */
   async applyEffectsAndFiltersToPattern(elementId) {
+    if (!elementId) return;
+    this._pendingPatternApplyStates = this._pendingPatternApplyStates || new Map();
+    const existingState = this._pendingPatternApplyStates.get(elementId);
+    if (existingState) {
+      existingState.queued = true;
+      return;
+    }
+    const state = { queued: false };
+    this._pendingPatternApplyStates.set(elementId, state);
+
     // Get the base pattern
     const savedConfig = this.loadElementConfig(elementId);
-    if (!savedConfig || !savedConfig.pattern) return;
+    if (!savedConfig || !savedConfig.pattern) {
+      this._pendingPatternApplyStates.delete(elementId);
+      if (state.queued) {
+        this.applyEffectsAndFiltersToPattern(elementId);
+      }
+      return;
+    }
     
     const pattern = savedConfig.pattern;
     const finalPattern = this.getPatternWithEffects(elementId, pattern);
@@ -6785,16 +6816,23 @@ class InteractiveSoundApp {
     
     // Do not auto-restart playback while adjusting sliders.
     // Update stored pattern and master display only; playback changes apply on next manual play.
-    if (isInMaster) {
-      // Update the tracked pattern without forcing scheduler start
-      await soundManager.updatePatternInPlace(elementId, finalPattern, /*preventAutoPlay*/ true);
-      this.updateMasterPatternDisplay();
-    } else {
-      // If currently playing, avoid stop/restart; changes will reflect on next trigger
-      const isPlaying = soundManager.isPlaying(elementId);
-      if (!isPlaying) {
-        // Not playing: don't auto-start. Just cache new pattern.
-        await soundManager.cachePatternForElement(elementId, finalPattern);
+    try {
+      if (isInMaster) {
+        // Update the tracked pattern without forcing scheduler start
+        await soundManager.updatePatternInPlace(elementId, finalPattern, /*preventAutoPlay*/ true);
+        this.updateMasterPatternDisplay();
+      } else {
+        // If currently playing, avoid stop/restart; changes will reflect on next trigger
+        const isPlaying = soundManager.isPlaying(elementId);
+        if (!isPlaying) {
+          // Not playing: don't auto-start. Just cache new pattern.
+          await soundManager.cachePatternForElement(elementId, finalPattern);
+        }
+      }
+    } finally {
+      this._pendingPatternApplyStates.delete(elementId);
+      if (state.queued) {
+        this.applyEffectsAndFiltersToPattern(elementId);
       }
     }
   }
@@ -8396,7 +8434,7 @@ class InteractiveSoundApp {
 
     const patternEditorSelect = document.getElementById('modal-pattern-editor-select');
     const patternLabelRow = modal.querySelector('.pattern-label-row');
-    let patternSnippetContainer = modal.querySelector('.pattern-snippet-container');
+    let patternSnippetContainer = modal.querySelector('#modal-pattern-snippets-toggle')?.closest('.modal-presets') || null;
     let patternSnippetListEl = patternSnippetContainer ? patternSnippetContainer.querySelector('.pattern-snippet-list') : null;
     let patternSnippetSearchInput = patternSnippetContainer ? patternSnippetContainer.querySelector('.pattern-snippet-search') : null;
     const presetsToggle = document.getElementById('modal-presets-toggle');
@@ -8444,28 +8482,64 @@ class InteractiveSoundApp {
 
       if (!patternSnippetContainer) {
         patternSnippetContainer = document.createElement('div');
-        patternSnippetContainer.className = 'pattern-snippet-container';
+        patternSnippetContainer.className = 'modal-presets';
         patternSnippetContainer.setAttribute('aria-disabled', 'false');
 
-        const snippetHeading = document.createElement('span');
-        snippetHeading.className = 'pattern-snippet-heading';
-        snippetHeading.textContent = 'Add to pattern:';
-        patternSnippetContainer.appendChild(snippetHeading);
+        const snippetToggle = document.createElement('button');
+        snippetToggle.type = 'button';
+        snippetToggle.id = 'modal-pattern-snippets-toggle';
+        snippetToggle.className = 'modal-presets-toggle pattern-snippet-group-heading';
+        snippetToggle.setAttribute('aria-expanded', 'false');
+        const toggleSpan = document.createElement('span');
+        toggleSpan.textContent = 'Add to pattern';
+        snippetToggle.appendChild(toggleSpan);
+        patternSnippetContainer.appendChild(snippetToggle);
+
+        const snippetContent = document.createElement('div');
+        snippetContent.id = 'modal-pattern-snippets-content';
+        snippetContent.className = 'modal-presets-content';
+        snippetContent.setAttribute('hidden', '');
 
         patternSnippetSearchInput = document.createElement('input');
         patternSnippetSearchInput.type = 'search';
         patternSnippetSearchInput.className = 'pattern-snippet-search';
         patternSnippetSearchInput.setAttribute('placeholder', 'Search tags…');
         patternSnippetSearchInput.setAttribute('aria-label', 'Search snippet tags');
-        patternSnippetContainer.appendChild(patternSnippetSearchInput);
+        snippetContent.appendChild(patternSnippetSearchInput);
 
         patternSnippetListEl = document.createElement('div');
         patternSnippetListEl.className = 'pattern-snippet-list';
-        patternSnippetContainer.appendChild(patternSnippetListEl);
+        snippetContent.appendChild(patternSnippetListEl);
+
+        patternSnippetContainer.appendChild(snippetContent);
+
+        // Setup toggle handler for the newly created container
+        const updatePatternSnippetsSectionState = (expanded) => {
+          snippetToggle.setAttribute('aria-expanded', expanded.toString());
+          snippetContent.classList.toggle('is-open', expanded);
+          snippetContent.setAttribute('aria-hidden', (!expanded).toString());
+          patternSnippetContainer.classList.toggle('collapsed', !expanded);
+        };
+
+        // Initialize as closed
+        if (snippetContent.hasAttribute('hidden')) {
+          snippetContent.removeAttribute('hidden');
+        }
+        updatePatternSnippetsSectionState(false);
+
+        // Only set up handler if not already set up
+        if (!snippetToggle.dataset.listenerAttached) {
+          snippetToggle.addEventListener('click', () => {
+            const expanded = snippetToggle.getAttribute('aria-expanded') === 'true';
+            const nextExpanded = !expanded;
+            updatePatternSnippetsSectionState(nextExpanded);
+          });
+          snippetToggle.dataset.listenerAttached = 'true';
+        }
 
         if (patternLabelRow) {
           // Insert after presets if they exist, otherwise after patternLabelRow
-          const presetsContainer = modal.querySelector('.modal-presets');
+          const presetsContainer = modal.querySelector('#modal-presets-toggle')?.closest('.modal-presets');
           if (presetsContainer && presetsContainer.parentElement === patternLabelRow.parentElement) {
             presetsContainer.insertAdjacentElement('afterend', patternSnippetContainer);
           } else {
@@ -8474,14 +8548,138 @@ class InteractiveSoundApp {
         } else {
           modal.querySelector('.form-group')?.insertAdjacentElement('afterbegin', patternSnippetContainer);
         }
+
+        // Move or create Add samples section after Add to pattern
+        let samplesContainer = modal.querySelector('#modal-samples-toggle')?.closest('.modal-presets');
+        if (!samplesContainer) {
+          // Create the samples section if it doesn't exist
+          const formGroup = document.createElement('div');
+          formGroup.className = 'form-group';
+          
+          samplesContainer = document.createElement('div');
+          samplesContainer.className = 'modal-presets';
+          
+          const samplesToggle = document.createElement('button');
+          samplesToggle.type = 'button';
+          samplesToggle.id = 'modal-samples-toggle';
+          samplesToggle.className = 'modal-presets-toggle pattern-snippet-group-heading';
+          samplesToggle.setAttribute('aria-expanded', 'false');
+          const toggleSpan = document.createElement('span');
+          toggleSpan.textContent = 'Add samples';
+          samplesToggle.appendChild(toggleSpan);
+          samplesContainer.appendChild(samplesToggle);
+          
+          const samplesContent = document.createElement('div');
+          samplesContent.id = 'modal-samples-content';
+          samplesContent.className = 'modal-presets-content';
+          samplesContent.setAttribute('hidden', '');
+          
+          const sampleUrlGroup = document.createElement('div');
+          sampleUrlGroup.className = 'form-group';
+          const urlLabel = document.createElement('label');
+          urlLabel.setAttribute('for', 'modal-sample-url');
+          urlLabel.textContent = 'Sample URL:';
+          const urlInput = document.createElement('input');
+          urlInput.type = 'text';
+          urlInput.id = 'modal-sample-url';
+          urlInput.placeholder = 'e.g., https://example.com/sample.wav (optional)';
+          sampleUrlGroup.appendChild(urlLabel);
+          sampleUrlGroup.appendChild(urlInput);
+          samplesContent.appendChild(sampleUrlGroup);
+          
+          const sampleFileGroup = document.createElement('div');
+          sampleFileGroup.className = 'form-group';
+          const fileLabel = document.createElement('label');
+          fileLabel.setAttribute('for', 'modal-sample-file');
+          fileLabel.textContent = 'Or Select File:';
+          const fileInput = document.createElement('input');
+          fileInput.type = 'file';
+          fileInput.id = 'modal-sample-file';
+          fileInput.setAttribute('accept', 'audio/*');
+          sampleFileGroup.appendChild(fileLabel);
+          sampleFileGroup.appendChild(fileInput);
+          samplesContent.appendChild(sampleFileGroup);
+          
+          const sampleNameGroup = document.createElement('div');
+          sampleNameGroup.className = 'form-group';
+          sampleNameGroup.id = 'modal-sample-name-group';
+          const nameLabel = document.createElement('label');
+          nameLabel.setAttribute('for', 'modal-sample-name');
+          nameLabel.textContent = 'Sample Name:';
+          const addRow = document.createElement('div');
+          addRow.className = 'sample-add-row';
+          const nameInput = document.createElement('input');
+          nameInput.type = 'text';
+          nameInput.id = 'modal-sample-name';
+          nameInput.placeholder = 'e.g., "dream-pad"';
+          const addButton = document.createElement('button');
+          addButton.type = 'button';
+          addButton.id = 'modal-add-sample-btn';
+          addButton.className = 'sample-add-button';
+          addButton.textContent = 'Add';
+          const hint = document.createElement('small');
+          hint.className = 'sample-add-hint';
+          hint.textContent = 'Adds a samples(...) block and sound("name") to the pattern.';
+          addRow.appendChild(nameInput);
+          addRow.appendChild(addButton);
+          sampleNameGroup.appendChild(nameLabel);
+          sampleNameGroup.appendChild(addRow);
+          sampleNameGroup.appendChild(hint);
+          samplesContent.appendChild(sampleNameGroup);
+          
+          samplesContainer.appendChild(samplesContent);
+          formGroup.appendChild(samplesContainer);
+          
+          // Insert after pattern snippet container
+          patternSnippetContainer.insertAdjacentElement('afterend', formGroup);
+          
+          // Setup toggle handler for the newly created samples section
+          const updateSamplesSectionState = (expanded) => {
+            samplesToggle.setAttribute('aria-expanded', expanded.toString());
+            samplesContent.classList.toggle('is-open', expanded);
+            samplesContent.setAttribute('aria-hidden', (!expanded).toString());
+            samplesContainer.classList.toggle('collapsed', !expanded);
+          };
+
+          // Initialize as closed
+          if (samplesContent.hasAttribute('hidden')) {
+            samplesContent.removeAttribute('hidden');
+          }
+          updateSamplesSectionState(false);
+
+          // Only set up handler if not already set up
+          if (!samplesToggle.dataset.listenerAttached) {
+            samplesToggle.addEventListener('click', () => {
+              const expanded = samplesToggle.getAttribute('aria-expanded') === 'true';
+              const nextExpanded = !expanded;
+              updateSamplesSectionState(nextExpanded);
+            });
+            samplesToggle.dataset.listenerAttached = 'true';
+          }
+        } else {
+          // Move existing samples container to after pattern snippet container
+          const samplesFormGroup = samplesContainer.closest('.form-group');
+          if (samplesFormGroup && samplesFormGroup !== patternSnippetContainer.parentElement) {
+            patternSnippetContainer.insertAdjacentElement('afterend', samplesFormGroup);
+          } else if (!samplesFormGroup) {
+            // If no form-group wrapper, create one and move
+            const formGroup = document.createElement('div');
+            formGroup.className = 'form-group';
+            samplesContainer.parentElement.insertBefore(formGroup, samplesContainer);
+            formGroup.appendChild(samplesContainer);
+            patternSnippetContainer.insertAdjacentElement('afterend', formGroup);
+          }
+        }
       }
 
       if (!patternSnippetListEl) {
-        patternSnippetListEl = patternSnippetContainer.querySelector('.pattern-snippet-list');
+        const contentDiv = patternSnippetContainer.querySelector('#modal-pattern-snippets-content');
+        patternSnippetListEl = contentDiv ? contentDiv.querySelector('.pattern-snippet-list') : null;
       }
 
       if (!patternSnippetSearchInput) {
-        patternSnippetSearchInput = patternSnippetContainer.querySelector('.pattern-snippet-search');
+        const contentDiv = patternSnippetContainer.querySelector('#modal-pattern-snippets-content');
+        patternSnippetSearchInput = contentDiv ? contentDiv.querySelector('.pattern-snippet-search') : null;
       }
 
       // State to track selected tag for suggestions (stored on app instance for external access)
@@ -8812,7 +9010,7 @@ class InteractiveSoundApp {
                 slider.addEventListener('input', (e) => {
                   const position = parseFloat(e.target.value);
                   const hz = positionToFrequency(position);
-                  valueSpan.textContent = Math.round(hz) + ' ' + numericParams.unit;
+                  queueSliderDisplayUpdate(valueSpan, Math.round(hz) + ' ' + numericParams.unit);
                 });
               } else {
                 // Regular linear slider for non-frequency parameters
@@ -8842,7 +9040,7 @@ class InteractiveSoundApp {
               // Update value display on input (for visual feedback)
               slider.addEventListener('input', (e) => {
                 const value = e.target.value;
-                valueSpan.textContent = value + (numericParams.unit ? ' ' + numericParams.unit : '');
+                queueSliderDisplayUpdate(valueSpan, value + (numericParams.unit ? ' ' + numericParams.unit : ''));
               });
               }
               
@@ -8855,9 +9053,9 @@ class InteractiveSoundApp {
                   const position = parseFloat(value);
                   const hz = positionToFrequency(position);
                   value = Math.round(hz); // Round to nearest Hz for cleaner values
-                  valueSpan.textContent = value + ' ' + numericParams.unit;
+                  queueSliderDisplayUpdate(valueSpan, value + ' ' + numericParams.unit);
                 } else {
-                valueSpan.textContent = value + (numericParams.unit ? ' ' + numericParams.unit : '');
+                queueSliderDisplayUpdate(valueSpan, value + (numericParams.unit ? ' ' + numericParams.unit : ''));
                 }
                 
                 // Get current pattern
@@ -10174,32 +10372,8 @@ class InteractiveSoundApp {
       });
     }
 
-    // Setup samples collapsible toggle
-    const samplesToggle = document.getElementById('modal-samples-toggle');
-    const samplesContent = document.getElementById('modal-samples-content');
-    if (samplesToggle && samplesContent) {
-      const updateSamplesSectionState = (expanded) => {
-        samplesToggle.setAttribute('aria-expanded', expanded.toString());
-        samplesContent.classList.toggle('is-open', expanded);
-        samplesContent.setAttribute('aria-hidden', (!expanded).toString());
-        const samplesContainer = samplesToggle.closest('.modal-presets');
-        if (samplesContainer) {
-          samplesContainer.classList.toggle('collapsed', !expanded);
-        }
-      };
-
-      // Initialize as closed
-      if (samplesContent.hasAttribute('hidden')) {
-        samplesContent.removeAttribute('hidden');
-      }
-      updateSamplesSectionState(false);
-
-      samplesToggle.addEventListener('click', () => {
-        const expanded = samplesToggle.getAttribute('aria-expanded') === 'true';
-        const nextExpanded = !expanded;
-        updateSamplesSectionState(nextExpanded);
-      });
-    }
+    // Note: Samples and pattern snippets toggle handlers are set up dynamically
+    // when their containers are created (see ensurePatternSnippetContainer function)
 
     renderPresetButtons(drumPresetsContainer, DRUM_PATTERN_PRESETS);
     renderPresetButtons(tonalPresetsContainer, TONAL_PATTERN_PRESETS);
