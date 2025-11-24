@@ -25,22 +25,30 @@ npx prisma generate >&2 || {
 if [ -n "$DATABASE_URL" ]; then
   echo "Running migrations..." >&2
   
-  # Wait a bit for database to be ready (Railway may need a moment)
-  echo "Waiting 3 seconds for database to be ready..." >&2
-  sleep 3
+  # Wait for database to be ready (Railway may need time for internal network)
+  echo "Waiting for database to be ready (up to 30 seconds)..." >&2
+  MAX_WAIT=30
+  WAIT_TIME=0
+  CONNECTED=0
   
-  # Test database connection first
-  echo "Testing database connection..." >&2
-  CONNECTION_TEST=$(npx prisma db execute --stdin <<'EOF' 2>&1 || echo "CONNECTION_FAILED"
-SELECT 1 as test;
-EOF
-  )
+  while [ $WAIT_TIME -lt $MAX_WAIT ]; do
+    # Test connection using prisma migrate status (lightweight check)
+    STATUS_OUTPUT=$(npx prisma migrate status 2>&1 || true)
+    
+    # If we get past connection errors, we're connected
+    if ! echo "$STATUS_OUTPUT" | grep -qi "Can't reach database\|P1001\|connection.*refused"; then
+      echo "✅ Database connection established after ${WAIT_TIME}s" >&2
+      CONNECTED=1
+      break
+    fi
+    
+    echo "⏳ Still waiting for database... (${WAIT_TIME}s / ${MAX_WAIT}s)" >&2
+    sleep 2
+    WAIT_TIME=$((WAIT_TIME + 2))
+  done
   
-  if echo "$CONNECTION_TEST" | grep -qi "CONNECTION_FAILED\|Can't reach\|P1001"; then
-    echo "⚠️ Database connection test failed. Waiting 5 more seconds..." >&2
-    sleep 5
-  else
-    echo "✅ Database connection test successful" >&2
+  if [ $CONNECTED -eq 0 ]; then
+    echo "⚠️ Database still not reachable after ${MAX_WAIT}s. Attempting migrations anyway..." >&2
   fi
   
   # Try to deploy migrations
