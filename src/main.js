@@ -13391,6 +13391,8 @@ async function initUserAuth() {
   profileOnboardingModal = new ProfileOnboardingModal();
   profileOnboardingModal.init();
   profileOnboardingModal.setOnComplete((updatedUser) => {
+    // Ensure overflow is restored when onboarding completes
+    document.body.style.overflow = '';
     handleAuthenticatedUser(updatedUser);
   });
 
@@ -13562,6 +13564,10 @@ function handleAuthenticatedUser(user) {
   updateUserUI(user);
   if (!user.profileCompleted && profileOnboardingModal) {
     profileOnboardingModal.show(user);
+  } else {
+    // Ensure scrolling is restored if profile onboarding doesn't show
+    // This fixes the case where login modal hides but overflow wasn't restored
+    document.body.style.overflow = '';
   }
 }
 
