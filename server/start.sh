@@ -24,7 +24,7 @@ npx prisma generate >&2 || {
 # Run migrations (this is what we see in logs)
 if [ -n "$DATABASE_URL" ]; then
   echo "Running migrations..." >&2
-  npx prisma migrate deploy --skip-seed >&2 || echo "Migration warning (continuing)..." >&2
+  npx prisma migrate deploy >&2 || echo "Migration warning (continuing)..." >&2
   echo "Migrations done" >&2
 fi
 

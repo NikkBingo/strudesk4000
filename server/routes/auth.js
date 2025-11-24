@@ -101,13 +101,26 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
               const frontendUrl = getFrontendUrl();
               return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session save failed')}`);
             }
+            
+            // Manually set the session cookie since express-session might not set it before redirect
+            const cookieOptions = {
+              maxAge: 24 * 60 * 60 * 1000, // 24 hours
+              httpOnly: true,
+              secure: process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_PUBLIC_DOMAIN,
+              sameSite: 'lax',
+              path: '/'
+            };
+            
+            res.cookie('strudel.session', req.sessionID, cookieOptions);
+            
             console.log('Session saved successfully after Google login');
-            console.log('🍪 About to redirect - session cookie should be set');
-            console.log('🍪 Session cookie config:', req.session.cookie);
-            console.log('🍪 Response headers before redirect:', {
+            console.log('🍪 Manually set session cookie:', req.sessionID);
+            console.log('🍪 Cookie options:', cookieOptions);
+            console.log('🍪 Response headers after setting cookie:', {
               'Set-Cookie': res.getHeader('Set-Cookie'),
               'sessionID': req.sessionID
             });
+            
             const frontendUrl = getFrontendUrl();
             res.redirect(`${frontendUrl}/?auth=success`);
           });
@@ -261,7 +274,20 @@ router.post('/login', (req, res, next) => {
           console.error('Session save error after login:', saveErr);
           return next(saveErr);
         }
+        
+        // Manually set the session cookie to ensure it's sent
+        const cookieOptions = {
+          maxAge: 24 * 60 * 60 * 1000, // 24 hours
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_PUBLIC_DOMAIN,
+          sameSite: 'lax',
+          path: '/'
+        };
+        
+        res.cookie('strudel.session', req.sessionID, cookieOptions);
+        
         console.log('Session saved successfully after login');
+        console.log('🍪 Manually set session cookie:', req.sessionID);
         res.json({ message: 'Login successful', user: sanitizeUser(user) });
       });
     });
