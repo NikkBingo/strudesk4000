@@ -34,18 +34,21 @@ if [ -n "$DATABASE_URL" ]; then
   while [ $WAIT_TIME -lt $MAX_WAIT ]; do
     # Test connection by trying to run migrate deploy (it will fail fast if DB is unreachable)
     # Capture output but don't fail the script
-    TEST_OUTPUT=$(npx prisma migrate deploy --skip-seed 2>&1 || true)
+    TEST_OUTPUT=$(npx prisma migrate deploy 2>&1 || true)
+    TEST_EXIT=$?
     
     # If we see migration-related output (not connection errors), DB is reachable
     if ! echo "$TEST_OUTPUT" | grep -qi "Can't reach database\|P1001\|connection.*refused\|ECONNREFUSED"; then
       echo "✅ Database connection established after ${WAIT_TIME}s" >&2
       CONNECTED=1
-      # If migrations actually ran successfully during the test, that's even better
-      if echo "$TEST_OUTPUT" | grep -qi "All migrations have been applied\|migrations found"; then
-        echo "✅ Migrations already applied!" >&2
+      # If migrations actually ran successfully during the test, we're done!
+      if [ $TEST_EXIT -eq 0 ]; then
+        echo "$TEST_OUTPUT" >&2
+        echo "✅ Migrations completed successfully!" >&2
         echo "Migrations done" >&2
         break
       fi
+      # Connection works but migrations need to run - break and continue to migration section
       break
     fi
     
@@ -58,9 +61,14 @@ if [ -n "$DATABASE_URL" ]; then
     echo "⚠️ Database still not reachable after ${MAX_WAIT}s. Attempting migrations anyway..." >&2
   fi
   
-  # Try to deploy migrations
-  MIGRATION_OUTPUT=$(npx prisma migrate deploy 2>&1)
-  MIGRATION_EXIT_CODE=$?
+  # Only run migrations if we didn't already complete them during connection test
+  if [ $CONNECTED -eq 1 ] && [ $TEST_EXIT -eq 0 ]; then
+    echo "Skipping duplicate migration run (already completed during connection test)" >&2
+    MIGRATION_EXIT_CODE=0
+  else
+    # Try to deploy migrations
+    MIGRATION_OUTPUT=$(npx prisma migrate deploy 2>&1)
+    MIGRATION_EXIT_CODE=$?
   
   if [ $MIGRATION_EXIT_CODE -ne 0 ]; then
     echo "$MIGRATION_OUTPUT" >&2
