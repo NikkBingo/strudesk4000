@@ -103,11 +103,14 @@ router.post('/register', async (req, res) => {
       }
     });
 
-    await setVerificationToken(user.id);
+    const verificationToken = await setVerificationToken(user.id);
 
+    // Return token in response (for development - emails not implemented yet)
+    const isDev = process.env.NODE_ENV !== 'production' || isTestMode();
     res.json({
       message: 'Account created. Please verify your email before logging in.',
-      requiresVerification: true
+      requiresVerification: true,
+      ...(isDev && { verificationToken, note: 'Email sending not configured. Use the token below to verify your account.' })
     });
   } catch (error) {
     console.error('Registration error:', error);
@@ -165,8 +168,14 @@ router.post('/resend-verification', async (req, res) => {
     if (user.emailVerifiedAt) {
       return res.status(400).json({ error: 'Email is already verified' });
     }
-    await setVerificationToken(user.id);
-    res.json({ message: 'Verification email sent' });
+    const verificationToken = await setVerificationToken(user.id);
+    
+    // Return token in response (for development - emails not implemented yet)
+    const isDev = process.env.NODE_ENV !== 'production' || isTestMode();
+    res.json({
+      message: 'Verification email sent',
+      ...(isDev && { verificationToken, note: 'Email sending not configured. Use the token below to verify your account.' })
+    });
   } catch (error) {
     console.error('Resend verification error:', error);
     res.status(500).json({ error: 'Failed to resend verification email' });

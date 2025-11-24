@@ -160,8 +160,18 @@ export class LoginModal {
       }
       try {
         this.setStatus('Sending verification email...', 'info');
-        await authAPI.resendVerification(email);
-        this.setStatus('Verification email sent.', 'success');
+        const response = await authAPI.resendVerification(email);
+        
+        // If token is provided in response (dev mode), pre-fill it
+        if (response?.verificationToken) {
+          const tokenInput = document.getElementById('verify-token');
+          if (tokenInput) {
+            tokenInput.value = response.verificationToken;
+          }
+          this.setStatus(response.note || 'Verification token sent. Use the token below.', 'info');
+        } else {
+          this.setStatus('Verification email sent.', 'success');
+        }
       } catch (error) {
         this.setStatus(error.message || 'Failed to resend verification email.', 'error');
       }
@@ -193,11 +203,21 @@ export class LoginModal {
       if (!email || !password) return;
       try {
         this.setStatus('Creating account...', 'info');
-        await authAPI.register({ email, password, name });
-        this.setStatus('Account created! Check your email for verification token.', 'success');
+        const response = await authAPI.register({ email, password, name });
         this.setActiveForm('verify-email');
         document.getElementById('login-email').value = email;
-        document.getElementById('verify-token').focus();
+        
+        // If token is provided in response (dev mode), pre-fill it
+        if (response?.verificationToken) {
+          const tokenInput = document.getElementById('verify-token');
+          if (tokenInput) {
+            tokenInput.value = response.verificationToken;
+          }
+          this.setStatus(response.note || 'Account created! Use the verification token below.', 'info');
+        } else {
+          this.setStatus('Account created! Check your email for verification token.', 'success');
+          document.getElementById('verify-token')?.focus();
+        }
       } catch (error) {
         this.setStatus(error.message || 'Registration failed.', 'error');
       }
