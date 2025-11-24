@@ -6688,6 +6688,18 @@ class InteractiveSoundApp {
   getPatternWithEffects(elementId, basePattern) {
     if (!basePattern) return basePattern;
     
+    // Remove master-injected modifiers (postgain, pan, fast, slow, cpm) that shouldn't be in saved patterns
+    // These are added dynamically when playing through master, but shouldn't be persisted
+    let cleanedPattern = basePattern;
+    cleanedPattern = cleanedPattern.replace(/\.postgain\s*\([^)]*\)/g, '');
+    cleanedPattern = cleanedPattern.replace(/\.pan\s*\([^)]*\)/g, '');
+    cleanedPattern = cleanedPattern.replace(/\.fast\s*\([^)]*\)/g, '');
+    cleanedPattern = cleanedPattern.replace(/\.slow\s*\([^)]*\)/g, '');
+    cleanedPattern = cleanedPattern.replace(/\.cpm\s*\([^)]*\)/g, '');
+    // Clean up any double dots that might result
+    cleanedPattern = cleanedPattern.replace(/\.\.+/g, '.').trim();
+    cleanedPattern = cleanedPattern.replace(/\.+$/, '').trim();
+    
     // Get effects, filters, and synthesis
     const effects = this.elementEffects?.[elementId] || {};
     const filters = this.elementFilters?.[elementId] || {};
@@ -6777,7 +6789,7 @@ class InteractiveSoundApp {
     }
     
     // Return pattern with modifiers
-    return modifiers.length > 0 ? basePattern + modifiers.join('') : basePattern;
+    return modifiers.length > 0 ? cleanedPattern + modifiers.join('') : cleanedPattern;
   }
   
   /**
