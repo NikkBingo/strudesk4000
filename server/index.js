@@ -107,6 +107,8 @@ const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAIL
 // Since frontend and backend are served from the same domain (via static files),
 // we use 'lax' for same-site cookies (works with same origin)
 // Only use 'none' if frontend and backend are on different domains
+// Note: Don't set domain attribute - let browser use current domain automatically
+
 const sessionConfig = {
   name: 'strudel.session',
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
@@ -114,6 +116,7 @@ const sessionConfig = {
   saveUninitialized: false, // Don't save empty sessions
   rolling: true, // Reset expiration on every request
   cookie: {
+    // Don't set domain - browser will use current domain automatically (better for same-origin)
     secure: isProduction, // HTTPS only in production
     httpOnly: true,
     sameSite: 'lax', // Use 'lax' for same-origin (frontend/backend on same domain)
@@ -131,6 +134,20 @@ console.log('🍪 Session config:', {
 });
 
 app.use(session(sessionConfig));
+
+// Middleware to log cookie setting for debugging
+app.use((req, res, next) => {
+  const originalEnd = res.end;
+  res.end = function(...args) {
+    // Log Set-Cookie headers being sent
+    const setCookieHeaders = res.getHeader('Set-Cookie');
+    if (setCookieHeaders) {
+      console.log('🍪 [RESPONSE] Set-Cookie header:', Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders]);
+    }
+    originalEnd.apply(this, args);
+  };
+  next();
+});
 
 app.use(passport.initialize());
 app.use(passport.session());

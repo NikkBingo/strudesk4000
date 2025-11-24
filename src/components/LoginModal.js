@@ -292,13 +292,25 @@ export class LoginModal {
     const urlParams = new URLSearchParams(window.location.search);
     const authStatus = urlParams.get('auth');
     if (authStatus === 'success') {
-      // Wait a moment for session to be established after redirect
+      // Wait longer for session cookie to be set and processed by browser
+      // After Google OAuth redirect, cookies need time to be stored
       setTimeout(async () => {
+        console.log('🔍 Checking auth status after Google login redirect...');
         const success = await this.checkAuthStatus(true);
         if (!success) {
-          setTimeout(() => this.checkAuthStatus(true), 500);
+          console.log('⚠️ First auth check failed, retrying...');
+          setTimeout(async () => {
+            const retrySuccess = await this.checkAuthStatus(true);
+            if (!retrySuccess) {
+              console.error('❌ Auth check failed after retry - session may not be set');
+              this.show();
+              this.setStatus('Login successful but session not established. Please refresh the page.', 'error');
+            }
+          }, 1000);
+        } else {
+          console.log('✅ Auth check successful after Google login');
         }
-      }, 200);
+      }, 500);
       const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
       window.history.replaceState({}, document.title, cleanUrl);
     } else if (authStatus === 'error') {

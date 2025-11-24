@@ -58,7 +58,12 @@ async function setResetToken(userId) {
 
 // Google OAuth routes (only if configured)
 if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET) {
-  const getFrontendUrl = () => (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  const getFrontendUrl = () => {
+    const url = process.env.FRONTEND_URL || (process.env.RAILWAY_PUBLIC_DOMAIN 
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
+      : 'http://localhost:3000');
+    return url.replace(/\/+$/, '');
+  };
   router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 
   router.get(
@@ -97,6 +102,12 @@ if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET
               return res.redirect(`${frontendUrl}/?auth=error&message=${encodeURIComponent('Session save failed')}`);
             }
             console.log('Session saved successfully after Google login');
+            console.log('🍪 About to redirect - session cookie should be set');
+            console.log('🍪 Session cookie config:', req.session.cookie);
+            console.log('🍪 Response headers before redirect:', {
+              'Set-Cookie': res.getHeader('Set-Cookie'),
+              'sessionID': req.sessionID
+            });
             const frontendUrl = getFrontendUrl();
             res.redirect(`${frontendUrl}/?auth=success`);
           });
