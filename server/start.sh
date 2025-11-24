@@ -26,8 +26,22 @@ if [ -n "$DATABASE_URL" ]; then
   echo "Running migrations..." >&2
   
   # Wait a bit for database to be ready (Railway may need a moment)
-  echo "Waiting 2 seconds for database to be ready..." >&2
-  sleep 2
+  echo "Waiting 3 seconds for database to be ready..." >&2
+  sleep 3
+  
+  # Test database connection first
+  echo "Testing database connection..." >&2
+  CONNECTION_TEST=$(npx prisma db execute --stdin <<'EOF' 2>&1 || echo "CONNECTION_FAILED"
+SELECT 1 as test;
+EOF
+  )
+  
+  if echo "$CONNECTION_TEST" | grep -qi "CONNECTION_FAILED\|Can't reach\|P1001"; then
+    echo "⚠️ Database connection test failed. Waiting 5 more seconds..." >&2
+    sleep 5
+  else
+    echo "✅ Database connection test successful" >&2
+  fi
   
   # Try to deploy migrations
   MIGRATION_OUTPUT=$(npx prisma migrate deploy 2>&1)
