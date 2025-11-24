@@ -32,19 +32,23 @@ If you see a migration error like "column already exists", you can manually reso
    npx prisma migrate deploy
    ```
 
-**Option 2: Using Railway Dashboard**
+**Option 2: Using Railway Dashboard Shell (Actually works!)**
+
+The `railway shell` CLI command only sets environment variables locally - it doesn't give you network access to Railway's internal services. To actually access the database, you need to use Railway's web dashboard:
 
 1. Go to your Railway dashboard: https://railway.app
-2. Select your `strudesk4000` service
-3. Open the "Deployments" tab
-4. Click on the latest deployment
-5. Open the "Shell" tab
+2. Select your **`strudesk4000`** service (not Postgres)
+3. Click on the **"Deployments"** tab
+4. Find the latest deployment and click on it
+5. Click the **"Shell"** tab (this opens a shell **inside** the container)
 6. Run:
    ```bash
    cd server
    npx prisma migrate resolve --applied 20241124_add_email_auth_fields
    npx prisma migrate deploy
    ```
+
+**Note:** Make sure you're in the `strudesk4000` service shell, not the Postgres service!
 
 ## Alternative: Automatic Resolution
 
