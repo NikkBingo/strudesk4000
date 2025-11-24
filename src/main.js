@@ -3983,12 +3983,20 @@ class InteractiveSoundApp {
       this.masterPunchcardCanvas.addEventListener('mousemove', (e) => {
         if (this.chaospadEnabled) {
           this.handleChaospadMouseMove(e);
+          // Create smoke trail when chaospad is enabled
+          if (this.createSmokeTrail) {
+            this.createSmokeTrail(e.clientX, e.clientY);
+          }
         }
       });
       // Also add mouseenter to ensure it works
       this.masterPunchcardCanvas.addEventListener('mouseenter', (e) => {
         if (this.chaospadEnabled) {
           this.handleChaospadMouseMove(e);
+          // Create smoke trail when chaospad is enabled
+          if (this.createSmokeTrail) {
+            this.createSmokeTrail(e.clientX, e.clientY);
+          }
         }
       });
       this.masterPunchcardCanvas.addEventListener('mouseleave', () => {
@@ -4051,18 +4059,8 @@ class InteractiveSoundApp {
       setTimeout(() => puff.remove(), 800);
     };
 
-    // Get canvas position relative to viewport for accurate coordinates
-    const getCanvasPosition = () => {
-      const rect = this.masterPunchcardCanvas.getBoundingClientRect();
-      return { left: rect.left, top: rect.top };
-    };
-
-    this.masterPunchcardCanvas.addEventListener('mousemove', (e) => {
-      const canvasPos = getCanvasPosition();
-      const x = e.clientX;
-      const y = e.clientY;
-      createSmoke(x, y);
-    });
+    // Store createSmoke function for use in chaospad handler
+    this.createSmokeTrail = createSmoke;
   }
 
   getCurrentFullscreenElement() {
