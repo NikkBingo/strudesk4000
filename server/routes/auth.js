@@ -2,13 +2,12 @@ import express from 'express';
 import passport from 'passport';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../db.js';
 import '../config/passport.js';
 import { isTestMode } from '../utils/config.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 const VERIFICATION_EXPIRY_HOURS = 24;
 const RESET_EXPIRY_HOURS = 1;
@@ -355,8 +354,6 @@ router.get('/me', async (req, res) => {
   } else if (isTestMode()) {
     // In test mode, return a test user if not authenticated
     try {
-      const { PrismaClient } = await import('@prisma/client');
-      const prisma = new PrismaClient();
 
       // Find or create test user
       let testUser = await prisma.user.findUnique({
@@ -444,8 +441,6 @@ router.post('/test-login', async (req, res) => {
   }
 
   try {
-    const { PrismaClient } = await import('@prisma/client');
-    const prisma = new PrismaClient();
 
     // Find or create test user
     let testUser = await prisma.user.findUnique({

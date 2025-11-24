@@ -1,10 +1,9 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../db.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { formatPatternWithMetadata } from '../utils/patternFormatter.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // Create pattern
 router.post('/', requireAuth, async (req, res) => {

@@ -1,24 +1,8 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as LocalStrategy } from 'passport-local';
-import { PrismaClient } from '@prisma/client';
+import prisma from './db.js';
 import bcrypt from 'bcryptjs';
-
-// Initialize Prisma client with error handling
-let prisma;
-try {
-  prisma = new PrismaClient({
-    log: ['error'],
-    datasources: {
-      db: {
-        url: process.env.DATABASE_URL
-      }
-    }
-  });
-} catch (error) {
-  console.error('❌ Failed to initialize Prisma client in passport config:', error);
-  prisma = null;
-}
 
 // Configure Google OAuth Strategy (only if credentials are provided)
 if (process.env.OAUTH_GOOGLE_CLIENT_ID && process.env.OAUTH_GOOGLE_CLIENT_SECRET) {

@@ -17,8 +17,7 @@ export const requireAuth = async (req, res, next) => {
   // In test mode, create/use a test user automatically
   if (isTestMode()) {
     try {
-      const { PrismaClient } = await import('@prisma/client');
-      const prisma = new PrismaClient();
+      const prisma = (await import('../db.js')).default;
 
       // Find or create test user
       let testUser = await prisma.user.findUnique({

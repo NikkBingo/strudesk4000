@@ -1,10 +1,9 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { isTestMode } from '../utils/config.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 const requireAdmin = (req, res, next) => {
   if (req.isAuthenticated && req.isAuthenticated() && req.user?.role === 'admin') {
