@@ -145,7 +145,8 @@ const sessionConfig = {
     httpOnly: true,
     sameSite: 'lax', // Use 'lax' for same-origin (frontend/backend on same domain)
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    path: '/'
+    path: '/',
+    overwrite: true // Overwrite existing cookies with the same name
   }
 };
 
