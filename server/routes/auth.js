@@ -253,7 +253,7 @@ router.post('/reset-password', async (req, res) => {
 // Get current user
 router.get('/me', async (req, res) => {
   if (req.isAuthenticated && req.isAuthenticated()) {
-    return res.json(req.user);
+    return res.json(sanitizeUser(req.user));
   } else if (isTestMode()) {
     // In test mode, return a test user if not authenticated
     try {
@@ -310,7 +310,8 @@ router.get('/me', async (req, res) => {
       }
     }
   } else {
-    return res.status(401).json({ error: 'Not authenticated' });
+    // Return 200 with null instead of 401 to avoid console errors
+    return res.json(null);
   }
 });
 
