@@ -1412,10 +1412,10 @@ header h1 {
   margin: 12px 0 16px;
   padding: 14px 16px;
   border-radius: 10px;
-  background: linear-gradient(135deg, #4d0f1e, #2a0610);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02),
-    0 12px 24px rgba(0, 0, 0, 0.45);
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: 0 12px 20px rgba(15, 23, 42, 0.08);
+  color: #111827;
 }
 
 .midi-toggle-row {
@@ -1423,7 +1423,7 @@ header h1 {
   align-items: center;
   justify-content: space-between;
   flex-wrap: nowrap;
-  gap: 12px;
+  gap: 16px;
 }
 
 .midi-toggle-label {
@@ -1433,7 +1433,7 @@ header h1 {
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #fdd9df;
+  color: #111827;
   font-weight: 600;
   flex: 1 1 auto;
   min-width: 0;
@@ -1442,8 +1442,8 @@ header h1 {
 .midi-switch {
   position: relative;
   display: inline-block;
-  width: 40px;
-  height: 22px;
+  width: 36px;
+  height: 20px;
 }
 
 .midi-switch input {
@@ -1459,30 +1459,34 @@ header h1 {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(255, 255, 255, 0.2);
-  transition: 0.3s;
-  border-radius: 34px;
+  background-color: #ffffff;
+  border: 1px solid #0f172a;
+  transition: 0.25s;
+  border-radius: 9999px;
 }
 
 .midi-slider:before {
   position: absolute;
   content: "";
-  height: 16px;
-  width: 16px;
-  left: 4px;
-  bottom: 3px;
-  background-color: white;
-  transition: 0.3s;
-  border-radius: 50%;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 2.5px;
+  background-color: #ffffff;
+  border: 1px solid #0f172a;
+  transition: 0.25s;
+  border-radius: 9999px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .midi-switch input:checked + .midi-slider {
-  background: linear-gradient(135deg, #f43f5e, #f97316);
+  background: #22c55e;
+  border-color: #15803d;
 }
 
 .midi-switch input:checked + .midi-slider:before {
-  transform: translateX(16px);
+  transform: translateX(15px);
+  border-color: #15803d;
 }
 
 .midi-channel-label {
@@ -1493,17 +1497,17 @@ header h1 {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(248, 250, 252, 0.72);
+  color: #111827;
   flex: 0 0 auto;
 }
 
 .midi-channel-select {
   margin-top: 0;
   padding: 6px 12px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  color: #ffe4e6;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.25);
+  color: #0f172a;
   font-size: 13px;
   font-weight: 600;
   transition: border 0.2s ease, background 0.2s ease;
@@ -1511,12 +1515,12 @@ header h1 {
 
 .midi-channel-select:focus {
   outline: none;
-  border-color: rgba(255, 255, 255, 0.65);
-  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(15, 23, 42, 0.45);
+  background: rgba(15, 23, 42, 0.05);
 }
 
 .midi-channel-select:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
 }
 
 .config-button {
