@@ -1200,7 +1200,7 @@ const historyButtonHandler = (event) => {
       const element = saveBtn.closest('.sound-element');
       const elementId = element?.getAttribute('data-sound-id');
       if (elementId && interactiveSoundAppInstance) {
-        interactiveSoundAppInstance.saveChannelWithEffects?.(elementId);
+        interactiveSoundAppInstance.saveChannelWithMidi?.(elementId);
       }
     } else if (target === 'master') {
       if (interactiveSoundAppInstance) {
@@ -3159,10 +3159,8 @@ class InteractiveSoundApp {
     this.masterPatternField = null;
     this._applyingVisualizer = false; // Flag to prevent infinite loops when re-applying visualizers
     
-    // Effects, Filters, and Synthesis storage
-    this.elementEffects = {}; // Store effects for each element
-    this.elementFilters = {}; // Store filters for each element
-    this.elementSynthesis = {}; // Store synthesis (ADSR) for each element
+    // MIDI routing storage per element
+    this.elementMidiSettings = this.loadStoredMidiSettings();
     this.currentTimeSignature = '4/4';
     this.currentTimeSignatureMetrics = getTimeSignatureMetrics(this.currentTimeSignature);
     
@@ -3494,7 +3492,6 @@ class InteractiveSoundApp {
       
       if (hasValidPattern) {
         // Show/hide synthesis section based on pattern type
-        this.updateSynthesisSectionVisibility(id, saved.pattern);
         const resolvedTitle = saved.title && saved.title.trim()
           ? saved.title
           : (saved.bank ? (DRUM_BANK_DISPLAY_NAMES[saved.bank] || saved.bank) : '');
@@ -6041,631 +6038,217 @@ class InteractiveSoundApp {
         });
       }
       
-      // Setup collapsible sections (Effects & Filters)
-      this.setupCollapsibleSections(element, elementId);
+      // Setup MIDI controls
+      this.initializeMidiControls(element, elementId);
     });
   }
   
-  /**
-   * Setup collapsible sections for effects and filters
-   */
-  setupCollapsibleSections(element, elementId) {
-    if (!element || !elementId) {
-      console.warn(`⚠️ setupCollapsibleSections: Invalid element or elementId`, { element, elementId });
-      return;
-    }
-    
-    const toggleButtons = element.querySelectorAll('.collapsible-toggle');
-    console.log(`🎛️ Setting up collapsible sections for ${elementId}: ${toggleButtons.length} toggle buttons found`);
-    
-    toggleButtons.forEach(toggleBtn => {
-      toggleBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        
-        // Toggle active state
-        toggleBtn.classList.toggle('active');
-        
-        // Toggle content visibility
-        const content = toggleBtn.nextElementSibling;
-        if (content && content.classList.contains('collapsible-content')) {
-          content.classList.toggle('active');
-        }
-      });
-    });
-    
-    // Initialize filter dropdowns
-    this.setupFilterDropdowns(element, elementId);
-    
-    // Initialize effects dropdowns
-    this.setupEffectsDropdowns(element, elementId);
-    
-    // Initialize synthesis dropdowns
-    this.setupSynthesisDropdowns(element, elementId);
-  }
   
-  /**
-   * Setup filter collapsible rows (HPF, LPF, BPF)
-   */
-  setupFilterDropdowns(element, elementId) {
-    const filtersContent = element.querySelector('.filters-content');
-    if (!filtersContent) return;
-    
-    // Clear any existing content (remove old hardcoded HTML)
-    filtersContent.innerHTML = '';
-    
-    // Define filter types
-    const filterTypes = [
-      { key: 'hpf', label: 'HPF', params: [
-        { key: 'hpf', label: 'Frequency', unit: 'Hz' },
-        { key: 'hpq', label: 'HPQ', unit: '' }
-      ]},
-      { key: 'lpf', label: 'LPF', params: [
-        { key: 'lpf', label: 'Frequency', unit: 'Hz' },
-        { key: 'lpq', label: 'LPQ', unit: '' }
-      ]},
-      { key: 'bpf', label: 'BPF', params: [
-        { key: 'bpf', label: 'Frequency', unit: 'Hz' },
-        { key: 'bpq', label: 'Q', unit: '' }
-      ]}
-    ];
-    
-    // Create collapsible rows for each filter type
-    filterTypes.forEach((filterType, index) => {
-      const container = document.createElement('div');
-      container.className = 'filter-collapsible-row';
-      
-      // Map filter types to their color classes
-      const filterColorClasses = {
-        'hpf': 'snippet-group-filters-hp',
-        'lpf': 'snippet-group-filters-lp',
-        'bpf': 'snippet-group-filters-bp'
-      };
-      
-      const colorClass = filterColorClasses[filterType.key] || '';
-      
-      container.innerHTML = `
-        <button class="filter-toggle ${colorClass}" data-filter-key="${filterType.key}">
-          <span class="toggle-icon">▶</span> ${filterType.label}
-        </button>
-        <div class="filter-sliders-container" style="display: none;">
-          <!-- Sliders will be added here -->
-        </div>
-      `;
-      filtersContent.appendChild(container);
-      
-      const toggleBtn = container.querySelector('.filter-toggle');
-      const slidersContainer = container.querySelector('.filter-sliders-container');
-      
-      // Setup toggle handler
-      toggleBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleBtn.classList.toggle('active');
-        const isActive = toggleBtn.classList.contains('active');
-        slidersContainer.style.display = isActive ? 'block' : 'none';
-        
-        // Update toggle icon
-        const icon = toggleBtn.querySelector('.toggle-icon');
-        icon.textContent = isActive ? '▼' : '▶';
-        
-        // Create sliders if not already created
-        if (isActive && slidersContainer.children.length === 0) {
-          filterType.params.forEach((param) => {
-            const paramConfig = NUMERIC_TAG_PARAMS[param.key];
-            if (!paramConfig) return;
-            
-            // Format default value display
-            let defaultDisplay = paramConfig.default.toString();
-            if (param.key === 'bpg' && param.unit === 'dB') {
-              const sign = paramConfig.default >= 0 ? '+' : '';
-              defaultDisplay = `${sign}${paramConfig.default.toFixed(1)} dB`;
-            } else if (param.unit) {
-              defaultDisplay = `${paramConfig.default}${param.unit ? ' ' + param.unit : ''}`;
-            }
-            
-            const sliderRow = document.createElement('div');
-            sliderRow.className = 'slider-row';
-            sliderRow.innerHTML = `
-              <div class="slider-label-row">
-                <label>${param.label}</label>
-                <span class="slider-value">${defaultDisplay}</span>
-              </div>
-              <input type="range" class="filter-slider" data-filter-type="${filterType.key}" data-param-key="${param.key}" 
-                     min="${paramConfig.min}" max="${paramConfig.max}" step="${paramConfig.step}" 
-                     value="${paramConfig.default}" />
-            `;
-            slidersContainer.appendChild(sliderRow);
-            
-            // Setup slider listener
-            const slider = sliderRow.querySelector('.filter-slider');
-            if (slider && !slider.dataset.hasListener) {
-              slider.dataset.hasListener = 'true';
-              slider.addEventListener('input', (e) => {
-                const value = parseFloat(e.target.value);
-                const display = sliderRow.querySelector('.slider-value');
-                if (display) {
-                  let formatted;
-                  if (param.key.includes('f')) {
-                    formatted = Math.round(value) + ' Hz';
-                  } else if (param.key === 'bpg' && param.unit === 'dB') {
-                    // Show dB with +/- sign
-                    const sign = value >= 0 ? '+' : '';
-                    formatted = `${sign}${value.toFixed(1)} dB`;
-                  } else {
-                    formatted = value.toFixed(1) + (param.unit ? ' ' + param.unit : '');
-                  }
-                  queueSliderDisplayUpdate(display, formatted);
-                }
-                this.updateElementFilters(elementId);
-              });
-            }
-          });
-        }
-      });
-    });
-  }
   
-  /**
-   * Setup effects collapsible rows dynamically
-   */
-  setupEffectsDropdowns(element, elementId) {
-    const effectsContent = element.querySelector('.effects-content');
-    if (!effectsContent) return;
-    
-    // Clear any existing content (remove old hardcoded HTML)
-    effectsContent.innerHTML = '';
-    
-    // Define available effects with their sub-parameters
-    const availableEffects = [
-      { 
-        key: 'delay', 
-        label: 'Delay',
-        params: [
-          { key: 'delay', label: 'Delay Mix' },
-          { key: 'delayfeedback', label: 'Delay Feedback' },
-          { key: 'delaytime', label: 'Delay Time' }
-        ]
-      },
-      { 
-        key: 'room', 
-        label: 'Reverb',
-        params: [
-          { key: 'room', label: 'Room Mix' },
-          { key: 'roomsize', label: 'Room Size' },
-          { key: 'roomlp', label: 'Low-pass' },
-          { key: 'roomdim', label: 'Dimension' },
-          { key: 'roomfade', label: 'Fade' },
-          { key: 'iresponse', label: 'Impulse Response' }
-        ]
-      }
-    ];
-    
-    // Create collapsible rows for each effect
-    availableEffects.forEach((effect) => {
-      const container = document.createElement('div');
-      container.className = 'effect-collapsible-row';
-      
-      // Map effect types to their color classes
-      const effectColorClasses = {
-        'delay': 'snippet-group-delay',
-        'room': 'snippet-group-reverb'
-      };
-      
-      const colorClass = effectColorClasses[effect.key] || '';
-      
-      container.innerHTML = `
-        <button class="effect-toggle ${colorClass}" data-effect-key="${effect.key}">
-          <span class="toggle-icon">▶</span> ${effect.label}
-        </button>
-        <div class="effect-sliders-container" style="display: none;">
-          <!-- Sliders will be added here -->
-        </div>
-      `;
-      effectsContent.appendChild(container);
-      
-      const toggleBtn = container.querySelector('.effect-toggle');
-      const slidersContainer = container.querySelector('.effect-sliders-container');
-      
-      // Setup toggle handler
-      toggleBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        toggleBtn.classList.toggle('active');
-        const isActive = toggleBtn.classList.contains('active');
-        slidersContainer.style.display = isActive ? 'block' : 'none';
-        
-        // Update toggle icon
-        const icon = toggleBtn.querySelector('.toggle-icon');
-        icon.textContent = isActive ? '▼' : '▶';
-        
-        // Create sliders if not already created
-        if (isActive && slidersContainer.children.length === 0) {
-          effect.params.forEach((param) => {
-            const paramConfig = NUMERIC_TAG_PARAMS[param.key];
-            if (!paramConfig) return;
-            
-            const sliderRow = document.createElement('div');
-            sliderRow.className = 'slider-row';
-            sliderRow.innerHTML = `
-              <div class="slider-label-row">
-                <label>${param.label}</label>
-                <span class="slider-value">${paramConfig.default.toFixed(2)}${paramConfig.unit ? ' ' + paramConfig.unit : ''}</span>
-              </div>
-              <input type="range" class="effect-slider" data-effect-key="${param.key}" 
-                     min="${paramConfig.min}" max="${paramConfig.max}" step="${paramConfig.step}" 
-                     value="${paramConfig.default}" />
-            `;
-            slidersContainer.appendChild(sliderRow);
-            
-            // Setup slider listener
-            const slider = sliderRow.querySelector('.effect-slider');
-            if (slider && !slider.dataset.hasListener) {
-              slider.dataset.hasListener = 'true';
-              slider.addEventListener('input', (e) => {
-                const value = parseFloat(e.target.value);
-                const display = sliderRow.querySelector('.slider-value');
-                if (display) {
-                  const formatted = value.toFixed(2) + (paramConfig.unit ? ' ' + paramConfig.unit : '');
-                  queueSliderDisplayUpdate(display, formatted);
-                }
-                this.updateElementEffects(elementId);
-              });
-            }
-          });
-        }
-        
-        await this.updateElementEffects(elementId);
-      });
-    });
-  }
   
-  /**
-   * Setup synthesis ADSR sliders (always visible, vertical)
-   */
-  setupSynthesisDropdowns(element, elementId) {
-    const synthesisContent = element.querySelector('.synthesis-content');
-    if (!synthesisContent) return;
-    
-    // Clear any existing content (remove old hardcoded HTML)
-    synthesisContent.innerHTML = '';
-    
-    // Create ADSR sliders container - always visible
-    const container = document.createElement('div');
-    container.className = 'synthesis-sliders-container';
-    
-    // Define ADSR parameters
-    const adsrParams = [
-      { key: 'attack', label: 'Attack', min: 0, max: 2, step: 0.01, default: 0.01, unit: 's' },
-      { key: 'decay', label: 'Decay', min: 0, max: 2, step: 0.01, default: 0.1, unit: 's' },
-      { key: 'sustain', label: 'Sustain', min: 0, max: 1, step: 0.01, default: 0.5, unit: '' },
-      { key: 'release', label: 'Release', min: 0, max: 5, step: 0.01, default: 0.1, unit: 's' }
-    ];
-    
-    adsrParams.forEach((param) => {
-      const sliderRow = document.createElement('div');
-      sliderRow.className = 'slider-row';
-      sliderRow.innerHTML = `
-        <div class="slider-label-row">
-          <label>${param.label}</label>
-          <span class="slider-value">${param.default.toFixed(2)}${param.unit ? ' ' + param.unit : ''}</span>
-        </div>
-        <input type="range" class="synth-slider ${param.key}-slider" 
-               min="${param.min}" max="${param.max}" step="${param.step}" 
-               value="${param.default}" />
-      `;
-      container.appendChild(sliderRow);
-      
-      // Setup slider listener
-      const slider = sliderRow.querySelector('.synth-slider');
-      if (slider && !slider.dataset.hasListener) {
-        slider.dataset.hasListener = 'true';
-        slider.addEventListener('input', (e) => {
-          const value = parseFloat(e.target.value);
-          const display = sliderRow.querySelector('.slider-value');
-          if (display) {
-            const formatted = value.toFixed(2) + (param.unit ? ' ' + param.unit : '');
-            queueSliderDisplayUpdate(display, formatted);
-          }
-          this.updateElementSynthesis(elementId);
-        });
-      }
-    });
-    
-    synthesisContent.appendChild(container);
-  }
-  
-  /**
-   * Update element effects in the pattern
-   */
-  async updateElementEffects(elementId) {
-    const element = document.querySelector(`[data-sound-id="${elementId}"]`);
-    if (!element) return;
-    
-    // Get effect values from collapsible rows
-    const effectRows = element.querySelectorAll('.effect-collapsible-row');
-    const effects = {};
-    
-    effectRows.forEach(row => {
-      const toggleBtn = row.querySelector('.effect-toggle');
-      const isActive = toggleBtn.classList.contains('active');
-      const sliders = row.querySelectorAll('.effect-slider');
-      
-      if (isActive && sliders.length > 0) {
-        // Get all parameter values for this effect
-        sliders.forEach(slider => {
-          const effectKey = slider.dataset.effectKey;
-          if (effectKey) {
-            effects[effectKey] = parseFloat(slider.value);
-          }
-        });
-      }
-    });
-    
-    // Store effect values for later use when updating patterns
-    if (!this.elementEffects) {
-      this.elementEffects = {};
-    }
-    
-    this.elementEffects[elementId] = effects;
-    
-    console.log(`🎛️ Effects updated for ${elementId}:`, this.elementEffects[elementId]);
-    
-    this.scheduleElementPatternApply(elementId);
-  }
-  
-  /**
-   * Update element filters in the pattern
-   */
-  async updateElementFilters(elementId) {
-    const element = document.querySelector(`[data-sound-id="${elementId}"]`);
-    if (!element) return;
-    
-    // Get filter values from collapsible rows
-    const filterRows = element.querySelectorAll('.filter-collapsible-row');
-    const filters = {};
-    
-    filterRows.forEach(row => {
-      const toggleBtn = row.querySelector('.filter-toggle');
-      const isActive = toggleBtn.classList.contains('active');
-      const sliders = row.querySelectorAll('.filter-slider');
-      
-      if (isActive && sliders.length > 0) {
-        // Get all parameter values for this filter type
-        sliders.forEach(slider => {
-          const paramKey = slider.dataset.paramKey;
-          if (paramKey) {
-            filters[paramKey] = parseFloat(slider.value);
-          }
-        });
-      }
-    });
-    
-    // Store filter values for later use when updating patterns
-    if (!this.elementFilters) {
-      this.elementFilters = {};
-    }
-    
-    this.elementFilters[elementId] = filters;
-    
-    console.log(`🔊 Filters updated for ${elementId}:`, this.elementFilters[elementId]);
-    
-    this.scheduleElementPatternApply(elementId);
-  }
-  
-  /**
-   * Update element synthesis parameters (ADSR envelope)
-   */
-  async updateElementSynthesis(elementId) {
-    const element = document.querySelector(`[data-sound-id="${elementId}"]`);
-    if (!element) return;
-    
-    // Get synthesis parameter values
-    const attackSlider = element.querySelector('.attack-slider');
-    const decaySlider = element.querySelector('.decay-slider');
-    const sustainSlider = element.querySelector('.sustain-slider');
-    const releaseSlider = element.querySelector('.release-slider');
-    
-    const attack = attackSlider ? parseFloat(attackSlider.value) : 0.01;
-    const decay = decaySlider ? parseFloat(decaySlider.value) : 0.1;
-    const sustain = sustainSlider ? parseFloat(sustainSlider.value) : 0.5;
-    const release = releaseSlider ? parseFloat(releaseSlider.value) : 0.1;
-    
-    // Store synthesis values for later use when updating patterns
-    if (!this.elementSynthesis) {
-      this.elementSynthesis = {};
-    }
-    
-    this.elementSynthesis[elementId] = {
-      attack,
-      decay,
-      sustain,
-      release
-    };
-    
-    console.log(`🎹 Synthesis updated for ${elementId}:`, this.elementSynthesis[elementId]);
-    
-    this.scheduleElementPatternApply(elementId);
-  }
-  
-  scheduleElementPatternApply(elementId) {
-    if (!elementId) return;
-    this._parameterApplyTimers = this._parameterApplyTimers || new Map();
-    if (this._parameterApplyTimers.has(elementId)) {
-      clearTimeout(this._parameterApplyTimers.get(elementId));
-    }
-    const timer = setTimeout(() => {
-      this.applyEffectsAndFiltersToPattern(elementId);
-      this._parameterApplyTimers.delete(elementId);
-    }, getSliderDebounceDelay());
-    this._parameterApplyTimers.set(elementId, timer);
-  }
-  
-  /**
-   * Get pattern with effects, filters, and synthesis applied
-   * Returns the modified pattern string (does not save or trigger playback)
-   */
-  getPatternWithEffects(elementId, basePattern) {
-    if (!basePattern) return basePattern;
-    
-    // Remove master-injected modifiers (postgain, pan, fast, slow, cpm) that shouldn't be in saved patterns
-    // These are added dynamically when playing through master, but shouldn't be persisted
-    // Use case-insensitive and global flags to catch all instances
-    let cleanedPattern = basePattern;
-    // Remove all instances of postgain() - must remove all occurrences
-    cleanedPattern = cleanedPattern.replace(/\.postgain\s*\([^)]*\)/gi, '');
-    cleanedPattern = cleanedPattern.replace(/\.pan\s*\([^)]*\)/gi, '');
-    cleanedPattern = cleanedPattern.replace(/\.fast\s*\([^)]*\)/gi, '');
-    cleanedPattern = cleanedPattern.replace(/\.slow\s*\([^)]*\)/gi, '');
-    cleanedPattern = cleanedPattern.replace(/\.cpm\s*\([^)]*\)/gi, '');
-    // Clean up any double dots or extra whitespace that might result
-    cleanedPattern = cleanedPattern.replace(/\.\.+/g, '.').trim();
-    cleanedPattern = cleanedPattern.replace(/\.+$/, '').trim();
-    cleanedPattern = cleanedPattern.replace(/\s+\./g, '.');
-    
-    // Get effects, filters, and synthesis
-    const effects = this.elementEffects?.[elementId] || {};
-    const filters = this.elementFilters?.[elementId] || {};
-    const synthesis = this.elementSynthesis?.[elementId] || {};
-    
-    // Helper to check whether a value differs from its default (so we only emit necessary modifiers)
-    const effectValueChanged = (key, value) => {
-      if (value === undefined) return false;
-      const config = NUMERIC_TAG_PARAMS[key];
-      if (!config) return true;
-      return value !== config.default;
-    };
-    const formatEffectValue = (key, value) => {
-      if (value === undefined) return '';
-      const config = NUMERIC_TAG_PARAMS[key];
-      if (config?.unit === 'Hz' || key === 'roomlp') {
-        return Math.round(value);
-      }
-      return value.toFixed(2);
-    };
-    
-    // Build modifiers string
-    let modifiers = [];
-    
-    // Add effects
-    if (effectValueChanged('delay', effects.delay)) {
-      modifiers.push(`.delay(${formatEffectValue('delay', effects.delay)})`);
-    }
-    if (effectValueChanged('delayfeedback', effects.delayfeedback)) {
-      modifiers.push(`.delayfeedback(${formatEffectValue('delayfeedback', effects.delayfeedback)})`);
-    }
-    if (effectValueChanged('delaytime', effects.delaytime)) {
-      modifiers.push(`.delaytime(${formatEffectValue('delaytime', effects.delaytime)})`);
-    }
-    if (effectValueChanged('room', effects.room)) {
-      modifiers.push(`.room(${formatEffectValue('room', effects.room)})`);
-    }
-    if (effectValueChanged('roomsize', effects.roomsize)) {
-      modifiers.push(`.roomsize(${formatEffectValue('roomsize', effects.roomsize)})`);
-    }
-    if (effectValueChanged('roomlp', effects.roomlp) && effects.roomlp < NUMERIC_TAG_PARAMS.roomlp.default) {
-      modifiers.push(`.roomlp(${formatEffectValue('roomlp', effects.roomlp)})`);
-    }
-    if (effectValueChanged('roomdim', effects.roomdim)) {
-      modifiers.push(`.roomdim(${formatEffectValue('roomdim', effects.roomdim)})`);
-    }
-    if (effectValueChanged('roomfade', effects.roomfade)) {
-      modifiers.push(`.roomfade(${formatEffectValue('roomfade', effects.roomfade)})`);
-    }
-    if (effectValueChanged('iresponse', effects.iresponse)) {
-      modifiers.push(`.iresponse(${formatEffectValue('iresponse', effects.iresponse)})`);
-    }
-    
-    // Add filters
-    if (filters.lpf !== undefined && filters.lpf < 20000) {
-      modifiers.push(`.lpf(${Math.round(filters.lpf)})`);
-    }
-    if (filters.hpf !== undefined && filters.hpf > 20) {
-      modifiers.push(`.hpf(${Math.round(filters.hpf)})`);
-    }
-    if (filters.bpf !== undefined) {
-      modifiers.push(`.bpf(${Math.round(filters.bpf)})`);
-    }
-    if (filters.bpq !== undefined && filters.bpq > 0) {
-      modifiers.push(`.bpq(${filters.bpq.toFixed(1)})`);
-    }
-    
-    if (filters.lpq !== undefined && filters.lpq > 0) {
-      modifiers.push(`.lpq(${filters.lpq.toFixed(1)})`);
-    }
-    if (filters.hpq !== undefined && filters.hpq > 0) {
-      modifiers.push(`.hpq(${filters.hpq.toFixed(1)})`);
-    }
-    
-    // Add synthesis (ADSR envelope) - only if values differ from defaults
-    if (synthesis.attack !== undefined && synthesis.attack !== 0.01) {
-      modifiers.push(`.attack(${synthesis.attack.toFixed(2)})`);
-    }
-    if (synthesis.decay !== undefined && synthesis.decay !== 0.1) {
-      modifiers.push(`.decay(${synthesis.decay.toFixed(2)})`);
-    }
-    if (synthesis.sustain !== undefined && synthesis.sustain !== 0.5) {
-      modifiers.push(`.sustain(${synthesis.sustain.toFixed(2)})`);
-    }
-    if (synthesis.release !== undefined && synthesis.release !== 0.1) {
-      modifiers.push(`.release(${synthesis.release.toFixed(2)})`);
-    }
-    
-    // Return pattern with modifiers
-    return modifiers.length > 0 ? cleanedPattern + modifiers.join('') : cleanedPattern;
-  }
-  
-  /**
-   * Apply effects, filters, and synthesis to the current pattern
-   */
-  async applyEffectsAndFiltersToPattern(elementId) {
-    if (!elementId) return;
-    this._pendingPatternApplyStates = this._pendingPatternApplyStates || new Map();
-    const existingState = this._pendingPatternApplyStates.get(elementId);
-    if (existingState) {
-      existingState.queued = true;
-      return;
-    }
-    const state = { queued: false };
-    this._pendingPatternApplyStates.set(elementId, state);
 
-    // Get the base pattern
+  /**
+   * Initialize MIDI controls for an element
+   */
+  initializeMidiControls(element, elementId) {
+    if (!element || !elementId) return;
+    
+    const midiToggle = element.querySelector('.midi-enable-toggle');
+    const midiChannelSelect = element.querySelector('.midi-channel-select');
+    
+    const applyUIState = () => {
+      const settings = this.getElementMidiSettings(elementId);
+      if (midiToggle) {
+        midiToggle.checked = !!settings.enabled;
+      }
+      if (midiChannelSelect) {
+        midiChannelSelect.value = String(settings.channel);
+        midiChannelSelect.disabled = !settings.enabled;
+      }
+    };
+    
+    applyUIState();
+    
+    if (midiToggle && !midiToggle.dataset.hasListener) {
+      midiToggle.dataset.hasListener = 'true';
+      midiToggle.addEventListener('change', (e) => {
+        const enabled = !!e.target.checked;
+        if (midiChannelSelect) {
+          midiChannelSelect.disabled = !enabled;
+        }
+        this.updateElementMidiSettings(elementId, { enabled });
+      });
+    }
+    
+    if (midiChannelSelect && !midiChannelSelect.dataset.hasListener) {
+      midiChannelSelect.dataset.hasListener = 'true';
+      midiChannelSelect.addEventListener('change', (e) => {
+        const channel = parseInt(e.target.value, 10) || 1;
+        this.updateElementMidiSettings(elementId, { channel });
+      });
+    }
+  }
+  
+  getElementMidiSettings(elementId) {
+    if (!this.elementMidiSettings) {
+      this.elementMidiSettings = {};
+    }
+    
+    if (this.elementMidiSettings[elementId]) {
+      const existing = this.elementMidiSettings[elementId];
+      return {
+        enabled: !!existing.enabled,
+        channel: this.normalizeMidiChannel(existing.channel)
+      };
+    }
+    
+    const defaults = this.deriveMidiSettingsFromPattern(
+      soundConfig.getElementConfig(elementId)?.pattern
+    ) || { enabled: false, channel: 1 };
+    
+    this.elementMidiSettings[elementId] = defaults;
+    return defaults;
+  }
+  
+  normalizeMidiChannel(channel) {
+    const numeric = Number(channel);
+    if (!Number.isFinite(numeric)) {
+      return 1;
+    }
+    return Math.min(16, Math.max(1, Math.round(numeric)));
+  }
+  
+  updateElementMidiSettings(elementId, updates = {}) {
+    if (!elementId) return;
+    const current = this.getElementMidiSettings(elementId);
+    const next = {
+      enabled: updates.enabled !== undefined ? !!updates.enabled : current.enabled,
+      channel: this.normalizeMidiChannel(
+        updates.channel !== undefined ? updates.channel : current.channel
+      )
+    };
+    this.elementMidiSettings[elementId] = next;
+    this.persistMidiSettings();
+    this.applyMidiSettingsToPattern(elementId);
+  }
+  
+  loadStoredMidiSettings() {
+    try {
+      const raw = localStorage.getItem('element-midi-settings');
+      if (!raw) {
+        return {};
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') {
+        return {};
+      }
+      const normalized = {};
+      Object.entries(parsed).forEach(([elementId, settings]) => {
+        if (!settings || typeof settings !== 'object') {
+          return;
+        }
+        normalized[elementId] = {
+          enabled: !!settings.enabled,
+          channel: this.normalizeMidiChannel(settings.channel)
+        };
+      });
+      return normalized;
+    } catch (error) {
+      console.warn('⚠️ Unable to load MIDI settings:', error);
+      return {};
+    }
+  }
+  
+  persistMidiSettings() {
+    try {
+      localStorage.setItem('element-midi-settings', JSON.stringify(this.elementMidiSettings || {}));
+    } catch (error) {
+      console.warn('⚠️ Unable to persist MIDI settings:', error);
+    }
+  }
+  
+  deriveMidiSettingsFromPattern(pattern) {
+    if (!pattern || !/\.midi\b/i.test(pattern)) {
+      return null;
+    }
+    const midiPortMatch = pattern.match(/\.midiport\s*\(\s*(\d+)\s*\)/i);
+    const channel = midiPortMatch ? this.normalizeMidiChannel(parseInt(midiPortMatch[1], 10) + 1) : 1;
+    return { enabled: true, channel };
+  }
+  
+  stripMidiModifiers(pattern) {
+    if (!pattern) return pattern;
+    let cleaned = pattern;
+    cleaned = cleaned.replace(/\.midiport\s*\([^)]*\)/gi, '');
+    cleaned = cleaned.replace(/\.midi\s*\([^)]*\)/gi, '');
+    cleaned = cleaned.replace(/\.midi\b/gi, '');
+    cleaned = cleaned.replace(/\.\.+/g, '.');
+    cleaned = cleaned.replace(/\s+\./g, '.');
+    cleaned = cleaned.replace(/\.\s*$/, '');
+    return cleaned.trim();
+  }
+  
+  getPatternWithMidi(elementId, basePattern) {
+    if (!basePattern) return basePattern;
+    const cleanedPattern = this.stripMidiModifiers(basePattern);
+    const settings = this.getElementMidiSettings(elementId);
+    if (!settings.enabled) {
+      return cleanedPattern;
+    }
+    const channelArg = Math.max(0, this.normalizeMidiChannel(settings.channel) - 1);
+    return `${cleanedPattern}.midi().midiport(${channelArg})`;
+  }
+  
+  async applyMidiSettingsToPattern(elementId) {
+    if (!elementId) return;
     const savedConfig = this.loadElementConfig(elementId);
     if (!savedConfig || !savedConfig.pattern) {
-      this._pendingPatternApplyStates.delete(elementId);
-      if (state.queued) {
-        this.applyEffectsAndFiltersToPattern(elementId);
-      }
       return;
     }
-    
-    const pattern = savedConfig.pattern;
-    const finalPattern = this.getPatternWithEffects(elementId, pattern);
-    
-    if (finalPattern !== pattern) {
-      console.log(`🎚️ Applying effects/filters/synthesis to ${elementId}: ${finalPattern}`);
-    }
-    
-    // Check if element is tracked in master
+    const finalPattern = this.getPatternWithMidi(elementId, savedConfig.pattern);
     const isInMaster = soundManager.trackedPatterns && soundManager.trackedPatterns.has(elementId);
-    
-    // Do not auto-restart playback while adjusting sliders.
-    // Update stored pattern and master display only; playback changes apply on next manual play.
     try {
       if (isInMaster) {
-        // Update the tracked pattern without forcing scheduler start
-        await soundManager.updatePatternInPlace(elementId, finalPattern, /*preventAutoPlay*/ true);
+        await soundManager.updatePatternInPlace(elementId, finalPattern, true);
         this.updateMasterPatternDisplay();
       } else {
-        // If currently playing, avoid stop/restart; changes will reflect on next trigger
         const isPlaying = soundManager.isPlaying(elementId);
         if (!isPlaying) {
-          // Not playing: don't auto-start. Just cache new pattern.
           await soundManager.cachePatternForElement(elementId, finalPattern);
         }
       }
-    } finally {
-      this._pendingPatternApplyStates.delete(elementId);
-      if (state.queued) {
-        this.applyEffectsAndFiltersToPattern(elementId);
-      }
+    } catch (error) {
+      console.warn(`⚠️ Unable to apply MIDI settings to ${elementId}:`, error);
+    }
+  }
+  
+  async saveChannelWithMidi(elementId) {
+    const { getCurrentUser } = await import('./api.js');
+    const user = await getCurrentUser();
+    
+    if (!user) {
+      alert('Please log in to save patterns');
+      return;
+    }
+    
+    const savedConfig = this.loadElementConfig(elementId);
+    if (!savedConfig || !savedConfig.pattern) {
+      this.uiController?.updateStatus?.('Nothing to save for this channel.');
+      return;
+    }
+    
+    const finalPattern = this.getPatternWithMidi(elementId, savedConfig.pattern);
+    
+    if (window.savePatternDialog) {
+      await window.savePatternDialog.show(finalPattern, 'channel', elementId);
+      window.savePatternDialog.setOnSave(async () => {
+        const updatedConfig = { ...savedConfig, pattern: finalPattern };
+        this.saveElementConfig(elementId, updatedConfig, false);
+        patternHistoryStore.markChannelSnapshot(elementId, finalPattern);
+        this.uiController?.updateStatus?.(`Saved channel ${elementId} to cloud.`);
+      });
+    } else {
+      this.uiController?.updateStatus?.('Save dialog not available.');
     }
   }
 
@@ -6705,38 +6288,6 @@ class InteractiveSoundApp {
     this.uiController?.updateStatus?.('Loaded master pattern history entry.');
   }
 
-  async saveChannelWithEffects(elementId) {
-    // Check if user is logged in - required for saving
-    const { getCurrentUser } = await import('./api.js');
-    const user = await getCurrentUser();
-    
-    if (!user) {
-      alert('Please log in to save patterns');
-      return;
-    }
-
-    const savedConfig = this.loadElementConfig(elementId);
-    if (!savedConfig || !savedConfig.pattern) {
-      this.uiController?.updateStatus?.('Nothing to save for this channel.');
-      return;
-    }
-    const finalPattern = this.getPatternWithEffects(elementId, savedConfig.pattern);
-    
-    if (window.savePatternDialog) {
-      // Show save dialog for cloud save
-      await window.savePatternDialog.show(finalPattern, 'channel', elementId);
-      window.savePatternDialog.setOnSave(async (savedPattern) => {
-        // Also save locally
-        const updatedConfig = { ...savedConfig, pattern: finalPattern };
-        this.saveElementConfig(elementId, updatedConfig, false);
-        patternHistoryStore.markChannelSnapshot(elementId, finalPattern);
-        this.uiController?.updateStatus?.(`Saved channel ${elementId} to cloud.`);
-      });
-    } else {
-      this.uiController?.updateStatus?.('Save dialog not available.');
-    }
-  }
-
   async saveMasterHistoryEntry() {
     // Check if user is logged in - required for saving
     const { getCurrentUser } = await import('./api.js');
@@ -6771,30 +6322,6 @@ class InteractiveSoundApp {
     }
   }
   
-  /**
-   * Update synthesis section visibility based on pattern type
-   */
-  updateSynthesisSectionVisibility(elementId, pattern) {
-    const element = document.querySelector(`[data-sound-id="${elementId}"]`);
-    if (!element) return;
-    
-    const synthesisSection = element.querySelector('.synthesis-section');
-    if (!synthesisSection) return;
-    
-    // Check if pattern uses a synth sound
-    const canonicalPattern = replaceSynthAliases(pattern);
-    const isSynthPattern = patternContainsKnownSynth(canonicalPattern);
-    
-    // Show or hide the synthesis section
-    if (isSynthPattern) {
-      synthesisSection.style.display = 'block';
-      console.log(`🎹 Showing synthesis section for ${elementId} (synth pattern detected)`);
-    } else {
-      synthesisSection.style.display = 'none';
-      console.log(`🎹 Hiding synthesis section for ${elementId} (not a synth pattern)`);
-    }
-  }
-
   /**
    * Handle pause button click
    */
@@ -7564,45 +7091,18 @@ class InteractiveSoundApp {
         if (gainSlider) gainSlider.value = 0.8;
         if (panSlider) panSlider.value = 0;
         
-        // Clear effects, filters, and synthesis UI
-        const filterRows = element.querySelectorAll('.filter-collapsible-row');
-        filterRows.forEach(row => {
-          const toggleBtn = row.querySelector('.filter-toggle');
-          const slidersContainer = row.querySelector('.filter-sliders-container');
-          if (toggleBtn) {
-            toggleBtn.classList.remove('active');
-            const icon = toggleBtn.querySelector('.toggle-icon');
-            if (icon) icon.textContent = '▶';
-          }
-          if (slidersContainer) {
-            slidersContainer.style.display = 'none';
-            slidersContainer.innerHTML = '';
-          }
-        });
-        
-        const effectRows = element.querySelectorAll('.effect-collapsible-row');
-        effectRows.forEach(row => {
-          const toggleBtn = row.querySelector('.effect-toggle');
-          const slidersContainer = row.querySelector('.effect-sliders-container');
-          if (toggleBtn) {
-            toggleBtn.classList.remove('active');
-            const icon = toggleBtn.querySelector('.toggle-icon');
-            if (icon) icon.textContent = '▶';
-          }
-          if (slidersContainer) {
-            slidersContainer.style.display = 'none';
-            slidersContainer.innerHTML = '';
-          }
-        });
-        
-        // Reset synthesis section
-        const synthesisSection = element.querySelector('.synthesis-section');
-        if (synthesisSection) {
-          synthesisSection.style.display = 'none';
-          const synthesisContent = synthesisSection.querySelector('.synthesis-content');
-          if (synthesisContent) {
-            synthesisContent.innerHTML = '';
-          }
+        // Reset MIDI controls
+        const midiToggle = element.querySelector('.midi-enable-toggle');
+        const midiChannelSelect = element.querySelector('.midi-channel-select');
+        if (midiToggle) {
+          midiToggle.checked = false;
+        }
+        if (midiChannelSelect) {
+          midiChannelSelect.value = '1';
+          midiChannelSelect.disabled = true;
+        }
+        if (this.elementMidiSettings) {
+          delete this.elementMidiSettings[elementId];
         }
       }
     });
@@ -7612,10 +7112,9 @@ class InteractiveSoundApp {
     this.mutedElements.clear();
     this.soloedElements.clear();
     
-    // Clear element effects, filters, and synthesis
-    this.elementEffects = {};
-    this.elementFilters = {};
-    this.elementSynthesis = {};
+    // Clear MIDI settings
+    this.elementMidiSettings = {};
+    this.persistMidiSettings();
     
     // Reset master state
     this.masterActive = false;
@@ -7817,6 +7316,16 @@ class InteractiveSoundApp {
           }
           config.bank = normalizedBank;
         }
+        if (config && config.pattern) {
+          if (!this.elementMidiSettings || !this.elementMidiSettings[elementId]) {
+            const derivedMidi = this.deriveMidiSettingsFromPattern(config.pattern);
+            if (derivedMidi) {
+              this.elementMidiSettings = this.elementMidiSettings || {};
+              this.elementMidiSettings[elementId] = derivedMidi;
+              this.persistMidiSettings();
+            }
+          }
+        }
         return config;
       }
     } catch (error) {
@@ -7893,9 +7402,6 @@ class InteractiveSoundApp {
       // Don't show circle as playing when just saving - only when actually playing
       this.updateStatusDots(elementId, hasPattern, false);
       
-      // Show/hide synthesis section based on whether it's a synth pattern
-      this.updateSynthesisSectionVisibility(elementId, config.pattern);
-      
       // Do NOT stop master or scheduler on save; allow seamless live updates
       const wasMasterActive = soundManager.masterActive;
       
@@ -7965,6 +7471,9 @@ class InteractiveSoundApp {
       }
       
       // Visualizations removed - no longer needed
+      
+      // Re-apply MIDI modifiers to live pattern
+      this.applyMidiSettingsToPattern(elementId);
       
       console.log(`✅ Saved config for ${elementId}:`, config);
     } catch (error) {
@@ -12768,85 +12277,35 @@ class InteractiveSoundApp {
           <button class="mute-button" title="Mute">M</button>
         </div>
         
-        <!-- Synthesis Section (ADSR Envelope) - Only for synth sounds -->
-        <div class="collapsible-section synthesis-section" style="display: none;">
-          <button class="collapsible-toggle" data-target="synthesis">
-            <span class="toggle-icon">▶</span> Synthesis
-          </button>
-          <div class="collapsible-content synthesis-content">
-            <div class="slider-row">
-              <label>Attack</label>
-              <input type="range" class="synth-slider attack-slider" min="0" max="2" step="0.01" value="0.01" />
-              <span class="slider-value">0.01</span>
-            </div>
-            <div class="slider-row">
-              <label>Decay</label>
-              <input type="range" class="synth-slider decay-slider" min="0" max="2" step="0.01" value="0.1" />
-              <span class="slider-value">0.1</span>
-            </div>
-            <div class="slider-row">
-              <label>Sustain</label>
-              <input type="range" class="synth-slider sustain-slider" min="0" max="1" step="0.01" value="0.5" />
-              <span class="slider-value">0.5</span>
-            </div>
-            <div class="slider-row">
-              <label>Release</label>
-              <input type="range" class="synth-slider release-slider" min="0" max="5" step="0.01" value="0.1" />
-              <span class="slider-value">0.1</span>
-            </div>
+        <div class="element-midi-settings">
+          <div class="midi-toggle-row">
+            <label class="midi-toggle-label">
+              <input type="checkbox" class="midi-enable-toggle" />
+              <span>Send MIDI</span>
+            </label>
+            <label class="midi-channel-label">
+              Channel
+              <select class="midi-channel-select" disabled>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="9">9</option>
+                <option value="10">10</option>
+                <option value="11">11</option>
+                <option value="12">12</option>
+                <option value="13">13</option>
+                <option value="14">14</option>
+                <option value="15">15</option>
+                <option value="16">16</option>
+              </select>
+            </label>
           </div>
-        </div>
-        
-        <!-- Filters Section -->
-        <div class="collapsible-section">
-          <button class="collapsible-toggle" data-target="filters">
-            <span class="toggle-icon">▶</span> Filters
-          </button>
-          <div class="collapsible-content filters-content">
-            <div class="slider-row">
-              <label>Low-pass</label>
-              <span class="slider-endpoint slider-endpoint--min">20 Hz</span>
-              <input type="range" class="filter-slider lpf-slider" min="20" max="20000" step="10" value="20000" />
-              <span class="slider-value">20000</span>
-              <span class="slider-endpoint slider-endpoint--max">20 kHz</span>
-            </div>
-            <div class="slider-row">
-              <label>High-pass</label>
-              <span class="slider-endpoint slider-endpoint--min">20 Hz</span>
-              <input type="range" class="filter-slider hpf-slider" min="20" max="20000" step="10" value="20" />
-              <span class="slider-value">20</span>
-              <span class="slider-endpoint slider-endpoint--max">20 kHz</span>
-            </div>
-            <div class="slider-row">
-              <label>Resonance</label>
-              <input type="range" class="filter-slider resonance-slider" min="0" max="20" step="0.1" value="0" />
-              <span class="slider-value">0</span>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Effects Section -->
-        <div class="collapsible-section">
-          <button class="collapsible-toggle" data-target="effects">
-            <span class="toggle-icon">▶</span> Effects
-          </button>
-          <div class="collapsible-content effects-content">
-            <div class="slider-row">
-              <label>Reverb</label>
-              <input type="range" class="effect-slider reverb-slider" min="0" max="1" step="0.01" value="0" />
-              <span class="slider-value">0</span>
-            </div>
-            <div class="slider-row">
-              <label>Delay</label>
-              <input type="range" class="effect-slider delay-slider" min="0" max="1" step="0.01" value="0" />
-              <span class="slider-value">0</span>
-            </div>
-            <div class="slider-row">
-              <label>Distortion</label>
-              <input type="range" class="effect-slider distortion-slider" min="0" max="10" step="0.1" value="0" />
-              <span class="slider-value">0</span>
-            </div>
-          </div>
+          <p class="midi-hint">Adds .midi() to the pattern and routes it to the selected MIDI channel.</p>
         </div>
         
         <div class="element-action-buttons">
@@ -12981,8 +12440,8 @@ class InteractiveSoundApp {
       });
     }
     
-    // Setup collapsible sections (Effects & Filters)
-    this.setupCollapsibleSections(element, elementId);
+    // Setup MIDI controls
+    this.initializeMidiControls(element, elementId);
   }
 }
 
