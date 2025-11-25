@@ -291,6 +291,18 @@ export class LoginModal {
 
     const urlParams = new URLSearchParams(window.location.search);
     const authStatus = urlParams.get('auth');
+    const unlockBodyScroll = () => {
+      if (document.body.style.overflow === 'hidden') {
+        document.body.style.overflow = '';
+      }
+    };
+    const hideIfVisible = () => {
+      if (this.modal && this.modal.style.display !== 'none') {
+        this.hide();
+      } else {
+        unlockBodyScroll();
+      }
+    };
     if (authStatus === 'success') {
       // Wait longer for session cookie to be set and processed by browser
       // After Google OAuth redirect, cookies need time to be stored
@@ -305,10 +317,14 @@ export class LoginModal {
               console.error('❌ Auth check failed after retry - session may not be set');
               this.show();
               this.setStatus('Login successful but session not established. Please refresh the page.', 'error');
+            } else {
+              console.log('✅ Auth check successful after Google login (retry)');
+              hideIfVisible();
             }
           }, 1000);
         } else {
           console.log('✅ Auth check successful after Google login');
+          hideIfVisible();
         }
       }, 500);
       const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
