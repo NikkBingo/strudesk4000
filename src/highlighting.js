@@ -1,115 +1,89 @@
-import { highlightMiniLocations, updateMiniLocations } from '@strudel/codemirror/highlight.mjs';
-import { Drawer } from '@strudel/draw';
-import { getStrudelEditor } from './strudelReplEditor.js';
+import { setStrudelEditorHighlights } from './strudelReplEditor.js';
 
-let transpilerPromise;
-const pendingRefreshTimers = new Map();
-const lastAppliedCode = new Map();
+const MASTER_EDITOR_ID = 'master-pattern';
+let highlightLoopId = null;
+let highlightActive = false;
+let schedulerWarningShown = false;
 
-async function getTranspiler() {
-  if (!transpilerPromise) {
-    transpilerPromise = import('@strudel/transpiler')
-      .then((module) => module?.transpiler)
-      .catch((err) => {
-        console.warn('⚠️ Unable to load Strudel transpiler for highlighting:', err);
-        return null;
-      });
+function collectActiveRanges(haps) {
+  const ranges = [];
+  const seen = new Set();
+  if (!Array.isArray(haps)) {
+    return ranges;
   }
-  return transpilerPromise;
+  haps.forEach((hap) => {
+    const locations = hap?.context?.locations;
+    if (!Array.isArray(locations)) {
+      return;
+    }
+    locations.forEach((loc) => {
+      if (typeof loc?.start !== 'number' || typeof loc?.end !== 'number') {
+        return;
+      }
+      const from = Math.max(0, Math.min(loc.start, loc.end));
+      const to = Math.max(from, Math.max(loc.start, loc.end));
+      const key = `${from}:${to}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        ranges.push({ from, to });
+      }
+    });
+  });
+  return ranges;
 }
 
-async function applyMiniLocations(editorId, code) {
-  const editor = getStrudelEditor(editorId);
-  if (!editor) {
+function runHighlightLoop() {
+  if (!highlightActive) {
+    highlightLoopId = null;
     return;
   }
 
-  const normalized = typeof code === 'string' ? code : '';
-  lastAppliedCode.set(editorId, normalized);
+  const scheduler = window?.strudel?.scheduler;
+  const pattern = scheduler?.pattern;
 
-  if (!normalized.trim()) {
-    updateMiniLocations(editor, []);
+  if (!scheduler || typeof scheduler.now !== 'function' || !pattern || typeof pattern.queryArc !== 'function') {
+    if (!schedulerWarningShown) {
+      console.warn('⚠️ Unable to update highlights - Strudel scheduler not ready.');
+      schedulerWarningShown = true;
+    }
+    highlightLoopId = requestAnimationFrame(runHighlightLoop);
     return;
   }
+
+  schedulerWarningShown = false;
 
   try {
-    const transpiler = await getTranspiler();
-    if (!transpiler) {
-      return;
-    }
-    const { miniLocations = [] } =
-      transpiler(normalized, {
-        wrapAsync: false,
-        addReturn: false,
-        emitMiniLocations: true,
-        emitWidgets: false,
-      }) || {};
-    updateMiniLocations(editor, miniLocations);
+    const lookAhead = 0.05;
+    const lookBehind = 0.05;
+    const now = scheduler.now();
+    const begin = Math.max(0, now - lookBehind);
+    const end = now + lookAhead;
+    const haps = pattern.queryArc(begin, end) || [];
+    const ranges = collectActiveRanges(haps);
+    setStrudelEditorHighlights(MASTER_EDITOR_ID, ranges);
   } catch (error) {
-    console.warn('⚠️ Unable to compute mini locations for highlighting:', error);
+    console.warn('⚠️ Unable to update code highlights:', error);
   }
-}
 
-export function scheduleMiniLocationRefresh(editorId, codeSource, delay = 250) {
-  if (!editorId) return;
-  const getter = typeof codeSource === 'function' ? codeSource : () => codeSource;
-  if (pendingRefreshTimers.has(editorId)) {
-    clearTimeout(pendingRefreshTimers.get(editorId));
-  }
-  pendingRefreshTimers.set(
-    editorId,
-    setTimeout(() => {
-      pendingRefreshTimers.delete(editorId);
-      try {
-        const code = getter() ?? '';
-        if (lastAppliedCode.get(editorId) === code) {
-          return;
-        }
-        applyMiniLocations(editorId, code);
-      } catch (err) {
-        console.warn('⚠️ Failed to refresh mini locations:', err);
-      }
-    }, delay),
-  );
-}
-
-let masterDrawer = null;
-
-function ensureMasterDrawer() {
-  if (masterDrawer) {
-    return masterDrawer;
-  }
-  masterDrawer = new Drawer((haps, time) => {
-    const editor = getStrudelEditor('master-pattern');
-    if (!editor) {
-      return;
-    }
-    highlightMiniLocations(editor, time, haps);
-  }, [-0.2, 0.05]);
-  return masterDrawer;
+  highlightLoopId = requestAnimationFrame(runHighlightLoop);
 }
 
 export function startMasterHighlighting() {
-  const scheduler = window?.strudel?.scheduler;
-  if (!scheduler) {
-    console.warn('⚠️ Cannot start master highlighting without Strudel scheduler');
+  if (highlightActive) {
     return;
   }
-  const drawer = ensureMasterDrawer();
-  try {
-    drawer.start(scheduler);
-  } catch (error) {
-    console.warn('⚠️ Unable to start master highlighting drawer:', error);
+  highlightActive = true;
+  if (!highlightLoopId) {
+    highlightLoopId = requestAnimationFrame(runHighlightLoop);
   }
 }
 
 export function stopMasterHighlighting() {
-  if (masterDrawer) {
-    masterDrawer.stop();
+  highlightActive = false;
+  if (highlightLoopId) {
+    cancelAnimationFrame(highlightLoopId);
+    highlightLoopId = null;
   }
-  const editor = getStrudelEditor('master-pattern');
-  if (editor) {
-    highlightMiniLocations(editor, 0, []);
-  }
+  setStrudelEditorHighlights(MASTER_EDITOR_ID, []);
 }
 
