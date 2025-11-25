@@ -4293,7 +4293,7 @@ class InteractiveSoundApp {
         }
       }
       
-      if (this.selectedVisualizer === 'pianoroll') {
+      if (this.selectedVisualizer === 'pianoroll' || this.selectedVisualizer === 'spectrum') {
         try {
           const { getDrawContext } = await import('@strudel/draw');
           const ctx = getDrawContext(canvasId, { contextType: '2d' });
@@ -4318,12 +4318,9 @@ class InteractiveSoundApp {
         max: 0
       })`;
       } else if (this.selectedVisualizer === 'pianoroll') {
-        this.externalVisualizerType = 'pianoroll';
-        this.watchForExternalVisualizerCanvas('pianoroll');
-        if (this.masterPunchcardCanvas) {
-          this.masterPunchcardCanvas.style.display = 'none';
-        }
-        patternWithVisualizer = `${basePattern}.pianoroll({ 
+        patternWithVisualizer = `${basePattern}.pianoroll({
+          id: '${canvasId}',
+          ctx: ${ctxExpression},
           cycles: 4,
           playhead: 0.5,
           fill: true,
@@ -4366,9 +4363,8 @@ class InteractiveSoundApp {
     } else if (this.selectedVisualizer === 'barchart') {
       this.startBarchartVisualizerLoop();
     } else if (this.selectedVisualizer === 'pianoroll') {
-      this.watchForExternalVisualizerCanvas('pianoroll');
       if (this.masterPunchcardCanvas) {
-        this.masterPunchcardCanvas.style.display = 'none';
+        this.masterPunchcardCanvas.style.display = 'block';
       }
       this.hideMasterPunchcardPlaceholder();
     }
@@ -4475,15 +4471,14 @@ class InteractiveSoundApp {
     }
     if (activeVisualizer === 'spectrum') {
       await this.prepareCanvasForExternalVisualizer();
-      this.watchForExternalVisualizerCanvas('spectrum');
       this.hideMasterPunchcardPlaceholder();
       this.masterPunchcardIsRendering = false;
       return;
     }
     if (activeVisualizer === 'pianoroll') {
-      this.watchForExternalVisualizerCanvas('pianoroll');
+      await this.prepareCanvasForExternalVisualizer();
       if (this.masterPunchcardCanvas) {
-        this.masterPunchcardCanvas.style.display = 'none';
+        this.masterPunchcardCanvas.style.display = 'block';
       }
       this.hideMasterPunchcardPlaceholder();
       this.masterPunchcardIsRendering = false;
@@ -4503,12 +4498,6 @@ class InteractiveSoundApp {
     if (useScope || useSpectrum || useSpiral || usePitchwheel || usePianoroll || useBarchart) {
       if ((this.selectedVisualizer || 'punchcard') === 'punchcard' && useScope) {
         this.watchForExternalVisualizerCanvas('scope');
-      }
-      if (usePianoroll) {
-        this.watchForExternalVisualizerCanvas('pianoroll');
-        if (this.masterPunchcardCanvas) {
-          this.masterPunchcardCanvas.style.display = 'none';
-        }
       }
       await this.prepareCanvasForExternalVisualizer();
       this.hideMasterPunchcardPlaceholder();
