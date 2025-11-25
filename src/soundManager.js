@@ -981,28 +981,6 @@ class SoundManager {
               if (masterPlaybackActive) {
                 const masterNode = masterPanNode || masterGainNode;
                 if (masterNode) {
-                  // Ensure masterPan -> masterGain connection
-                  if (masterPanNode && masterGainNode) {
-                    try {
-                      masterPanNode.connect(masterGainNode);
-                    } catch (e) {
-                      if (!e.message.includes('already')) {
-                        console.warn(`⚠️ Master chain connect error: ${e.message}`);
-                      }
-                    }
-                  }
-                  
-                  // Ensure masterGain -> destination connection
-                  if (masterGainNode && soundManagerInstance._realDestination) {
-                    try {
-                      masterGainNode.connect(soundManagerInstance._realDestination);
-                    } catch (e) {
-                      if (!e.message.includes('already')) {
-                        console.warn(`⚠️ Master destination connect error: ${e.message}`);
-                      }
-                    }
-                  }
-                  
                   this.__punchcardMasterRouted = true;
                   this.__punchcardMasterConnectionNode = masterNode;
                   return this.__originalConnect.call(this, masterNode, outputIndex, inputIndex);
