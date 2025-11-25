@@ -571,6 +571,9 @@ class SoundManager {
     this.masterFilterMinQ = 0.1;
     this.masterFilterMaxQ = 5;
     this.masterFilterSmoothing = 0.05;
+    this.masterFilterMinUpdateMs = 16; // throttle filter automation to avoid unstable states
+    this._lastMasterFilterUpdateTime = 0;
+    this._masterFilterUpdateTimeout = null;
     this.visualizerAnalyser = null;
     this.visualizerAnalyserTapGain = null;
     this.visualizerAnalyserTapGainConnected = false;
@@ -861,7 +864,7 @@ class SoundManager {
         // Store this connection so we can verify it later
         this.masterGainNode.connect(this._realDestination);
         __safeRouteLog(this, `🎚️ ✅ INITIAL: Connected masterPan -> masterFilter -> masterGain -> destination (gain=${this.masterGainNode.gain.value.toFixed(3)})`);
-        this._updateMasterFilterNode(true);
+        this._requestMasterFilterUpdate(true);
         
         // Set master values (use stored masterVolume, not this.volume)
         this.masterGainNode.gain.value = this.masterVolume;
@@ -1659,7 +1662,7 @@ class SoundManager {
       return;
     }
     this.masterFilterEnabled = nextState;
-    this._updateMasterFilterNode(true);
+    this._requestMasterFilterUpdate(true);
   }
 
   setMasterFilterFrequency(value, immediate = false) {
@@ -1667,7 +1670,7 @@ class SoundManager {
     if (Number.isFinite(numeric)) {
       const clamped = Math.max(this.masterFilterMinHz, Math.min(this.masterFilterMaxHz, numeric));
       this.masterFilterFrequency = clamped;
-      this._updateMasterFilterNode(immediate);
+      this._requestMasterFilterUpdate(immediate);
     }
   }
 
@@ -1676,8 +1679,45 @@ class SoundManager {
     if (Number.isFinite(numeric)) {
       const clamped = Math.max(this.masterFilterMinQ, Math.min(this.masterFilterMaxQ, numeric));
       this.masterFilterResonance = clamped;
-      this._updateMasterFilterNode(immediate);
+      this._requestMasterFilterUpdate(immediate);
     }
+  }
+
+  _requestMasterFilterUpdate(immediate = false) {
+    if (!this.masterFilterNode || !this.audioContext) {
+      return;
+    }
+
+    if (immediate) {
+      if (this._masterFilterUpdateTimeout) {
+        clearTimeout(this._masterFilterUpdateTimeout);
+        this._masterFilterUpdateTimeout = null;
+      }
+      this._lastMasterFilterUpdateTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      this._updateMasterFilterNode(true);
+      return;
+    }
+
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const minInterval = Math.max(8, this.masterFilterMinUpdateMs || 0);
+    const elapsed = now - (this._lastMasterFilterUpdateTime || 0);
+
+    if (elapsed >= minInterval) {
+      this._lastMasterFilterUpdateTime = now;
+      this._updateMasterFilterNode(false);
+      return;
+    }
+
+    if (this._masterFilterUpdateTimeout) {
+      return;
+    }
+
+    const delay = Math.max(4, minInterval - elapsed);
+    this._masterFilterUpdateTimeout = setTimeout(() => {
+      this._masterFilterUpdateTimeout = null;
+      this._lastMasterFilterUpdateTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      this._updateMasterFilterNode(false);
+    }, delay);
   }
 
   _updateMasterFilterNode(immediate = false) {
