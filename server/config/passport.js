@@ -132,6 +132,7 @@ passport.deserializeUser(async (id, done) => {
         id: true,
         email: true,
         name: true,
+        oauthProvider: true,
         avatarUrl: true,
         artistName: true,
         socialLinks: true,

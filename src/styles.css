@@ -4313,6 +4313,14 @@ header h1 {
   object-fit: cover;
 }
 
+#profile-avatar-provider-note {
+  color: #666;
+}
+
+#profile-avatar-group.is-locked label {
+  color: #999;
+}
+
 .user-profile-modal-body .form-group input:focus {
   outline: none;
   border-color: #667eea;
@@ -4829,31 +4837,5 @@ header h1 {
   padding-top: 24px;
   border-top: 1px solid #eee;
   margin-top: 24px;
-}
-
-.smoke {
-  position: fixed;
-  pointer-events: none;
-  width: 8px;
-  height: 8px;
-  background: radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 70%);
-  border-radius: 50%;
-  animation: smoke-fade 0.8s ease-out forwards;
-  filter: blur(2px);
-}
-
-@keyframes smoke-fade {
-  0% {
-    opacity: 0.8;
-    transform: translate(0,0) scale(1);
-  }
-  50% {
-    opacity: 0.4;
-    transform: translate(-10px, -20px) scale(2.5);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(-20px, -40px) scale(3.2);
-  }
 }
 
