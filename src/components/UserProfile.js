@@ -4,6 +4,7 @@
  */
 
 import { usersAPI, getCurrentUser, authAPI } from '../api.js';
+import { lockScroll, unlockScroll } from '../scrollLock.js';
 
 export class UserProfile {
   constructor() {
@@ -454,7 +455,7 @@ export class UserProfile {
         return;
       }
       this.modal.style.display = 'flex';
-      document.body.style.overflow = 'hidden';
+      lockScroll('user-profile-modal');
     } catch (error) {
       console.error('Error showing profile modal:', error);
       if (!this.user) {
@@ -469,7 +470,7 @@ export class UserProfile {
   hide() {
     if (this.modal) {
       this.modal.style.display = 'none';
-      document.body.style.overflow = '';
+      unlockScroll('user-profile-modal');
     }
   }
 

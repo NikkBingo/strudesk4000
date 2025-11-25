@@ -1,4 +1,5 @@
 import { authAPI } from '../api.js';
+import { lockScroll, unlockScroll, forceUnlockScroll } from '../scrollLock.js';
 
 /**
  * Login Modal Component
@@ -292,9 +293,7 @@ export class LoginModal {
     const urlParams = new URLSearchParams(window.location.search);
     const authStatus = urlParams.get('auth');
     const unlockBodyScroll = () => {
-      if (document.body.style.overflow === 'hidden') {
-        document.body.style.overflow = '';
-      }
+      forceUnlockScroll();
     };
     const hideIfVisible = () => {
       if (this.modal && this.modal.style.display !== 'none') {
@@ -383,13 +382,13 @@ export class LoginModal {
     if (!this.modal) return;
     this.setActiveForm('login');
     this.modal.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
+    lockScroll('login-modal');
   }
 
   hide() {
     if (!this.modal) return;
     this.modal.style.display = 'none';
-    document.body.style.overflow = '';
+    unlockScroll('login-modal');
     this.clearStatus();
   }
 
