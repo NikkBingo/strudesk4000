@@ -5,6 +5,7 @@
 import { soundConfig } from './config.js';
 import { Note, Scale, Interval } from '@tonaljs/tonal';
 import { WebMidi } from 'webmidi';
+import { startMasterHighlighting, stopMasterHighlighting } from './highlighting.js';
 
 // Import Strudel modules statically at top level to avoid duplicate bundling
 // Use dynamic imports but cache them to ensure single instance
@@ -8265,6 +8266,7 @@ class SoundManager {
       if (this.onMasterStateChangeCallback) {
         this.onMasterStateChangeCallback(true, Array.from(this.trackedPatterns.keys()));
       }
+      startMasterHighlighting();
       return { success: true, slot };
     } catch (error) {
       console.error('❌ Failed to evaluate master pattern:', error);
@@ -9369,7 +9371,7 @@ class SoundManager {
         if (this.onMasterStateChangeCallback) {
           this.onMasterStateChangeCallback(true, Array.from(this.trackedPatterns.keys()));
         }
-        
+        startMasterHighlighting();
         return { success: true };
       } else {
         console.error(`❌ Strudel not properly initialized`);
@@ -9391,6 +9393,7 @@ class SoundManager {
         }
       }
       this.masterActive = false;
+      stopMasterHighlighting();
       this.masterPlaybackStartTime = null;
       if (this.masterGainNode) {
         this.masterGainNode.gain.setValueAtTime(0, this.audioContext?.currentTime || 0);
@@ -9439,6 +9442,7 @@ class SoundManager {
         
         this.masterPlaybackStartTime = null;
         this.masterActive = false;
+        stopMasterHighlighting();
         // Mute master output when stopped to avoid any DC/idle noise on interfaces
         if (this.masterGainNode) {
           this.masterGainNode.gain.setValueAtTime(0, this.audioContext?.currentTime || 0);
