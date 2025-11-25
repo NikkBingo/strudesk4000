@@ -2240,6 +2240,9 @@ class SoundManager {
       
       // Update the master pattern to reflect the changes
       this.updateMasterPattern(this.soloedElements, this.mutedElements);
+      if (this.masterActive) {
+        this.scheduleMasterPatternRefresh(`pattern-update:${elementId}`);
+      }
     }
     
     // Only update the playing pattern if element is actively playing
@@ -7393,7 +7396,8 @@ class SoundManager {
   /**
    * Save element pattern to master
    */
-  saveElementToMaster(elementId, pattern, gain, pan) {
+  saveElementToMaster(elementId, pattern, gain, pan, options = {}) {
+    const { isPreview = false } = options;
     try {
       console.log(`💾 Saving ${elementId} to master: pattern="${pattern?.substring(0, 50)}...", gain=${gain}, pan=${pan}`);
       
@@ -7447,6 +7451,9 @@ class SoundManager {
         }
       }
       
+      if (this.masterActive && !isPreview) {
+        this.scheduleMasterPatternRefresh(`save:${elementId}`);
+      }
       console.log(`✅ Saved ${elementId} to master. Total tracks: ${this.trackedPatterns.size}`);
       return { success: true };
     } catch (error) {
@@ -7476,7 +7483,7 @@ class SoundManager {
 
     const gain = this.getElementGain(elementId);
     const pan = this.getElementPan(elementId);
-    const saveResult = this.saveElementToMaster(elementId, originalPattern, gain, pan);
+    const saveResult = this.saveElementToMaster(elementId, originalPattern, gain, pan, { isPreview });
     if (!saveResult.success) {
       return saveResult;
     }
@@ -7489,7 +7496,11 @@ class SoundManager {
 
     this.updateMasterPattern(this.soloedElements, this.mutedElements);
 
-    if (this.masterActive || autoStart) {
+    if (this.masterActive) {
+      this.scheduleMasterPatternRefresh(`route:${elementId}${isPreview ? ':preview' : ''}`);
+      return { success: true, autoRefreshed: true };
+    }
+    if (autoStart) {
       return this.playMasterPattern();
     }
 
@@ -9518,7 +9529,7 @@ class SoundManager {
       if (this.masterActive) {
         console.log(`🔄 Master is active - re-evaluating with updated pattern (no stop).`);
         try {
-          await this.playMasterPattern();
+          await this._reEvaluateMasterPattern('master code update');
         } catch (e) {
           console.warn(`⚠️ Could not re-evaluate master after code update:`, e.message);
         }

@@ -3983,20 +3983,12 @@ class InteractiveSoundApp {
       this.masterPunchcardCanvas.addEventListener('mousemove', (e) => {
         if (this.chaospadEnabled) {
           this.handleChaospadMouseMove(e);
-          // Create smoke trail when chaospad is enabled
-          if (this.createSmokeTrail) {
-            this.createSmokeTrail(e.clientX, e.clientY);
-          }
         }
       });
       // Also add mouseenter to ensure it works
       this.masterPunchcardCanvas.addEventListener('mouseenter', (e) => {
         if (this.chaospadEnabled) {
           this.handleChaospadMouseMove(e);
-          // Create smoke trail when chaospad is enabled
-          if (this.createSmokeTrail) {
-            this.createSmokeTrail(e.clientX, e.clientY);
-          }
         }
       });
       this.masterPunchcardCanvas.addEventListener('mouseleave', () => {
@@ -4007,9 +3999,6 @@ class InteractiveSoundApp {
       
       // Initial cursor update
       updateCursor();
-      
-      // Setup mouse trail effect on canvas
-      this.setupMouseTrail();
     }
     
     // Ensure initial placeholder text reflects current steps
@@ -4033,34 +4022,6 @@ class InteractiveSoundApp {
     this.refreshMasterPunchcard('initial').catch(err => {
       console.warn('⚠️ Unable to render initial punchcard:', err);
     });
-  }
-
-  /**
-   * Setup mouse trail effect on the visualizer canvas
-   */
-  setupMouseTrail() {
-    if (!this.masterPunchcardCanvas) return;
-
-    const createSmoke = (x, y) => {
-      const puff = document.createElement('div');
-      puff.className = 'smoke';
-
-      // random sizing + distortion
-      const size = Math.random() * 12 + 8;
-      puff.style.width = size + 'px';
-      puff.style.height = size + 'px';
-      puff.style.left = x - size/2 + 'px';
-      puff.style.top = y - size/2 + 'px';
-      puff.style.transform += ` rotate(${Math.random()*360}deg)`;
-
-      document.body.appendChild(puff);
-
-      // remove after animation
-      setTimeout(() => puff.remove(), 800);
-    };
-
-    // Store createSmoke function for use in chaospad handler
-    this.createSmokeTrail = createSmoke;
   }
 
   getCurrentFullscreenElement() {
@@ -12647,7 +12608,7 @@ class InteractiveSoundApp {
               updateElementTitleDisplay(elementId, bankDisplayName);
               
               // Stop any currently playing sound BEFORE saving config to prevent auto-playback
-              if (this.activeElements.has(elementId)) {
+              if (!masterIsRunning && this.activeElements.has(elementId)) {
                 console.log(`🛑 Stopping sound for ${elementId} (bank selected, not auto-playing)`);
                 soundManager.stopSound(elementId);
                 this.activeElements.delete(elementId);
@@ -12660,6 +12621,8 @@ class InteractiveSoundApp {
                   }
                   this.updateStatusDots(elementId, true, false);
                 }
+              } else if (masterIsRunning) {
+                console.log(`⏭️ Master running – skipping element stop for ${elementId}`);
               }
               
               // CRITICAL: Don't save to master when bank is selected - only save title and bank
@@ -13528,6 +13491,7 @@ function updateUserUI(user) {
   const userName = document.getElementById('user-name');
   const userAvatar = document.getElementById('user-avatar');
   const adminLink = document.getElementById('user-admin-link');
+  const statusText = document.getElementById('status-text');
 
   if (loginBtn) loginBtn.style.display = 'none';
   if (userMenu) userMenu.style.display = 'block';
@@ -13544,18 +13508,27 @@ function updateUserUI(user) {
   
   // Show load/save buttons when logged in
   updateLoadSaveButtonsVisibility(true);
+
+  if (statusText && statusText.textContent === 'Login to unlock more features') {
+    statusText.textContent = 'Ready';
+  }
 }
 
 function showLoginButton() {
   const loginBtn = document.getElementById('header-login-btn');
   const userMenu = document.getElementById('user-menu');
   const adminLink = document.getElementById('user-admin-link');
+  const statusText = document.getElementById('status-text');
   if (loginBtn) loginBtn.style.display = 'block';
   if (userMenu) userMenu.style.display = 'none';
   if (adminLink) adminLink.style.display = 'none';
   
   // Hide load/save buttons when not logged in
   updateLoadSaveButtonsVisibility(false);
+
+  if (statusText) {
+    statusText.textContent = 'Login to unlock more features';
+  }
 }
 
 function handleAuthenticatedUser(user) {

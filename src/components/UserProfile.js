@@ -33,12 +33,13 @@ export class UserProfile {
           </div>
           <div class="user-profile-modal-body">
             <form id="user-profile-form">
-              <div class="form-group">
+              <div class="form-group" id="profile-avatar-group">
                 <label for="profile-avatar-url">Profile Image</label>
                 <div class="avatar-preview-container">
                   <img id="profile-avatar-preview" src="" alt="Avatar preview" style="display: none; width: 100px; height: 100px; border-radius: 50%; object-fit: cover; margin-bottom: 10px; border: 2px solid #ddd;" />
                   <input type="url" id="profile-avatar-url" placeholder="https://example.com/your-image.jpg" />
-                  <small>Enter a URL to your profile image</small>
+                  <small id="profile-avatar-note">Enter a URL to your profile image</small>
+                  <small id="profile-avatar-provider-note" style="display: none;">Your profile image is managed by Google and can be changed from your Google Account.</small>
                 </div>
               </div>
 
@@ -54,6 +55,10 @@ export class UserProfile {
                   <div class="social-link-item">
                     <label for="social-twitter">Twitter/X</label>
                     <input type="url" id="social-twitter" placeholder="https://twitter.com/username" />
+                  </div>
+                  <div class="social-link-item">
+                    <label for="social-facebook">Meta/Facebook</label>
+                    <input type="url" id="social-facebook" placeholder="https://facebook.com/username" />
                   </div>
                   <div class="social-link-item">
                     <label for="social-instagram">Instagram</label>
@@ -185,6 +190,9 @@ export class UserProfile {
       let fullUser = user;
       try {
         fullUser = await usersAPI.getUser(user.id);
+        if (fullUser && user.oauthProvider && !fullUser.oauthProvider) {
+          fullUser.oauthProvider = user.oauthProvider;
+        }
         // Update this.user with full user data
         this.user = fullUser;
       } catch (fetchError) {
@@ -235,6 +243,8 @@ export class UserProfile {
         }
       }
 
+      this.updateAvatarFieldState();
+
       const artistNameInput = document.getElementById('profile-artist-name');
       if (artistNameInput) {
         artistNameInput.value = this.user.artistName || '';
@@ -261,7 +271,7 @@ export class UserProfile {
 
       // Load social links
       const socialLinks = this.user.socialLinks || {};
-      const socialFields = ['twitter', 'instagram', 'soundcloud', 'bandcamp', 'youtube', 'spotify', 'website'];
+      const socialFields = ['twitter', 'facebook', 'instagram', 'soundcloud', 'bandcamp', 'youtube', 'spotify', 'website'];
       socialFields.forEach(field => {
         const input = document.getElementById(`social-${field}`);
         if (input) {
@@ -277,6 +287,47 @@ export class UserProfile {
         alert('Failed to load profile data: ' + (error.message || 'Unknown error'));
       }
       return this.user || null;
+    }
+  }
+
+  isAvatarManagedExternally() {
+    return this.user?.oauthProvider === 'google';
+  }
+
+  updateAvatarFieldState() {
+    const avatarGroup = document.getElementById('profile-avatar-group');
+    const avatarInput = document.getElementById('profile-avatar-url');
+    const defaultNote = document.getElementById('profile-avatar-note');
+    const providerNote = document.getElementById('profile-avatar-provider-note');
+    const avatarPreview = document.getElementById('profile-avatar-preview');
+    const isLocked = this.isAvatarManagedExternally();
+
+    if (!avatarGroup) return;
+
+    avatarGroup.classList.toggle('is-locked', isLocked);
+
+    if (isLocked) {
+      if (avatarInput) {
+        avatarInput.disabled = true;
+        avatarInput.style.display = 'none';
+      }
+      if (defaultNote) defaultNote.style.display = 'none';
+      if (providerNote) providerNote.style.display = 'block';
+      if (avatarPreview) {
+        if (this.user?.avatarUrl) {
+          avatarPreview.src = this.user.avatarUrl;
+          avatarPreview.style.display = 'block';
+        } else {
+          avatarPreview.style.display = 'none';
+        }
+      }
+    } else {
+      if (avatarInput) {
+        avatarInput.disabled = false;
+        avatarInput.style.display = '';
+      }
+      if (defaultNote) defaultNote.style.display = 'block';
+      if (providerNote) providerNote.style.display = 'none';
     }
   }
 
@@ -332,12 +383,13 @@ export class UserProfile {
     }
 
     try {
-      const avatarUrl = document.getElementById('profile-avatar-url')?.value.trim() || null;
+      const avatarInputEl = document.getElementById('profile-avatar-url');
+      const avatarUrlValue = avatarInputEl ? avatarInputEl.value.trim() : '';
       const artistName = document.getElementById('profile-artist-name')?.value.trim() || null;
       
       // Collect social links
       const socialLinks = {};
-      const socialFields = ['twitter', 'instagram', 'soundcloud', 'bandcamp', 'youtube', 'spotify', 'website'];
+      const socialFields = ['twitter', 'facebook', 'instagram', 'soundcloud', 'bandcamp', 'youtube', 'spotify', 'website'];
       socialFields.forEach(field => {
         const input = document.getElementById(`social-${field}`);
         if (input && input.value.trim()) {
@@ -345,12 +397,17 @@ export class UserProfile {
         }
       });
 
-      // Update user - use verified user ID
-      const updated = await usersAPI.updateUser(userIdToUpdate, {
-        avatarUrl,
+      const payload = {
         artistName,
         socialLinks
-      });
+      };
+
+      if (!this.isAvatarManagedExternally()) {
+        payload.avatarUrl = avatarUrlValue ? avatarUrlValue : null;
+      }
+
+      // Update user - use verified user ID
+      const updated = await usersAPI.updateUser(userIdToUpdate, payload);
 
       this.user = updated;
       
