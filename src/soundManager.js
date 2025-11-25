@@ -556,10 +556,14 @@ class SoundManager {
     this._manualStrudelOutputNode = null; // Fallback output when scheduler.webaudio is missing
     this._manualStrudelOutputDisabled = false; // Set true if factory throws ensureObjectValue error
     this.masterPanNode = null; // Master pan node
+    this.masterFilterNode = null; // Optional master filter node (for Chaospad / master FX)
     this.masterVolume = 0.7; // Master volume (0-1)
     this.masterPan = 0; // Master pan (-1 to 1)
     this.masterMuted = false; // Master mute state
     this.masterVolumeBeforeMute = 0.7; // Store volume before mute
+    this.masterFilterEnabled = false;
+    this.masterFilterFrequency = 20000;
+    this.masterFilterResonance = 0.0001;
     this.visualizerAnalyser = null;
     this.visualizerAnalyserTapGain = null;
     this.visualizerAnalyserTapGainConnected = false;
@@ -810,6 +814,10 @@ class SoundManager {
         
         // Create master channel nodes EARLY so initStrudel can receive a valid destination
         this.masterPanNode = this.audioContext.createStereoPanner();
+        this.masterFilterNode = this.audioContext.createBiquadFilter();
+        this.masterFilterNode.type = 'lowpass';
+        this.masterFilterNode.frequency.value = this.masterFilterFrequency;
+        this.masterFilterNode.Q.value = this.masterFilterResonance;
         this.masterGainNode = this.audioContext.createGain();
         
         // Store the real destination BEFORE overriding
@@ -819,12 +827,14 @@ class SoundManager {
         // Simplified chain: element gain -> element pan -> master pan -> master gain -> destination
         // Visualizer analyser connects in parallel to master gain
 
-        // Connect: masterPan -> masterGain -> REAL destination
-        this.masterPanNode.connect(this.masterGainNode);
+        // Connect: masterPan -> masterFilter -> masterGain -> REAL destination
+        this.masterPanNode.connect(this.masterFilterNode);
+        this.masterFilterNode.connect(this.masterGainNode);
         // CRITICAL: Connect masterGainNode to destination - this is the final output
         // Store this connection so we can verify it later
         this.masterGainNode.connect(this._realDestination);
         __safeRouteLog(this, `🎚️ ✅ INITIAL: Connected masterPan -> masterGain -> destination (gain=${this.masterGainNode.gain.value.toFixed(3)})`);
+        this._updateMasterFilterNode(true);
         
         // Set master values (use stored masterVolume, not this.volume)
         this.masterGainNode.gain.value = this.masterVolume;
@@ -853,6 +863,7 @@ class SoundManager {
           AudioNode.prototype.__originalConnect = AudioNode.prototype.connect;
           
           const masterPanNode = this.masterPanNode;
+          const masterFilterNode = this.masterFilterNode;
           const masterGainNode = this.masterGainNode;
           const audioContextInstance = this.audioContext;
           const soundManagerInstance = this;
@@ -979,7 +990,7 @@ class SoundManager {
               
               // If master playback is active, always route through master chain
               if (masterPlaybackActive) {
-                const masterNode = masterPanNode || masterGainNode;
+                const masterNode = masterFilterNode || masterPanNode || masterGainNode;
                 if (masterNode) {
                   this.__punchcardMasterRouted = true;
                   this.__punchcardMasterConnectionNode = masterNode;
@@ -1288,7 +1299,7 @@ class SoundManager {
                     console.log(`🎚️ Stack() pattern: Routing through master chain (${soundManagerInstance.trackedPatterns.size} elements)`);
                     soundManagerInstance._stackMasterRoutingLogged = true;
                   }
-                  const masterNode = masterPanNode || masterGainNode;
+                  const masterNode = masterFilterNode || masterPanNode || masterGainNode;
                   if (masterNode) {
                     return this.__originalConnect.call(this, masterNode, outputIndex, inputIndex);
                   }
@@ -1601,6 +1612,45 @@ class SoundManager {
       __safeRouteLog(this, `🎚️ Master pan set to ${this.masterPan.toFixed(2)} (panNode instant via Web Audio API)`);
     } else {
       __safeRouteLog(this, `🎚️ Master pan stored as ${this.masterPan.toFixed(2)} (panNode not ready yet)`);
+    }
+  }
+
+  enableMasterFilter(enabled) {
+    this.masterFilterEnabled = !!enabled;
+    this._updateMasterFilterNode(true);
+  }
+
+  setMasterFilterFrequency(value, immediate = false) {
+    const numeric = Number(value);
+    this.masterFilterFrequency = Number.isFinite(numeric) ? numeric : this.masterFilterFrequency;
+    this._updateMasterFilterNode(immediate);
+  }
+
+  setMasterFilterResonance(value, immediate = false) {
+    const numeric = Number(value);
+    this.masterFilterResonance = Number.isFinite(numeric) ? numeric : this.masterFilterResonance;
+    this._updateMasterFilterNode(immediate);
+  }
+
+  _updateMasterFilterNode(immediate = false) {
+    if (!this.masterFilterNode) {
+      return;
+    }
+    const now = this.audioContext?.currentTime || 0;
+    const freqTarget = this.masterFilterEnabled
+      ? Math.max(20, Math.min(20000, this.masterFilterFrequency || 20000))
+      : 20000;
+    const qTarget = this.masterFilterEnabled
+      ? Math.max(0.0001, Math.min(30, this.masterFilterResonance || 0.0001))
+      : 0.0001;
+    const freqParam = this.masterFilterNode.frequency;
+    const qParam = this.masterFilterNode.Q;
+    if (immediate) {
+      freqParam.setValueAtTime(freqTarget, now);
+      qParam.setValueAtTime(qTarget, now);
+    } else {
+      freqParam.setTargetAtTime(freqTarget, now, 0.05);
+      qParam.setTargetAtTime(qTarget, now, 0.05);
     }
   }
 
@@ -6607,10 +6657,21 @@ class SoundManager {
       
       if (samplesFunc && typeof samplesFunc === 'function') {
         try {
-          // Load local samples using the samples() function
-          await samplesFunc(localDrumBanks[bankName]);
-          console.log(`✅ Local custom bank "${bankName}" loaded successfully from assets`);
+          const manifest = { ...localDrumBanks[bankName] };
+          const aliasPrefix = `${bankName}_`.toLowerCase();
+          Object.entries(localDrumBanks[bankName]).forEach(([sampleName, paths]) => {
+            manifest[sampleName] = paths;
+            if (sampleName.toLowerCase().startsWith(aliasPrefix)) {
+              const aliasName = sampleName.slice(aliasPrefix.length);
+              if (aliasName && !manifest[aliasName]) {
+                manifest[aliasName] = paths;
+              }
+            }
+          });
+          await samplesFunc(manifest);
+          Object.keys(manifest).forEach((key) => this.loadedBanks.add(key));
           this.loadedBanks.add(bankName);
+          console.log(`✅ Local custom bank "${bankName}" loaded successfully from assets`);
           return true;
         } catch (error) {
           console.error(`❌ Failed to load local bank "${bankName}":`, error);
@@ -9002,26 +9063,39 @@ class SoundManager {
             console.warn(`   ⚠️ Could not verify Strudel output: ${e.message}`);
           }
           
-          // CRITICAL: Verify the entire master chain is connected
-          // Chain should be: masterPan -> masterGainNode -> destination
+        // CRITICAL: Verify the entire master chain is connected
+        // Chain should be: masterPan -> masterFilterNode -> masterGainNode -> destination
           console.log(`   🔍 VERIFYING MASTER CHAIN:`);
           console.log(`      masterPanNode: ${this.masterPanNode ? 'EXISTS' : 'MISSING'}`);
+        console.log(`      masterFilterNode: ${this.masterFilterNode ? 'EXISTS' : 'MISSING'} (enabled=${this.masterFilterEnabled})`);
           console.log(`      masterGainNode: ${this.masterGainNode ? 'EXISTS' : 'MISSING'} (gain=${this.masterGainNode?.gain?.value?.toFixed(3) || 'N/A'})`);
           console.log(`      destination: ${this._realDestination ? 'EXISTS' : 'MISSING'}`);
           
-          // Verify masterPan -> masterGainNode connection
-          if (this.masterPanNode && this.masterGainNode) {
+        // Verify masterPan -> masterFilterNode -> masterGainNode connection
+        if (this.masterPanNode && this.masterFilterNode) {
             try {
-              this.masterPanNode.connect(this.masterGainNode);
-              console.log(`   ✅ VERIFIED: masterPanNode -> masterGainNode`);
+            this.masterPanNode.connect(this.masterFilterNode);
+            console.log(`   ✅ VERIFIED: masterPanNode -> masterFilterNode`);
             } catch (e) {
               if (e.message.includes('already connected') || e.message.includes('already been connected')) {
-                console.log(`   ✅ VERIFIED: masterPanNode -> masterGainNode (already connected)`);
+              console.log(`   ✅ VERIFIED: masterPanNode -> masterFilterNode (already connected)`);
               } else {
-                console.warn(`   ⚠️ Could not verify masterPanNode -> masterGainNode: ${e.message}`);
+              console.warn(`   ⚠️ Could not verify masterPanNode -> masterFilterNode: ${e.message}`);
               }
             }
           }
+        if (this.masterFilterNode && this.masterGainNode) {
+          try {
+            this.masterFilterNode.connect(this.masterGainNode);
+            console.log(`   ✅ VERIFIED: masterFilterNode -> masterGainNode`);
+          } catch (e) {
+            if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+              console.log(`   ✅ VERIFIED: masterFilterNode -> masterGainNode (already connected)`);
+            } else {
+              console.warn(`   ⚠️ Could not verify masterFilterNode -> masterGainNode: ${e.message}`);
+            }
+          }
+        }
           
           // CRITICAL: Verify masterGainNode is connected to destination
           // This is the final link in the chain - if it's not connected, no sound will play
@@ -9071,15 +9145,27 @@ class SoundManager {
         
         // CRITICAL: Ensure masterPan -> masterGainNode -> destination chain is intact
         // Don't disconnect - just try to connect (will silently succeed if already connected)
-        if (this.masterPanNode && this.masterGainNode) {
+        if (this.masterPanNode && this.masterFilterNode) {
           try {
-            this.masterPanNode.connect(this.masterGainNode);
-            console.log(`   ✅ VERIFIED: masterPanNode -> masterGainNode (reconnected)`);
+            this.masterPanNode.connect(this.masterFilterNode);
+            console.log(`   ✅ VERIFIED: masterPanNode -> masterFilterNode (reconnected)`);
           } catch (e) {
             if (e.message.includes('already connected') || e.message.includes('already been connected')) {
-              console.log(`   ✅ VERIFIED: masterPanNode -> masterGainNode (already connected)`);
+              console.log(`   ✅ VERIFIED: masterPanNode -> masterFilterNode (already connected)`);
             } else {
-              console.warn(`   ⚠️ Could not verify masterPanNode -> masterGainNode: ${e.message}`);
+              console.warn(`   ⚠️ Could not verify masterPanNode -> masterFilterNode: ${e.message}`);
+            }
+          }
+        }
+        if (this.masterFilterNode && this.masterGainNode) {
+          try {
+            this.masterFilterNode.connect(this.masterGainNode);
+            console.log(`   ✅ VERIFIED: masterFilterNode -> masterGainNode (reconnected)`);
+          } catch (e) {
+            if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+              console.log(`   ✅ VERIFIED: masterFilterNode -> masterGainNode (already connected)`);
+            } else {
+              console.warn(`   ⚠️ Could not verify masterFilterNode -> masterGainNode: ${e.message}`);
             }
           }
         }
