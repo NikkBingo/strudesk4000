@@ -4379,13 +4379,50 @@ class InteractiveSoundApp {
     if (!wasPlaying) {
       return;
     }
-    const stillPlaying = typeof soundManager.isMasterActive === 'function'
+    
+    // Check if scheduler is still running (more reliable than masterActive flag)
+    const schedulerRunning = window.strudel?.scheduler?.started || false;
+    const stillPlaying = schedulerRunning || (typeof soundManager.isMasterActive === 'function'
       ? soundManager.isMasterActive()
-      : !!soundManager.masterActive;
+      : !!soundManager.masterActive);
+    
     if (stillPlaying) {
+      // Scheduler is running, just ensure masterActive flag is set correctly
+      if (!soundManager.masterActive && schedulerRunning) {
+        soundManager.masterActive = true;
+        console.log('🔄 Restored masterActive flag after visualizer change');
+      }
       return;
     }
-    if (typeof soundManager.playMasterPattern === 'function') {
+    
+    // Scheduler stopped - restart it without calling playMasterPattern
+    // (which would create duplicate connections)
+    if (window.strudel?.scheduler && typeof window.strudel.scheduler.start === 'function') {
+      try {
+        console.log('🔄 Restarting scheduler after visualizer change...');
+        
+        // Restore master gain to prevent clipping
+        if (soundManager.masterGainNode) {
+          const now = soundManager.audioContext?.currentTime || 0;
+          soundManager.masterGainNode.gain.setValueAtTime(soundManager.masterVolume, now);
+        }
+        
+        await window.strudel.scheduler.start();
+        soundManager.masterActive = true;
+        console.log('✅ Scheduler restarted, playback resumed');
+      } catch (error) {
+        console.warn('⚠️ Could not restart scheduler, falling back to playMasterPattern:', error);
+        // Fallback to playMasterPattern if scheduler restart fails
+        if (typeof soundManager.playMasterPattern === 'function') {
+          try {
+            await soundManager.playMasterPattern();
+          } catch (playError) {
+            console.warn('⚠️ Unable to resume master playback after visualizer change:', playError);
+          }
+        }
+      }
+    } else if (typeof soundManager.playMasterPattern === 'function') {
+      // Fallback if scheduler API is not available
       try {
         await soundManager.playMasterPattern();
       } catch (error) {

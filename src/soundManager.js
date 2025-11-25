@@ -1264,6 +1264,17 @@ class SoundManager {
                     }
                   }
                   
+                  // CRITICAL: Disconnect any existing connections to prevent feedback loops
+                  // This is especially important when patterns are re-evaluated (e.g., visualizer changes)
+                  try {
+                    if (typeof this.disconnect === 'function') {
+                      // Disconnect from the target gain node if already connected
+                      this.disconnect(elementNodes.gainNode);
+                    }
+                  } catch (e) {
+                    // Not connected yet or already disconnected - that's fine
+                  }
+                  
                   // Connect to element gain node - this routes through the chain
                   // The chain is: source -> elementGain -> elementPan -> masterPan -> masterGain -> destination
                   const connectResult = this.__originalConnect.call(this, elementNodes.gainNode, outputIndex, inputIndex);
@@ -8299,12 +8310,53 @@ class SoundManager {
       return { success: false, error: 'Strudel evaluate unavailable' };
     }
 
-    this._ensureMasterPatternSanitized();
+    // CRITICAL: Ensure scheduler is running before re-evaluation
+    // This prevents playback from stopping when visualizers are switched
+    if (window.strudel.scheduler && !window.strudel.scheduler.started) {
+      console.log(`🔄 Scheduler stopped, restarting before re-evaluation (${reason})...`);
+      try {
+        await window.strudel.scheduler.start();
+        console.log(`✅ Scheduler restarted`);
+      } catch (e) {
+        console.warn(`⚠️ Could not restart scheduler:`, e.message);
+      }
+    }
+
+    // CRITICAL: Clean up old pattern nodes before re-evaluating to prevent feedback loops
+    // Set old slot to silence first to disconnect old audio nodes
     const slot = this.masterSlot || 'd0';
+    try {
+      await window.strudel.evaluate(`${slot} = silence`);
+      // Small delay to allow cleanup
+      await new Promise(resolve => setTimeout(resolve, 10));
+    } catch (e) {
+      // Ignore cleanup errors
+      console.warn(`⚠️ Could not clean up old pattern:`, e.message);
+    }
+
+    // Restore master gain to prevent clipping on restart
+    if (this.masterGainNode) {
+      const now = this.audioContext?.currentTime || 0;
+      this.masterGainNode.gain.setValueAtTime(this.masterVolume, now);
+    }
+
+    this._ensureMasterPatternSanitized();
     const code = `${slot} = ${this.masterPattern.trim()}`;
     try {
       console.log(`🔄 Re-evaluating master pattern (${reason})...`);
       await window.strudel.evaluate(code);
+      
+      // CRITICAL: Ensure scheduler is still running after re-evaluation
+      if (window.strudel.scheduler && !window.strudel.scheduler.started) {
+        console.log(`🔄 Scheduler stopped after re-evaluation, restarting...`);
+        try {
+          await window.strudel.scheduler.start();
+          console.log(`✅ Scheduler restarted after re-evaluation`);
+        } catch (e) {
+          console.warn(`⚠️ Could not restart scheduler after re-evaluation:`, e.message);
+        }
+      }
+      
       console.log(`✅ Master pattern re-evaluated (${reason})`);
       return { success: true, slot };
     } catch (error) {
