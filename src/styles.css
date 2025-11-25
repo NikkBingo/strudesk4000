@@ -1422,7 +1422,7 @@ header h1 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 12px;
 }
 
@@ -1435,6 +1435,8 @@ header h1 {
   letter-spacing: 0.08em;
   color: #fdd9df;
   font-weight: 600;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .midi-switch {
@@ -1485,15 +1487,18 @@ header h1 {
 
 .midi-channel-label {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: rgba(248, 250, 252, 0.72);
+  flex: 0 0 auto;
 }
 
 .midi-channel-select {
-  margin-top: 4px;
+  margin-top: 0;
   padding: 6px 12px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.08);
