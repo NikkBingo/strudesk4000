@@ -6185,7 +6185,17 @@ class InteractiveSoundApp {
       return cleanedPattern;
     }
     const channelArg = Math.max(0, this.normalizeMidiChannel(settings.channel) - 1);
-    return `${cleanedPattern}.midi().midiport(${channelArg})`;
+    const midiModifier = `.midi().midiport(${channelArg})`;
+    
+    // Insert .midi() before .postgain() if it exists, otherwise append at the end
+    // This is necessary because .midi() must be called before .postgain()
+    if (/\.postgain\s*\(/i.test(cleanedPattern)) {
+      // Find the position of the first .postgain() and insert .midi() before it
+      const postgainIndex = cleanedPattern.search(/\.postgain\s*\(/i);
+      return cleanedPattern.slice(0, postgainIndex) + midiModifier + cleanedPattern.slice(postgainIndex);
+    }
+    
+    return `${cleanedPattern}${midiModifier}`;
   }
   
   async applyMidiSettingsToPattern(elementId, options = {}) {
