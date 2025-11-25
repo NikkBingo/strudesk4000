@@ -6,6 +6,7 @@ import { soundManager } from './soundManager.js';
 import { uiController } from './ui.js';
 import { soundConfig } from './config.js';
 import { initStrudelReplEditors, getStrudelEditor, getStrudelEditorValue, setStrudelEditorValue, setStrudelEditorEditable, insertStrudelEditorSnippet } from './strudelReplEditor.js';
+import { scheduleMiniLocationRefresh } from './highlighting.js';
 // Strudel modules are loaded dynamically via soundManager to avoid duplicate loading
 // Use getStrudelModules() or window.strudel functions instead of static imports
 import { Scale, Note, Progression } from '@tonaljs/tonal';
@@ -3455,6 +3456,7 @@ class InteractiveSoundApp {
     setTimeout(() => {
       try {
         initStrudelReplEditors();
+        this.setupEditorHighlighting();
         this.enableNativeStrudelHighlighting();
       } catch (error) {
         console.warn('⚠️ Strudel REPL editor initialization failed (non-critical):', error.message);
@@ -6236,10 +6238,12 @@ class InteractiveSoundApp {
       setStrudelEditorValue('master-pattern', pattern);
       this.masterPatternField.placeholder = '';
       console.log(`📝 Updated master pattern display: ${pattern.substring(0, 100)}...`);
+      scheduleMiniLocationRefresh('master-pattern', () => getStrudelEditorValue('master-pattern'));
     } else {
       // Pattern is empty - show placeholder
       setStrudelEditorValue('master-pattern', '');
       this.masterPatternField.placeholder = 'Combined pattern will appear here...';
+      scheduleMiniLocationRefresh('master-pattern', () => getStrudelEditorValue('master-pattern'));
     }
   }
 
@@ -8064,6 +8068,24 @@ class InteractiveSoundApp {
     document.addEventListener('touchstart', initAudio, { once: false });
     document.addEventListener('keydown', initAudio, { once: false });
     document.addEventListener('mousedown', initAudio, { once: false });
+  }
+
+  setupEditorHighlighting() {
+    const attachListener = (textareaId) => {
+      const textarea = document.getElementById(textareaId);
+      if (!textarea) return;
+      if (textarea.dataset.highlightListenerAttached === 'true') {
+        scheduleMiniLocationRefresh(textareaId, () => textarea.value);
+        return;
+      }
+      const handler = () => scheduleMiniLocationRefresh(textareaId, () => textarea.value);
+      textarea.addEventListener('input', handler);
+      textarea.dataset.highlightListenerAttached = 'true';
+      handler();
+    };
+
+    attachListener('master-pattern');
+    attachListener('modal-pattern');
   }
 
   /**
@@ -13534,6 +13556,11 @@ function showLoginButton() {
 function handleAuthenticatedUser(user) {
   if (!user) return;
   currentUser = user;
+  if (loginModal) {
+    loginModal.hide();
+  } else {
+    document.body.style.overflow = '';
+  }
   updateUserUI(user);
   if (!user.profileCompleted && profileOnboardingModal) {
     profileOnboardingModal.show(user);

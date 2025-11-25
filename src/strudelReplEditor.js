@@ -3,39 +3,18 @@
  * Provides syntax highlighting, autocomplete, and Strudel REPL features
  */
 
-import { EditorView, lineNumbers, keymap, Decoration } from '@codemirror/view';
-import { EditorState, EditorSelection, StateEffect, StateField } from '@codemirror/state';
+import { EditorView, lineNumbers, keymap } from '@codemirror/view';
+import { EditorState, EditorSelection } from '@codemirror/state';
 import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { foldGutter, foldKeymap, bracketMatching } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { highlightSelectionMatches } from '@codemirror/search';
+import { highlightExtension } from '@strudel/codemirror/highlight.mjs';
 
 // Store editor instances by textarea ID
 const editorInstances = new Map();
-
-const setHighlightsEffect = StateEffect.define();
-
-const highlightField = StateField.define({
-  create() {
-    return Decoration.none;
-  },
-  update(value, tr) {
-    if (tr.docChanged) {
-      value = value.map(tr.changes);
-    }
-    for (const effect of tr.effects) {
-      if (effect.is(setHighlightsEffect)) {
-        return effect.value;
-      }
-    }
-    return value;
-  },
-  provide: field => EditorView.decorations.from(field)
-});
-
-const highlightDecoration = Decoration.mark({ class: 'cm-master-highlight' });
 
 /**
  * Create a Strudel REPL editor from a textarea element
@@ -186,7 +165,7 @@ export function createStrudelReplEditor(textarea, options = {}) {
       }
     })
   ];
-  extensions.push(highlightField);
+  extensions.push(highlightExtension);
 
   // Add theme if dark mode
   if (theme === 'dark') {
@@ -386,38 +365,6 @@ export function setStrudelEditorEditable(textareaOrId, editable) {
     textarea.readOnly = !editable;
     textarea.classList.toggle('pattern-editor-readonly', !editable);
   }
-}
-
-export function setStrudelEditorHighlights(textareaOrId, ranges = []) {
-  const editor = getStrudelEditor(textareaOrId);
-  if (!editor) {
-    return;
-  }
-
-  const doc = editor.state.doc;
-  const decorationRanges = [];
-
-  if (Array.isArray(ranges)) {
-    ranges.forEach(range => {
-      if (!range || typeof range.from !== 'number' || typeof range.to !== 'number') {
-        return;
-      }
-      const from = Math.max(0, Math.min(doc.length, Math.floor(range.from)));
-      const to = Math.max(from, Math.min(doc.length, Math.ceil(range.to)));
-      if (from === to) {
-        return;
-      }
-      decorationRanges.push(highlightDecoration.range(from, to));
-    });
-  }
-
-  const decorations = decorationRanges.length > 0
-    ? Decoration.set(decorationRanges.sort((a, b) => a.from - b.from))
-    : Decoration.none;
-
-  editor.dispatch({
-    effects: setHighlightsEffect.of(decorations)
-  });
 }
 
 /**
