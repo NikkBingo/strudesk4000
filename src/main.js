@@ -12269,8 +12269,11 @@ class InteractiveSoundApp {
         <div class="element-midi-settings">
           <div class="midi-toggle-row">
             <label class="midi-toggle-label">
-              <input type="checkbox" class="midi-enable-toggle" />
-              <span>Send MIDI</span>
+              Send MIDI
+              <label class="midi-switch">
+                <input type="checkbox" class="midi-enable-toggle" />
+                <span class="midi-slider"></span>
+              </label>
             </label>
             <label class="midi-channel-label">
               Channel
@@ -12294,7 +12297,6 @@ class InteractiveSoundApp {
               </select>
             </label>
           </div>
-          <p class="midi-hint">Adds .midi() to the pattern and routes it to the selected MIDI channel.</p>
         </div>
         
         <div class="element-action-buttons">
