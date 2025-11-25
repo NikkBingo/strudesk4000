@@ -923,11 +923,13 @@ const createPatternHistoryModal = () => {
     overlay.setAttribute('aria-hidden', 'true');
     context = null;
     currentEntries = [];
+    document.body.style.overflow = '';
   };
 
   const openModal = () => {
     overlay.classList.add('is-open');
     overlay.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
   };
 
   const renderEntries = (entries, options = {}) => {
@@ -4200,6 +4202,9 @@ class InteractiveSoundApp {
    */
   async applyVisualizerToMaster() {
     console.log(`🎨 Applying visualizer "${this.selectedVisualizer}" to master pattern`);
+    const masterWasPlaying = typeof soundManager.isMasterActive === 'function'
+      ? soundManager.isMasterActive()
+      : !!soundManager.masterActive;
     
     // If "off" is selected, just use the base pattern without any visualizer processors
     if (this.selectedVisualizer === 'off') {
@@ -4278,6 +4283,7 @@ class InteractiveSoundApp {
       
       // Update the master pattern without any visualizer
       await soundManager.setMasterPatternCode(basePattern);
+      await this.ensureMasterPlaybackAfterVisualizerChange(masterWasPlaying);
       
       // Always show placeholder when visualizer is "off"
       this.showMasterPunchcardPlaceholder();
@@ -4544,6 +4550,7 @@ class InteractiveSoundApp {
     
     // Update the master pattern and restart playback
     await soundManager.setMasterPatternCode(patternWithVisualizer);
+    await this.ensureMasterPlaybackAfterVisualizerChange(masterWasPlaying);
     
     // Don't start visualizer loops if visualizer is "off"
     if (this.selectedVisualizer === 'off') {
@@ -4565,6 +4572,25 @@ class InteractiveSoundApp {
     this.refreshMasterPunchcard('visualizer-applied').catch(err => {
       console.warn('⚠️ Unable to refresh punchcard after applying visualizer:', err);
     });
+  }
+
+  async ensureMasterPlaybackAfterVisualizerChange(wasPlaying) {
+    if (!wasPlaying) {
+      return;
+    }
+    const stillPlaying = typeof soundManager.isMasterActive === 'function'
+      ? soundManager.isMasterActive()
+      : !!soundManager.masterActive;
+    if (stillPlaying) {
+      return;
+    }
+    if (typeof soundManager.playMasterPattern === 'function') {
+      try {
+        await soundManager.playMasterPattern();
+      } catch (error) {
+        console.warn('⚠️ Unable to resume master playback after visualizer change:', error);
+      }
+    }
   }
 
   showMasterPunchcardPlaceholder() {
@@ -6173,56 +6199,9 @@ class InteractiveSoundApp {
     return { counts, hits, events };
   }
 
-  enableNativeStrudelHighlighting(retryDelay = 500) {
-    if (this.nativeHighlightingEnabled || this.nativeHighlightingDisabled) {
-        return;
-      }
-
-    const strudelAPI =
-      globalThis?.Strudel ||
-      globalThis?.strudel ||
-      window?.Strudel ||
-      window?.strudel;
-
-    const enableFn = strudelAPI && typeof strudelAPI.enableHighlighting === 'function'
-      ? strudelAPI.enableHighlighting
-      : null;
-
-    if (enableFn) {
-      try {
-        enableFn.call(strudelAPI);
-        this.nativeHighlightingEnabled = true;
-        this.nativeHighlightRetryCount = 0;
-        if (this.nativeHighlightRetryTimer) {
-          clearTimeout(this.nativeHighlightRetryTimer);
-          this.nativeHighlightRetryTimer = null;
-        }
-        console.log('✅ Enabled Strudel.enableHighlighting()');
-        return;
-    } catch (error) {
-        console.warn('⚠️ Strudel.enableHighlighting() failed:', error);
-        this.nativeHighlightingDisabled = true;
-      return;
-    }
-    }
-
-    if (this.nativeHighlightRetryTimer) {
-      return;
-    }
-
-    if (this.nativeHighlightRetryCount >= 5) {
-      console.warn('⚠️ Strudel.enableHighlighting() unavailable; falling back without editor highlights.');
-      this.nativeHighlightingDisabled = true;
-      this.nativeHighlightRetryCount = 0;
-      return;
-    }
-
-    this.nativeHighlightRetryCount += 1;
-    const nextDelay = Math.min(retryDelay * 2, 4000);
-    this.nativeHighlightRetryTimer = setTimeout(() => {
-      this.nativeHighlightRetryTimer = null;
-      this.enableNativeStrudelHighlighting(nextDelay);
-    }, nextDelay);
+  enableNativeStrudelHighlighting() {
+    this.nativeHighlightingEnabled = false;
+    this.nativeHighlightingDisabled = true;
   }
 
   /**
@@ -13537,9 +13516,8 @@ function handleAuthenticatedUser(user) {
   currentUser = user;
   if (loginModal) {
     loginModal.hide();
-  } else {
-    document.body.style.overflow = '';
   }
+  document.body.style.overflow = '';
   updateUserUI(user);
   if (!user.profileCompleted && profileOnboardingModal) {
     profileOnboardingModal.show(user);
