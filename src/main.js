@@ -5867,7 +5867,10 @@ class InteractiveSoundApp {
 
   enableNativeStrudelHighlighting() {
     this.nativeHighlightingEnabled = false;
-        this.nativeHighlightingDisabled = true;
+    this.nativeHighlightingDisabled = true;
+    if (typeof soundManager?.setEditorHighlightingEnabled === 'function') {
+      soundManager.setEditorHighlightingEnabled(false);
+    }
   }
 
   /**

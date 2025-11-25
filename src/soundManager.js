@@ -557,6 +557,7 @@ class SoundManager {
     this._manualStrudelOutputDisabled = false; // Set true if factory throws ensureObjectValue error
     this.masterPanNode = null; // Master pan node
     this.masterFilterNode = null; // Optional master filter node (for Chaospad / master FX)
+    this.editorHighlightingEnabled = false;
     this.masterVolume = 0.7; // Master volume (0-1)
     this.masterPan = 0; // Master pan (-1 to 1)
     this.masterMuted = false; // Master mute state
@@ -674,6 +675,26 @@ class SoundManager {
    */
   onMasterStateChange(callback) {
     this.onMasterStateChangeCallback = callback;
+  }
+
+  /**
+   * Enable or disable Strudel editor highlighting
+   */
+  setEditorHighlightingEnabled(enabled) {
+    const nextValue = !!enabled;
+    if (this.editorHighlightingEnabled === nextValue) {
+      return;
+    }
+    this.editorHighlightingEnabled = nextValue;
+    if (this.editorHighlightingEnabled) {
+      if (this.masterActive) {
+        startMasterHighlighting();
+      }
+    } else {
+      if (this.editorHighlightingEnabled) {
+        stopMasterHighlighting();
+      }
+    }
   }
 
   /**
@@ -8338,7 +8359,9 @@ class SoundManager {
       if (this.onMasterStateChangeCallback) {
         this.onMasterStateChangeCallback(true, Array.from(this.trackedPatterns.keys()));
       }
-      startMasterHighlighting();
+      if (this.editorHighlightingEnabled) {
+        startMasterHighlighting();
+      }
       return { success: true, slot };
     } catch (error) {
       console.error('❌ Failed to evaluate master pattern:', error);
@@ -9468,7 +9491,9 @@ class SoundManager {
         if (this.onMasterStateChangeCallback) {
           this.onMasterStateChangeCallback(true, Array.from(this.trackedPatterns.keys()));
         }
-        startMasterHighlighting();
+        if (this.editorHighlightingEnabled) {
+          startMasterHighlighting();
+        }
         return { success: true };
       } else {
         console.error(`❌ Strudel not properly initialized`);
@@ -9539,7 +9564,9 @@ class SoundManager {
         
         this.masterPlaybackStartTime = null;
         this.masterActive = false;
-        stopMasterHighlighting();
+        if (this.editorHighlightingEnabled) {
+          stopMasterHighlighting();
+        }
         // Mute master output when stopped to avoid any DC/idle noise on interfaces
         if (this.masterGainNode) {
           this.masterGainNode.gain.setValueAtTime(0, this.audioContext?.currentTime || 0);
