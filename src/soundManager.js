@@ -617,6 +617,7 @@ class SoundManager {
     this.midiOutputs = new Map(); // portName -> WebMidi output
     this.selectedMidiOutput = null; // Currently selected MIDI output port
     this.midiChannel = 0; // Default MIDI channel (0-15, where 0 = channel 1)
+    this._midiFallbackLogged = false;
   }
   
   /**
@@ -3873,13 +3874,9 @@ class SoundManager {
             editPattern: () => {},
             setUrl: () => {},
           };
-          if (this.midiEnabled) {
-            initOptions.midiOutput = (message) => {
-              this.sendMIDIMessage(message);
-            };
-          } else {
-            console.log('ℹ️ MIDI disabled - not passing midiOutput to initStrudel (prevents false warnings)');
-          }
+          initOptions.midiOutput = (message) => {
+            this.sendMIDIMessage(message);
+          };
           console.log('🎚️ initStrudel options:', Object.keys(initOptions));
           const strudelContext = await initStrudel(initOptions);
           
@@ -7124,14 +7121,13 @@ class SoundManager {
    */
   sendMIDIMessage(message) {
     if (!this.midiEnabled || !this.selectedMidiOutput) {
-      // Log if MIDI is not ready (helpful for debugging)
-      if (!this.midiEnabled) {
-        console.warn('⚠️ MIDI not enabled');
-      } else if (!this.selectedMidiOutput) {
-        console.warn('⚠️ No MIDI output selected. Available:', Array.from(this.midiOutputs.keys()).join(', '));
+      if (!this._midiFallbackLogged) {
+        console.log('ℹ️ MIDI message received but no hardware output is configured yet. Message will be ignored until a MIDI port is selected.');
+        this._midiFallbackLogged = true;
       }
       return;
     }
+    this._midiFallbackLogged = false;
     
     try {
       // Handle different message formats from Strudel
