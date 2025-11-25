@@ -6188,13 +6188,40 @@ class InteractiveSoundApp {
     return `${cleanedPattern}.midi().midiport(${channelArg})`;
   }
   
-  async applyMidiSettingsToPattern(elementId) {
+  async applyMidiSettingsToPattern(elementId, options = {}) {
     if (!elementId) return;
+    const { persistConfig = true } = options;
     const savedConfig = this.loadElementConfig(elementId);
-    if (!savedConfig || !savedConfig.pattern) {
+    const defaultConfig = soundConfig.getElementConfig(elementId);
+    const trackedEntry = soundManager.trackedPatterns?.get(elementId);
+    
+    let sourcePattern = savedConfig?.pattern
+      || trackedEntry?.pattern
+      || trackedEntry?.rawPattern
+      || defaultConfig?.pattern
+      || '';
+    
+    if (!sourcePattern || sourcePattern.trim() === '') {
       return;
     }
-    const finalPattern = this.getPatternWithMidi(elementId, savedConfig.pattern);
+    
+    const finalPattern = this.getPatternWithMidi(elementId, sourcePattern);
+    if (!finalPattern || finalPattern === sourcePattern) {
+      return;
+    }
+    
+    if (persistConfig) {
+      const configToPersist = { ...(savedConfig || {}), pattern: finalPattern };
+      this.saveElementConfig(elementId, configToPersist, true);
+      
+      if (this.currentEditingElementId === elementId && typeof setStrudelEditorValue === 'function') {
+        try {
+          setStrudelEditorValue('modal-pattern', finalPattern);
+        } catch (error) {
+          console.warn('⚠️ Unable to update modal pattern with MIDI changes:', error);
+        }
+      }
+    }
     const isInMaster = soundManager.trackedPatterns && soundManager.trackedPatterns.has(elementId);
     try {
       if (isInMaster) {
