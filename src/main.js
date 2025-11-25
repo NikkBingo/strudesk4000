@@ -6230,7 +6230,7 @@ class InteractiveSoundApp {
       } else {
         const isPlaying = soundManager.isPlaying(elementId);
         if (!isPlaying) {
-          await soundManager.cachePatternForElement(elementId, finalPattern);
+          await soundManager.preEvaluatePattern(elementId, finalPattern);
         }
       }
     } catch (error) {
@@ -12297,11 +12297,10 @@ class InteractiveSoundApp {
           <div class="midi-toggle-row">
             <label class="midi-toggle-label">
               Send MIDI
-              <label class="midi-switch">
-                <input type="checkbox" class="midi-enable-toggle" />
-                <span class="midi-slider"></span>
-              </label>
+              <input type="checkbox" class="midi-enable-toggle" />
             </label>
+          </div>
+          <div class="midi-channel-row">
             <label class="midi-channel-label">
               Channel
               <select class="midi-channel-select" disabled>
