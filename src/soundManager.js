@@ -7234,34 +7234,36 @@ class SoundManager {
    * They should be available when midiOutput is passed to initStrudel
    */
   async ensureMIDIFunctionsAvailable() {
-    // Wait for REPL to be ready (retry up to 5 times with 500ms delay)
-    for (let i = 0; i < 5; i++) {
-      if (window.strudel && window.strudel.evaluate) {
-        break;
-      }
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-    
-    if (!window.strudel || !window.strudel.evaluate) {
-      console.warn('⚠️ Strudel REPL not available for MIDI functions after waiting');
-      return;
-    }
-    
+    // Ensure Strudel modules are ready so we can safely inspect helpers
     try {
-      // Check if MIDI functions are available by testing if .midi() exists on a pattern
-      const testCode = `
-        (function() {
-          try {
-            const testPattern = note("c");
-            return typeof testPattern.midi === 'function';
-          } catch (e) {
-            return false;
-          }
-        })()
-      `;
-      
-      const midiAvailable = await window.strudel.evaluate(testCode);
-      
+      await getStrudelModules();
+    } catch (moduleError) {
+      console.warn('⚠️ Unable to load Strudel modules for MIDI check:', moduleError);
+    }
+
+    try {
+      // Check if MIDI functions are available by testing if .midi() exists on a pattern.
+      // Use the global note() helper (or the imported one) directly to avoid Strudel REPL warnings.
+      const noteFn = typeof globalThis.note === 'function'
+        ? (...args) => globalThis.note(...args)
+        : (coreModule && typeof coreModule.note === 'function'
+            ? (...args) => coreModule.note(...args)
+            : null);
+
+      let midiAvailable = false;
+
+      if (noteFn) {
+        try {
+          const testPattern = noteFn('c');
+          midiAvailable = !!testPattern && typeof testPattern.midi === 'function';
+        } catch (patternError) {
+          console.warn('⚠️ Could not create test pattern for MIDI check:', patternError?.message || patternError);
+          midiAvailable = false;
+        }
+      } else {
+        console.warn('⚠️ note() helper not available for MIDI check');
+      }
+
       if (!midiAvailable) {
         console.log('📦 MIDI functions not available - checking webaudio MIDI setup...');
         
@@ -7294,9 +7296,17 @@ class SoundManager {
           console.warn('⚠️ webaudio not found in scheduler');
         }
         
-        // Test again after a delay
+        // Test again after a short delay by recreating the test pattern
         await new Promise(resolve => setTimeout(resolve, 500));
-        const midiAvailableAfter = await window.strudel.evaluate(testCode);
+        let midiAvailableAfter = false;
+        if (noteFn) {
+          try {
+            const testPattern = noteFn('c');
+            midiAvailableAfter = !!testPattern && typeof testPattern.midi === 'function';
+          } catch (patternError) {
+            midiAvailableAfter = false;
+          }
+        }
         if (midiAvailableAfter) {
           console.log('✅ MIDI functions now available');
         } else {
