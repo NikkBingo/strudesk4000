@@ -7829,6 +7829,20 @@ class SoundManager {
         // Normalize synth aliases to ensure consistency across master pattern
         patternCode = replaceSynthAliasesInPattern(patternCode);
         
+        // Strip any existing .postgain() and .pan() modifiers to prevent duplicates
+        // These will be re-added below with the correct values
+        patternCode = patternCode.replace(/\.postgain\s*\([^)]*\)/gi, '');
+        patternCode = patternCode.replace(/\.pan\s*\([^)]*\)/gi, '');
+        patternCode = patternCode.replace(/\.\.+/g, '.');
+        patternCode = patternCode.replace(/\s+\./g, '.');
+        patternCode = patternCode.replace(/\.\s*$/, '');
+        patternCode = patternCode.trim();
+        
+        // Apply MIDI modifiers BEFORE postgain (MIDI must be called on Pattern object, not after postgain)
+        if (this.appInstance?.getPatternWithMidi) {
+          patternCode = this.appInstance.getPatternWithMidi(elementId, patternCode);
+        }
+        
         // Add gain/pan modifiers to pattern string
         // Always apply gain to ensure smooth volume control (not just when !== 1)
         // The Web Audio API gain nodes provide real-time control, but pattern-level gain

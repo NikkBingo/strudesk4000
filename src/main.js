@@ -6544,44 +6544,36 @@ class InteractiveSoundApp {
         slotsInfo.textContent = 'None active';
       } else {
         const slotsData = Array.from(allRelevantElements).map(id => {
-          const slot = soundManager.strudelPatternSlots?.get(id);
-          const isTracked = soundManager.trackedPatterns?.has(id);
-          const isActive = this.activeElements.has(id);
-          
-          // Get pattern from saved config or default config
-          let pattern = '';
-          try {
-            const saved = localStorage.getItem(`element-config-${id}`);
-            if (saved) {
-              const config = JSON.parse(saved);
-              pattern = config.pattern || '';
+          // Get element name from DOM or config
+          let elementName = '';
+          const element = document.querySelector(`[data-sound-id="${id}"]`);
+          if (element) {
+            const titleEl = element.querySelector('.element-title');
+            if (titleEl) {
+              elementName = titleEl.textContent.trim();
             }
-          } catch (e) {
-            // Ignore
           }
-          if (!pattern) {
+          
+          // Fallback to config description if no title found
+          if (!elementName) {
+            try {
+              const saved = localStorage.getItem(`element-config-${id}`);
+              if (saved) {
+                const config = JSON.parse(saved);
+                elementName = config.title || config.description || '';
+              }
+            } catch (e) {
+              // Ignore
+            }
+          }
+          
+          // Final fallback to element config description
+          if (!elementName) {
             const elementConfig = soundConfig.getElementConfig(id);
-            pattern = elementConfig?.pattern || '';
+            elementName = elementConfig?.description || id;
           }
           
-          // Format display: element-id→slot: pattern (truncate if too long)
-          // Show status: (A)ctive, (M)aster, or both
-          let statusIndicator = '';
-          if (isActive && isTracked) {
-            statusIndicator = ' (A+M)';
-          } else if (isActive) {
-            statusIndicator = ' (A)';
-          } else if (isTracked) {
-            statusIndicator = ' (M)';
-          }
-          
-          const slotDisplay = slot ? `${id}→${slot}${statusIndicator}` : `${id}${statusIndicator}`;
-          if (pattern && pattern.trim()) {
-            const patternDisplay = pattern.length > 80 ? pattern.substring(0, 80) + '...' : pattern;
-            return `${slotDisplay}: ${patternDisplay}`;
-          } else {
-            return slotDisplay;
-          }
+          return elementName;
         });
         slotsInfo.textContent = slotsData.join(' | ');
       }
