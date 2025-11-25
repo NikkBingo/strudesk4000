@@ -562,8 +562,14 @@ class SoundManager {
     this.masterMuted = false; // Master mute state
     this.masterVolumeBeforeMute = 0.7; // Store volume before mute
     this.masterFilterEnabled = false;
-    this.masterFilterFrequency = 20000;
-    this.masterFilterResonance = 0.0001;
+    this.masterFilterFrequency = 2000;
+    this.masterFilterResonance = 0.7;
+    this.masterFilterMinHz = 80;
+    this.masterFilterMaxHz = 8000;
+    this.masterFilterBypassHz = 20000;
+    this.masterFilterMinQ = 0.1;
+    this.masterFilterMaxQ = 5;
+    this.masterFilterSmoothing = 0.05;
     this.visualizerAnalyser = null;
     this.visualizerAnalyserTapGain = null;
     this.visualizerAnalyserTapGainConnected = false;
@@ -833,7 +839,7 @@ class SoundManager {
         // CRITICAL: Connect masterGainNode to destination - this is the final output
         // Store this connection so we can verify it later
         this.masterGainNode.connect(this._realDestination);
-        __safeRouteLog(this, `🎚️ ✅ INITIAL: Connected masterPan -> masterGain -> destination (gain=${this.masterGainNode.gain.value.toFixed(3)})`);
+        __safeRouteLog(this, `🎚️ ✅ INITIAL: Connected masterPan -> masterFilter -> masterGain -> destination (gain=${this.masterGainNode.gain.value.toFixed(3)})`);
         this._updateMasterFilterNode(true);
         
         // Set master values (use stored masterVolume, not this.volume)
@@ -990,7 +996,7 @@ class SoundManager {
               
               // If master playback is active, always route through master chain
               if (masterPlaybackActive) {
-                const masterNode = masterFilterNode || masterPanNode || masterGainNode;
+                const masterNode = masterPanNode || masterFilterNode || masterGainNode;
                 if (masterNode) {
                   this.__punchcardMasterRouted = true;
                   this.__punchcardMasterConnectionNode = masterNode;
@@ -1299,7 +1305,7 @@ class SoundManager {
                     console.log(`🎚️ Stack() pattern: Routing through master chain (${soundManagerInstance.trackedPatterns.size} elements)`);
                     soundManagerInstance._stackMasterRoutingLogged = true;
                   }
-                  const masterNode = masterFilterNode || masterPanNode || masterGainNode;
+                  const masterNode = masterPanNode || masterFilterNode || masterGainNode;
                   if (masterNode) {
                     return this.__originalConnect.call(this, masterNode, outputIndex, inputIndex);
                   }
@@ -1373,7 +1379,7 @@ class SoundManager {
               // Final fallback: only allow routing through master chain when no element routing is possible
               // Limit this to cases where there are no tracked patterns yet (e.g., initialization) or master is inactive
               const allowMasterFallback = masterPlaybackActive || (soundManagerInstance.trackedPatterns.size === 0) || !soundManagerInstance.masterActive;
-              const masterNode = allowMasterFallback ? (masterPanNode || masterGainNode) : null;
+              const masterNode = allowMasterFallback ? (masterPanNode || masterFilterNode || masterGainNode) : null;
               if (masterNode) {
                 // Skip fallback if this source is already routed through an element chain
                 if (this.__punchcardElementRouted) {
@@ -1616,41 +1622,56 @@ class SoundManager {
   }
 
   enableMasterFilter(enabled) {
-    this.masterFilterEnabled = !!enabled;
+    const nextState = !!enabled;
+    if (this.masterFilterEnabled === nextState) {
+      return;
+    }
+    this.masterFilterEnabled = nextState;
     this._updateMasterFilterNode(true);
   }
 
   setMasterFilterFrequency(value, immediate = false) {
     const numeric = Number(value);
-    this.masterFilterFrequency = Number.isFinite(numeric) ? numeric : this.masterFilterFrequency;
-    this._updateMasterFilterNode(immediate);
+    if (Number.isFinite(numeric)) {
+      const clamped = Math.max(this.masterFilterMinHz, Math.min(this.masterFilterMaxHz, numeric));
+      this.masterFilterFrequency = clamped;
+      this._updateMasterFilterNode(immediate);
+    }
   }
 
   setMasterFilterResonance(value, immediate = false) {
     const numeric = Number(value);
-    this.masterFilterResonance = Number.isFinite(numeric) ? numeric : this.masterFilterResonance;
-    this._updateMasterFilterNode(immediate);
+    if (Number.isFinite(numeric)) {
+      const clamped = Math.max(this.masterFilterMinQ, Math.min(this.masterFilterMaxQ, numeric));
+      this.masterFilterResonance = clamped;
+      this._updateMasterFilterNode(immediate);
+    }
   }
 
   _updateMasterFilterNode(immediate = false) {
-    if (!this.masterFilterNode) {
+    if (!this.masterFilterNode || !this.audioContext) {
       return;
     }
-    const now = this.audioContext?.currentTime || 0;
+    const now = this.audioContext.currentTime || 0;
     const freqTarget = this.masterFilterEnabled
-      ? Math.max(20, Math.min(20000, this.masterFilterFrequency || 20000))
-      : 20000;
+      ? Math.max(this.masterFilterMinHz, Math.min(this.masterFilterMaxHz, this.masterFilterFrequency || this.masterFilterMaxHz))
+      : this.masterFilterBypassHz;
     const qTarget = this.masterFilterEnabled
-      ? Math.max(0.0001, Math.min(30, this.masterFilterResonance || 0.0001))
-      : 0.0001;
+      ? Math.max(this.masterFilterMinQ, Math.min(this.masterFilterMaxQ, this.masterFilterResonance || this.masterFilterMinQ))
+      : this.masterFilterMinQ;
     const freqParam = this.masterFilterNode.frequency;
     const qParam = this.masterFilterNode.Q;
     if (immediate) {
+      freqParam.cancelScheduledValues(now);
+      qParam.cancelScheduledValues(now);
       freqParam.setValueAtTime(freqTarget, now);
       qParam.setValueAtTime(qTarget, now);
     } else {
-      freqParam.setTargetAtTime(freqTarget, now, 0.05);
-      qParam.setTargetAtTime(qTarget, now, 0.05);
+      const timeConstant = Math.max(0.01, this.masterFilterSmoothing || 0.05);
+      freqParam.cancelScheduledValues(now);
+      qParam.cancelScheduledValues(now);
+      freqParam.setTargetAtTime(freqTarget, now, timeConstant);
+      qParam.setTargetAtTime(qTarget, now, timeConstant);
     }
   }
 
@@ -3774,21 +3795,19 @@ class SoundManager {
           }
           
           // Set up MIDI output handler before initStrudel
-          const midiOutputHandler = (message) => {
-            // This will be called by Strudel when patterns use .midi()
-            if (this.midiEnabled) {
-              this.sendMIDIMessage(message);
-            }
-          };
-          
           const initOptions = {
             audioContext: this.audioContext,
             getTime: () => this.audioContext ? this.audioContext.currentTime : 0,
             editPattern: () => {},
             setUrl: () => {},
-            // Pass MIDI output handler to enable .midi() functions
-            midiOutput: midiOutputHandler
           };
+          if (this.midiEnabled) {
+            initOptions.midiOutput = (message) => {
+              this.sendMIDIMessage(message);
+            };
+          } else {
+            console.log('ℹ️ MIDI disabled - not passing midiOutput to initStrudel (prevents false warnings)');
+          }
           console.log('🎚️ initStrudel options:', Object.keys(initOptions));
           const strudelContext = await initStrudel(initOptions);
           
@@ -3821,21 +3840,21 @@ class SoundManager {
             console.warn('⚠️ Error pre-loading preset samples:', error);
           }
           
-          // MIDI was already initialized before initStrudel
-          // Now set up the MIDI connection and ensure functions are available
-          try {
-            // Re-setup MIDI output handler now that Strudel is initialized
-            this.setupStrudelMIDIOutput();
-            // Ensure MIDI functions are available after a short delay to let Strudel fully initialize
-            setTimeout(async () => {
-              try {
-                await this.ensureMIDIFunctionsAvailable();
-              } catch (error) {
-                console.warn('⚠️ Error ensuring MIDI functions available:', error);
-              }
-            }, 1000);
-          } catch (error) {
-            console.warn('⚠️ Error setting up MIDI functions:', error);
+          if (this.midiEnabled) {
+            try {
+              this.setupStrudelMIDIOutput();
+              setTimeout(async () => {
+                try {
+                  await this.ensureMIDIFunctionsAvailable();
+                } catch (error) {
+                  console.warn('⚠️ Error ensuring MIDI functions available:', error);
+                }
+              }, 1000);
+            } catch (error) {
+              console.warn('⚠️ Error setting up MIDI functions:', error);
+            }
+          } else {
+            console.log('ℹ️ MIDI not enabled; skipping Strudel MIDI wiring to avoid spurious warnings');
           }
           
           console.log('replInstance type:', typeof replInstance);

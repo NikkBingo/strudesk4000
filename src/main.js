@@ -3205,9 +3205,15 @@ class InteractiveSoundApp {
     this.lastCutoffUpdate = null;
     this.currentResonanceValue = null;
     this.lastResonanceUpdate = null;
+    this.chaospadSettings = {
+      minFrequency: soundManager.masterFilterMinHz || 80,
+      maxFrequency: soundManager.masterFilterMaxHz || 8000,
+      minResonance: soundManager.masterFilterMinQ || 0.1,
+      maxResonance: soundManager.masterFilterMaxQ || 5
+    };
     this.chaospadDefaults = {
-      cutoff: 4040,
-      resonance: 0
+      cutoff: Math.min(this.chaospadSettings.maxFrequency, Math.max(this.chaospadSettings.minFrequency, soundManager.masterFilterFrequency || 4040)),
+      resonance: Math.min(this.chaospadSettings.maxResonance, Math.max(this.chaospadSettings.minResonance, soundManager.masterFilterResonance || 0.7))
     };
   }
 
@@ -4205,103 +4211,11 @@ class InteractiveSoundApp {
       ? soundManager.isMasterActive()
       : !!soundManager.masterActive;
     
-    // If "off" is selected, just use the base pattern without any visualizer processors
-    if (this.selectedVisualizer === 'off') {
-      // Clean up any existing visualizer observers and intervals
-      this.scopeSpectrumObserver = null;
-      this.scopeSpectrumCopyLoop = null;
-      this.teardownExternalVisualizerCanvas();
-      this.stopVisualizerAnimation();
-      
-      // Get the current master pattern without any visualizers
-      let basePattern = soundManager.getMasterPatternCode();
-      
-      // If master pattern is empty, check if there are tracked patterns
-      if (!basePattern || basePattern.trim() === '') {
-        if (soundManager.trackedPatterns && soundManager.trackedPatterns.size > 0) {
-          console.log(`🔄 Master pattern is empty but ${soundManager.trackedPatterns.size} tracked pattern(s) found - rebuilding master pattern`);
-          soundManager.updateMasterPattern(new Set(), new Set());
-          basePattern = soundManager.getMasterPatternCode();
-        }
-        
-        // If still empty, try reading from editor
-        if (!basePattern || basePattern.trim() === '') {
-          const editorPattern = getStrudelEditorValue('master-pattern').trim();
-          if (editorPattern && editorPattern !== '') {
-            console.log(`📝 Reading master pattern from editor`);
-            basePattern = editorPattern;
-          }
-        }
-        
-        // Only use silence as last resort
-        if (!basePattern || basePattern.trim() === '') {
-          console.warn('⚠️ No master pattern to apply visualizer to, using silence');
-          basePattern = 'silence';
-        }
-      }
-      
-      // Strip JavaScript comments (// and /* */) but keep channel markers
-      basePattern = basePattern.replace(/\/\/.*$/gm, '');
-      basePattern = basePattern.replace(/\/\*[\s\S]*?\*\//g, (comment) => {
-        return /\/\*\s*Channel\s+\d+\s*\*\//i.test(comment) ? comment : '';
-      });
-      basePattern = basePattern.replace(/\n\s*\n/g, '\n').trim();
-      
-      // Strip any existing visualizer methods
-      const findMatchingParen = (str, startIndex) => {
-        let depth = 1;
-        for (let i = startIndex + 1; i < str.length; i++) {
-          if (str[i] === '(') depth++;
-          else if (str[i] === ')') {
-            depth--;
-            if (depth === 0) return i;
-          }
-        }
-        return -1;
-      };
-      
-      const visualizerMethods = ['scope', 'tscope', 'fscope', 'spectrum', 'visual', 'pianoroll', 'barchart'];
-      visualizerMethods.forEach(method => {
-        const searchPattern = new RegExp(`\\.\\s*_?${method}\\s*\\(`, 'gi');
-        let match;
-        
-        while ((match = searchPattern.exec(basePattern)) !== null) {
-          const startPos = match.index;
-          const openParenPos = match.index + match[0].length - 1;
-          const closeParenPos = findMatchingParen(basePattern, openParenPos);
-          
-          if (closeParenPos !== -1) {
-            basePattern = basePattern.substring(0, startPos) + basePattern.substring(closeParenPos + 1);
-            searchPattern.lastIndex = 0;
-          } else {
-            break;
-          }
-        }
-      });
-      basePattern = basePattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
-      
-      // Update the master pattern without any visualizer
-      await soundManager.setMasterPatternCode(basePattern);
-      await this.ensureMasterPlaybackAfterVisualizerChange(masterWasPlaying);
-      
-      // Always show placeholder when visualizer is "off"
-      this.showMasterPunchcardPlaceholder();
-      
-      // Refresh the punchcard display
-      this.refreshMasterPunchcard('visualizer-off').catch(err => {
-        console.warn('⚠️ Unable to refresh punchcard after turning off visualizer:', err);
-      });
-      
-      return; // Exit early - no visualizer processing needed
-    }
-    
-    // Clean up any existing visualizer observers and intervals
-      this.scopeSpectrumObserver = null;
-      this.scopeSpectrumCopyLoop = null;
-    this.teardownExternalVisualizerCanvas();
+    this.scopeSpectrumObserver = null;
+    this.scopeSpectrumCopyLoop = null;
     this.stopVisualizerAnimation();
+    this.teardownExternalVisualizerCanvas();
     
-    // Clean up any existing pianoroll canvases from previous sessions
     if (this.selectedVisualizer !== 'pianoroll') {
       const existingPianorollCanvases = document.querySelectorAll('canvas[data-processed="true"]');
       existingPianorollCanvases.forEach(canvas => {
@@ -4311,190 +4225,94 @@ class InteractiveSoundApp {
       });
     }
     
-    // Prepare canvas for visualizers (ensure context is ready)
-    await this.prepareCanvasForExternalVisualizer();
-    
-    // Get the current master pattern without any visualizers
-    let basePattern = soundManager.getMasterPatternCode();
-    
-    // If master pattern is empty, check if there are tracked patterns
-    // If so, rebuild the master pattern from tracked patterns first
-    if (!basePattern || basePattern.trim() === '') {
-      if (soundManager.trackedPatterns && soundManager.trackedPatterns.size > 0) {
-        console.log(`🔄 Master pattern is empty but ${soundManager.trackedPatterns.size} tracked pattern(s) found - rebuilding master pattern`);
-        soundManager.updateMasterPattern(new Set(), new Set());
-        basePattern = soundManager.getMasterPatternCode();
-      }
-      
-      // If still empty, try reading from editor
-      if (!basePattern || basePattern.trim() === '') {
-        const editorPattern = getStrudelEditorValue('master-pattern').trim();
-        if (editorPattern && editorPattern !== '') {
-          console.log(`📝 Reading master pattern from editor`);
-          basePattern = editorPattern;
-        }
-      }
-      
-      // Only use silence as last resort
-      if (!basePattern || basePattern.trim() === '') {
-        console.warn('⚠️ No master pattern to apply visualizer to, using silence');
-        basePattern = 'silence';
-      }
-    }
-    
-    // Strip JavaScript comments (// and /* */) but keep channel markers
-    basePattern = basePattern.replace(/\/\/.*$/gm, '');
-    basePattern = basePattern.replace(/\/\*[\s\S]*?\*\//g, (comment) => {
-      return /\/\*\s*Channel\s+\d+\s*\*\//i.test(comment) ? comment : '';
-    });
-    basePattern = basePattern.replace(/\n\s*\n/g, '\n').trim();
-    
-    // Strip any existing visualizer methods using the same robust logic as computeMasterPunchcardData
-    const findMatchingParen = (str, startIndex) => {
-      let depth = 1;
-      for (let i = startIndex + 1; i < str.length; i++) {
-        if (str[i] === '(') depth++;
-        else if (str[i] === ')') {
-          depth--;
-          if (depth === 0) return i;
-        }
-      }
-      return -1;
-    };
-    
-    const visualizerMethods = ['scope', 'tscope', 'fscope', 'spectrum', 'visual', 'pianoroll', 'barchart'];
-    visualizerMethods.forEach(method => {
-      const searchPattern = new RegExp(`\\.\\s*_?${method}\\s*\\(`, 'gi');
-      let match;
-      
-      while ((match = searchPattern.exec(basePattern)) !== null) {
-        const startPos = match.index;
-        const openParenPos = match.index + match[0].length - 1;
-        const closeParenPos = findMatchingParen(basePattern, openParenPos);
-        
-        if (closeParenPos !== -1) {
-          basePattern = basePattern.substring(0, startPos) + basePattern.substring(closeParenPos + 1);
-          searchPattern.lastIndex = 0;
-        } else {
-          break;
-        }
-      }
-    });
-    basePattern = basePattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
-    
-    // Add the selected visualizer with canvas ID targeting
-    // This ensures the visualizer renders in the correct canvas, not full-page
+    const basePattern = await this.getMasterPatternWithoutVisualizer();
     let patternWithVisualizer = basePattern;
     const canvasId = 'master-punchcard-canvas';
     
-    // Setup analyser for visualizers that need audio data (scope, bar, spectrum)
-    // MUST be done BEFORE pattern evaluation so visualizers can find it
-    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
-      // Ensure analyser is set up and connected BEFORE pattern evaluation
-      soundManager.setupVisualizerAnalyser();
-      // Wait a bit longer to ensure analyser is fully connected and ready
-      await new Promise(resolve => setTimeout(resolve, 100));
+    if (this.selectedVisualizer !== 'off') {
+      await this.prepareCanvasForExternalVisualizer();
       
-      // Verify analyser is connected
-      const analyserId = canvasId;
-      const getAnalyserById = window.strudel?.getAnalyserById || globalThis.getAnalyserById;
-      if (getAnalyserById) {
-        try {
-          const analyser = getAnalyserById(analyserId);
-          if (analyser && analyser.context === soundManager.audioContext) {
-            console.log(`✅ Verified analyser "${analyserId}" is ready in correct audio context`);
-          } else {
-            console.warn(`⚠️ Analyser "${analyserId}" not ready or in wrong context`);
+      if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
+        soundManager.setupVisualizerAnalyser();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const analyserId = canvasId;
+        const getAnalyserById = window.strudel?.getAnalyserById || globalThis.getAnalyserById;
+        if (getAnalyserById) {
+          try {
+            const analyser = getAnalyserById(analyserId);
+            if (analyser && analyser.context === soundManager.audioContext) {
+              console.log(`✅ Verified analyser "${analyserId}" is ready in correct audio context`);
+            } else {
+              console.warn(`⚠️ Analyser "${analyserId}" not ready or in wrong context`);
+            }
+          } catch (e) {
+            console.warn(`⚠️ Could not verify analyser:`, e.message);
           }
-        } catch (e) {
-          console.warn(`⚠️ Could not verify analyser:`, e.message);
         }
       }
-    }
-    
-    // Ensure canvas is visible and properly sized BEFORE calling getDrawContext
-    // This is critical for scope/spectrum - they need to find the canvas by ID
-    const canvasElement = document.getElementById(canvasId);
-    if (canvasElement) {
-      // Ensure canvas is positioned correctly (not fixed/absolute which would make it full-page)
-      canvasElement.style.position = 'relative';
-      canvasElement.style.display = 'block';
-      canvasElement.style.visibility = 'visible';
-      canvasElement.style.opacity = '1';
-      canvasElement.style.left = '0';
-      canvasElement.style.top = '0';
-      canvasElement.style.width = '100%';
-      canvasElement.style.height = '100%';
-      // Ensure canvas has the correct ID (scope/spectrum look for canvas by analyser ID)
-      canvasElement.id = canvasId;
       
-      // Ensure canvas is in the container, not moved elsewhere
-      const container = document.getElementById('master-punchcard');
-      if (container && canvasElement.parentNode !== container) {
-        container.appendChild(canvasElement);
-      }
-      
-      // Get container dimensions
-      if (container) {
-        const rect = container.getBoundingClientRect();
-        const pixelRatio = window.devicePixelRatio || 1;
-        const displayWidth = Math.max(rect.width || 320, 320);
-        const displayHeight = Math.max(rect.height || 200, 200);
-        
-        // Set canvas dimensions (internal size with pixel ratio)
-        canvasElement.width = displayWidth * pixelRatio;
-        canvasElement.height = displayHeight * pixelRatio;
-        canvasElement.style.width = `${displayWidth}px`;
-        canvasElement.style.height = `${displayHeight}px`;
-        
-        // For scope/barchart/spectrum, ensure canvas is ready and accessible
-        if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
-          // Force a reflow to ensure canvas is rendered
-          canvasElement.offsetHeight;
-          console.log(`✅ Canvas "${canvasId}" is ready for ${this.selectedVisualizer}:`, {
-            id: canvasElement.id,
-            width: canvasElement.width,
-            height: canvasElement.height,
-            visible: canvasElement.style.display !== 'none',
-            inDOM: document.contains(canvasElement)
-          });
-        }
-      }
-    } else {
-      console.error(`❌ Canvas "${canvasId}" not found!`);
-    }
-    
-    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
-      if (canvasElement && canvasElement.id !== canvasId) {
+      const canvasElement = document.getElementById(canvasId);
+      if (canvasElement) {
+        canvasElement.style.position = 'relative';
+        canvasElement.style.display = 'block';
+        canvasElement.style.visibility = 'visible';
+        canvasElement.style.opacity = '1';
+        canvasElement.style.left = '0';
+        canvasElement.style.top = '0';
+        canvasElement.style.width = '100%';
+        canvasElement.style.height = '100%';
         canvasElement.id = canvasId;
-      }
-      this.masterPunchcardCanvas.style.display = 'block';
-    }
-    
-    // For visualizers that need canvas context, register with getDrawContext AFTER canvas is sized
-    // This MUST be done BEFORE pattern evaluation so visualizers can find the canvas
-    if (this.selectedVisualizer === 'pianoroll') {
-      try {
-        // Register canvas with Strudel's draw system
-        // getDrawContext will find our existing canvas and return its context
-        // For scope/spectrum, this ensures they use our canvas instead of creating their own
-        const { getDrawContext } = await import('@strudel/draw');
-        const ctx = getDrawContext(canvasId, { contextType: '2d' });
         
-        window.__strudelVisualizerCtx = ctx;
+        const container = document.getElementById('master-punchcard');
+        if (container && canvasElement.parentNode !== container) {
+          container.appendChild(canvasElement);
+        }
         
-        console.log(`✅ Registered canvas "${canvasId}" with getDrawContext for ${this.selectedVisualizer}`);
-      } catch (error) {
-        console.warn(`⚠️ Failed to register canvas with getDrawContext for ${this.selectedVisualizer}:`, error);
+        if (container) {
+          const rect = container.getBoundingClientRect();
+          const pixelRatio = window.devicePixelRatio || 1;
+          const displayWidth = Math.max(rect.width || 320, 320);
+          const displayHeight = Math.max(rect.height || 200, 200);
+          canvasElement.width = displayWidth * pixelRatio;
+          canvasElement.height = displayHeight * pixelRatio;
+          canvasElement.style.width = `${displayWidth}px`;
+          canvasElement.style.height = `${displayHeight}px`;
+          
+          if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
+            canvasElement.offsetHeight;
+            console.log(`✅ Canvas "${canvasId}" ready for ${this.selectedVisualizer}`);
+          }
+        }
+      } else {
+        console.error(`❌ Canvas "${canvasId}" not found!`);
       }
-    }
-    
-    const ctxExpression = "(window.__strudelVisualizerCtx || (document.getElementById('master-punchcard-canvas') && document.getElementById('master-punchcard-canvas').getContext && document.getElementById('master-punchcard-canvas').getContext('2d')))";
-    
-    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart') {
-      patternWithVisualizer = basePattern;
-    } else if (this.selectedVisualizer === 'spectrum') {
-      patternWithVisualizer = `${basePattern}._spectrum({
+      
+      if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
+        if (canvasElement && canvasElement.id !== canvasId) {
+          canvasElement.id = canvasId;
+        }
+        if (this.masterPunchcardCanvas) {
+          this.masterPunchcardCanvas.style.display = 'block';
+        }
+      }
+      
+      if (this.selectedVisualizer === 'pianoroll') {
+        try {
+          const { getDrawContext } = await import('@strudel/draw');
+          const ctx = getDrawContext(canvasId, { contextType: '2d' });
+          window.__strudelVisualizerCtx = ctx;
+          console.log(`✅ Registered canvas "${canvasId}" with getDrawContext for ${this.selectedVisualizer}`);
+        } catch (error) {
+          console.warn(`⚠️ Failed to register canvas with getDrawContext for ${this.selectedVisualizer}:`, error);
+        }
+      }
+      
+      const ctxExpression = "(window.__strudelVisualizerCtx || (document.getElementById('master-punchcard-canvas') && document.getElementById('master-punchcard-canvas').getContext && document.getElementById('master-punchcard-canvas').getContext('2d')))";
+      
+      if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'punchcard') {
+        patternWithVisualizer = basePattern;
+      } else if (this.selectedVisualizer === 'spectrum') {
+        patternWithVisualizer = `${basePattern}._spectrum({
         id: '${canvasId}',
         ctx: ${ctxExpression},
         thickness: 3,
@@ -4502,12 +4320,12 @@ class InteractiveSoundApp {
         min: -80,
         max: 0
       })`;
-    } else if (this.selectedVisualizer === 'pianoroll') {
-      this.externalVisualizerType = 'pianoroll';
-      this.watchForExternalVisualizerCanvas('pianoroll');
-      if (this.masterPunchcardCanvas) {
-        this.masterPunchcardCanvas.style.display = 'none';
-      }
+      } else if (this.selectedVisualizer === 'pianoroll') {
+        this.externalVisualizerType = 'pianoroll';
+        this.watchForExternalVisualizerCanvas('pianoroll');
+        if (this.masterPunchcardCanvas) {
+          this.masterPunchcardCanvas.style.display = 'none';
+        }
         patternWithVisualizer = `${basePattern}.pianoroll({ 
           cycles: 4,
           playhead: 0.5,
@@ -4519,41 +4337,32 @@ class InteractiveSoundApp {
           colorizeInactive: true,
           background: '#05060a'
         })`;
+      }
     }
-    // For 'punchcard', we don't add any visualizer method - it's just the default rendering
     
-    console.log(`🎨 Pattern with visualizer: ${patternWithVisualizer.substring(0, 150)}...`);
-    console.log(`🎨 Full pattern with visualizer:`, patternWithVisualizer);
-    
-    // Ensure we have a valid pattern
     if (!patternWithVisualizer || patternWithVisualizer.trim() === '') {
-      console.warn(`⚠️ Pattern with visualizer is empty, using base pattern`);
+      console.warn('⚠️ Pattern with visualizer is empty, reverting to base pattern');
       patternWithVisualizer = basePattern || 'silence';
     }
     
-    // Verify visualizer is in the pattern
-    const usesInternalVisualizer = this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart';
-    const requiresPatternVisualizer = !usesInternalVisualizer && this.selectedVisualizer !== 'punchcard' && this.selectedVisualizer !== 'off';
-    let hasVisualizer = true;
-    if (requiresPatternVisualizer) {
-      const checkRegex = new RegExp(`\\.\\s*_?${this.selectedVisualizer}\\s*\\(`);
-      hasVisualizer = checkRegex.test(patternWithVisualizer);
-      if (!hasVisualizer) {
-      console.error(`❌ Visualizer "${this.selectedVisualizer}" not found in pattern! Pattern:`, patternWithVisualizer);
-            } else {
-        console.log(`✅ Visualizer "${this.selectedVisualizer}" found in pattern`);
+    if (this.selectedVisualizer !== 'off' && this.selectedVisualizer !== 'punchcard') {
+      const usesInternalVisualizer = this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart';
+      if (!usesInternalVisualizer) {
+        const checkRegex = new RegExp(`\\.\\s*_?${this.selectedVisualizer}\\s*\\(`);
+        if (!checkRegex.test(patternWithVisualizer)) {
+          console.error(`❌ Visualizer "${this.selectedVisualizer}" not found in pattern! Pattern:`, patternWithVisualizer);
+        } else {
+          console.log(`✅ Visualizer "${this.selectedVisualizer}" found in pattern`);
+        }
+      } else {
+        console.log(`✅ Using internal analyser visualizer for ${this.selectedVisualizer}`);
       }
-    } else if (usesInternalVisualizer) {
-      console.log(`✅ Using internal analyser visualizer for ${this.selectedVisualizer}`);
     }
     
-    // Update the master pattern and restart playback
     await soundManager.setMasterPatternCode(patternWithVisualizer);
     await this.ensureMasterPlaybackAfterVisualizerChange(masterWasPlaying);
     
-    // Don't start visualizer loops if visualizer is "off"
     if (this.selectedVisualizer === 'off') {
-      this.stopVisualizerAnimation();
       this.showMasterPunchcardPlaceholder();
     } else if (this.selectedVisualizer === 'scope') {
       this.startScopeVisualizerLoop();
@@ -4567,8 +4376,7 @@ class InteractiveSoundApp {
       this.hideMasterPunchcardPlaceholder();
     }
     
-    // Refresh the punchcard display
-    this.refreshMasterPunchcard('visualizer-applied').catch(err => {
+    this.refreshMasterPunchcard(this.selectedVisualizer === 'off' ? 'visualizer-off' : 'visualizer-applied').catch(err => {
       console.warn('⚠️ Unable to refresh punchcard after applying visualizer:', err);
     });
   }
@@ -5257,12 +5065,14 @@ class InteractiveSoundApp {
     const percentage = Math.max(0, Math.min(1, mouseX / canvasWidth));
     const verticalPercentage = Math.max(0, Math.min(1, mouseYFromBottom / canvasHeight));
 
-    // Smoothly interpolate cutoff frequency from 80 Hz (left) to 8000 Hz (right)
-    const minFreq = 80;
-    const maxFreq = 8000;
+    const {
+      minFrequency,
+      maxFrequency,
+      minResonance,
+      maxResonance
+    } = this.chaospadSettings;
     
-    // Linear interpolation
-    const cutoffValue = Math.round(minFreq + (maxFreq - minFreq) * percentage);
+    const cutoffValue = Math.round(minFrequency + (maxFrequency - minFrequency) * percentage);
 
     // Throttle updates: only update if value changed significantly (more than 50 Hz)
     // or if it's been more than 100ms since last update
@@ -5279,11 +5089,11 @@ class InteractiveSoundApp {
       soundManager.setMasterFilterFrequency(cutoffValue);
     }
 
-    // Resonance control (vertical)
-    const minResonance = 0;
-    const maxResonance = 20;
     const resonanceValueRaw = minResonance + (maxResonance - minResonance) * verticalPercentage;
-    const resonanceValue = Math.round(resonanceValueRaw * 10) / 10; // match slider precision
+    let resonanceValue = Math.round(resonanceValueRaw * 10) / 10;
+    if (cutoffValue < 250) {
+      resonanceValue = Math.min(resonanceValue, 2.5);
+    }
     const shouldUpdateResonance =
       this.currentResonanceValue === null ||
       Math.abs(this.currentResonanceValue - resonanceValue) > 0.2 ||
@@ -5307,6 +5117,79 @@ class InteractiveSoundApp {
     this.currentResonanceValue = this.chaospadDefaults.resonance;
     soundManager.setMasterFilterFrequency(this.currentCutoffValue, immediate);
     soundManager.setMasterFilterResonance(this.currentResonanceValue, immediate);
+  }
+
+  async getMasterPatternWithoutVisualizer() {
+    let basePattern = soundManager.getMasterPatternCode();
+    
+    if (!basePattern || basePattern.trim() === '') {
+      if (soundManager.trackedPatterns && soundManager.trackedPatterns.size > 0) {
+        console.log(`🔄 Master pattern empty; rebuilding from ${soundManager.trackedPatterns.size} tracked pattern(s)`);
+        soundManager.updateMasterPattern(new Set(), new Set());
+        basePattern = soundManager.getMasterPatternCode();
+      }
+      
+      if (!basePattern || basePattern.trim() === '') {
+        const editorPattern = getStrudelEditorValue('master-pattern').trim();
+        if (editorPattern) {
+          console.log('📝 Falling back to master editor contents');
+          basePattern = editorPattern;
+        }
+      }
+      
+      if (!basePattern || basePattern.trim() === '') {
+        console.warn('⚠️ No master pattern available; using silence');
+        basePattern = 'silence';
+      }
+    }
+    
+    // Remove JS comments except channel markers
+    basePattern = basePattern.replace(/\/\/.*$/gm, '');
+    basePattern = basePattern.replace(/\/\*[\s\S]*?\*\//g, (comment) => (
+      /\/\*\s*Channel\s+\d+\s*\*\//i.test(comment) ? comment : ''
+    ));
+    basePattern = basePattern.replace(/\n\s*\n/g, '\n').trim();
+    
+    return this.stripVisualizerMethods(basePattern);
+  }
+  
+  stripVisualizerMethods(pattern) {
+    if (!pattern) {
+      return pattern;
+    }
+    const findMatchingParen = (str, startIndex) => {
+      let depth = 1;
+      for (let i = startIndex + 1; i < str.length; i++) {
+        if (str[i] === '(') depth++;
+        else if (str[i] === ')') {
+          depth--;
+          if (depth === 0) return i;
+        }
+      }
+      return -1;
+    };
+    
+    const visualizerMethods = ['scope', 'tscope', 'fscope', 'spectrum', 'visual', 'pianoroll', 'barchart'];
+    let sanitized = pattern;
+    visualizerMethods.forEach(method => {
+      const searchPattern = new RegExp(`\\.\\s*_?${method}\\s*\\(`, 'gi');
+      let match;
+      
+      while ((match = searchPattern.exec(sanitized)) !== null) {
+        const startPos = match.index;
+        const openParenPos = match.index + match[0].length - 1;
+        const closeParenPos = findMatchingParen(sanitized, openParenPos);
+        
+        if (closeParenPos !== -1) {
+          sanitized = sanitized.substring(0, startPos) + sanitized.substring(closeParenPos + 1);
+          searchPattern.lastIndex = 0;
+        } else {
+          break;
+        }
+      }
+    });
+    
+    return sanitized.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
   }
 
 
