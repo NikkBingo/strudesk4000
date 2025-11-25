@@ -11,3 +11,5 @@ export * from './synth.mjs';
 export * from './zzfx.mjs';
 export * from './logger.mjs';
 export * from './dspworklet.mjs';
+export * from './audioContext.mjs';
+export * from './wavetable.mjs';
