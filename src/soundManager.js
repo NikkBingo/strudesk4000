@@ -920,6 +920,12 @@ class SoundManager {
             if (!isSourceOurContext || (!(isDestinationOurContext || destinationHasNoContext))) {
               return this.__originalConnect.call(this, destination, outputIndex, inputIndex);
             }
+
+            // Allow visualizer helper nodes (analyser taps, silent gains) to connect directly
+            const isVisualizerHelper = (node) => !!(node && node.__strudelVisualizerNode);
+            if (isVisualizerHelper(this) || isVisualizerHelper(destination)) {
+              return this.__originalConnect.call(this, destination, outputIndex, inputIndex);
+            }
             
             // CRITICAL DEBUG: Log ALL connection attempts when master is active
             // This helps us see if Strudel is creating nodes and connecting them
@@ -8154,6 +8160,7 @@ class SoundManager {
         analyser = this.audioContext.createAnalyser();
         analyser.fftSize = 2048;
         analyser.smoothingTimeConstant = 0.8;
+        analyser.__strudelVisualizerNode = true;
         
         // Store it so Strudel can find it by ID
         // Patch getAnalyserById to return our analyser for this ID
@@ -8196,6 +8203,9 @@ class SoundManager {
       
       // Store analyser reference so we can verify it later
       this.visualizerAnalyser = analyser;
+      if (this.visualizerAnalyser) {
+        this.visualizerAnalyser.__strudelVisualizerNode = true;
+      }
       
       // Connect analyser to master gain node (after all processing)
       // This allows the analyser to tap the final audio signal
@@ -8209,6 +8219,7 @@ class SoundManager {
             if (!this.visualizerAnalyserTapGain && this.audioContext) {
               this.visualizerAnalyserTapGain = this.audioContext.createGain();
               this.visualizerAnalyserTapGain.gain.value = 0;
+              this.visualizerAnalyserTapGain.__strudelVisualizerNode = true;
             }
             
             if (this.visualizerAnalyserTapGain) {
