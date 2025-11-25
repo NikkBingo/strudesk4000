@@ -3959,14 +3959,14 @@ class InteractiveSoundApp {
         }
         
         if (!this.chaospadEnabled) {
-          // Remove modifiers when disabled
-          console.log('🎛️ Chaospad: Disabled - removing cutoff and resonance');
-          await this.removeCutoffFromMaster();
-          await this.removeResonanceFromMaster();
+          console.log('🎛️ Chaospad: Disabled - bypassing master filter');
+          this.currentCutoffValue = null;
+          this.currentResonanceValue = null;
+          soundManager.enableMasterFilter(false);
         } else {
-          // Apply defaults when enabled
-          console.log('🎛️ Chaospad: Enabled - applying default cutoff and resonance');
-          await this.resetChaospadToDefaults();
+          console.log('🎛️ Chaospad: Enabled - activating master filter with defaults');
+          soundManager.enableMasterFilter(true);
+          this.resetChaospadToDefaults(true);
         }
       });
     }
@@ -4008,7 +4008,6 @@ class InteractiveSoundApp {
     
     // Chaospad mouse move handler
     this.handleChaospadMouseMove = this.handleChaospadMouseMove.bind(this);
-    this.removeCutoffFromMaster = this.removeCutoffFromMaster.bind(this);
     
     window.addEventListener('resize', () => {
       if (this.masterPunchcardResizeTimer) {
@@ -5277,7 +5276,7 @@ class InteractiveSoundApp {
       console.log(`🎛️ Chaospad: Mouse at ${(percentage * 100).toFixed(1)}% - updating cutoff to ${cutoffValue} Hz`);
       this.currentCutoffValue = cutoffValue;
       this.lastCutoffUpdate = now;
-      this.applyCutoffToMaster(cutoffValue);
+      soundManager.setMasterFilterFrequency(cutoffValue);
     }
 
     // Resonance control (vertical)
@@ -5294,225 +5293,22 @@ class InteractiveSoundApp {
       console.log(`🎛️ Chaospad: Vertical ${(verticalPercentage * 100).toFixed(1)}% - updating resonance to ${resonanceValue}`);
       this.currentResonanceValue = resonanceValue;
       this.lastResonanceUpdate = now;
-      this.applyResonanceToMaster(resonanceValue);
+      soundManager.setMasterFilterResonance(resonanceValue);
     }
   }
 
-  /**
-   * Apply cutoff modifier to master pattern
-   * Applies cutoff to the entire stack, after the stack closing parenthesis
-   */
-  async applyCutoffToMaster(cutoffValue) {
-    try {
-      // Get base pattern without cutoff
-      let basePattern = soundManager.getMasterPatternCode();
-      
-      if (!basePattern || basePattern.trim() === '') {
-        console.log('⚠️ Chaospad: No master pattern to apply cutoff to - master may not be playing');
-        // Even if master isn't playing, we should still add cutoff so it's there when play starts
-        // But we need at least a silence pattern to work with
-        basePattern = 'silence';
-        console.log('🎛️ Chaospad: Using silence as base pattern');
-      }
-
-      console.log(`🎛️ Chaospad: Base pattern before cutoff: ${basePattern.substring(0, 100)}...`);
-
-      // Remove existing cutoff modifier
-      basePattern = basePattern.replace(/\.\s*cutoff\s*\([^)]*\)/gi, '');
-      basePattern = basePattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
-
-      // Find where to insert the cutoff modifier
-      // For stack patterns, insert after the closing parenthesis
-      // For single patterns, append at the end
-      let patternWithCutoff;
-      const stackMatch = basePattern.match(/stack\s*\(/);
-      
-      if (stackMatch) {
-        // Find the closing parenthesis of the stack(...) call
-        let stackStart = stackMatch.index + stackMatch[0].length - 1; // Position of '('
-        let depth = 1;
-        let stackEnd = stackStart + 1;
-        let inString = false;
-        let stringChar = null;
-        
-        while (stackEnd < basePattern.length && depth > 0) {
-          const char = basePattern[stackEnd];
-          
-          // Handle strings
-          if (!inString && (char === '"' || char === "'")) {
-            inString = true;
-            stringChar = char;
-          } else if (inString && char === stringChar && basePattern[stackEnd - 1] !== '\\') {
-            inString = false;
-            stringChar = null;
-          }
-          
-          if (!inString) {
-            if (char === '(') depth++;
-            else if (char === ')') depth--;
-          }
-          
-          if (depth > 0) stackEnd++;
-        }
-        
-        if (depth === 0) {
-          // Found the stack closing paren at stackEnd
-          // Insert cutoff right after the closing parenthesis, before any .gain() or .pan()
-          const beforeStackEnd = basePattern.substring(0, stackEnd + 1);
-          const afterStackEnd = basePattern.substring(stackEnd + 1);
-          
-          // Insert cutoff before any existing modifiers
-          patternWithCutoff = `${beforeStackEnd}.cutoff(${cutoffValue})${afterStackEnd}`;
-          console.log(`🎛️ Chaospad: Inserted cutoff after stack at position ${stackEnd}`);
-        } else {
-          // Couldn't find matching closing paren, append at end
-          patternWithCutoff = `${basePattern}.cutoff(${cutoffValue})`;
-          console.log(`🎛️ Chaospad: Couldn't find stack end, appending cutoff`);
-        }
-      } else {
-        // Not a stack pattern, append at the end
-        patternWithCutoff = `${basePattern}.cutoff(${cutoffValue})`;
-        console.log(`🎛️ Chaospad: Not a stack pattern, appending cutoff`);
-      }
-
-      console.log(`🎛️ Chaospad: Applying cutoff ${cutoffValue} Hz to master pattern`);
-      console.log(`🎛️ Chaospad: Full pattern with cutoff: ${patternWithCutoff.substring(0, 200)}...`);
-      console.log(`🎛️ Chaospad: Master active: ${soundManager.isMasterActive()}`);
-
-      // Update master pattern
-      await soundManager.setMasterPatternCode(patternWithCutoff);
-      this.currentCutoffValue = cutoffValue;
-      this.lastCutoffUpdate = Date.now();
-      console.log(`🎛️ ✅ Chaospad: Cutoff ${cutoffValue} Hz applied successfully`);
-    } catch (error) {
-      console.error('⚠️ Chaospad: Error applying cutoff to master pattern:', error);
-    }
-  }
-
-  /**
-   * Apply resonance modifier to master pattern based on Chaospad input
-   */
-  async applyResonanceToMaster(resonanceValue) {
-    try {
-      let basePattern = soundManager.getMasterPatternCode();
-
-      if (!basePattern || basePattern.trim() === '') {
-        console.log('⚠️ Chaospad: No master pattern to apply resonance to - using silence');
-        basePattern = 'silence';
-      }
-
-      // Remove existing resonance modifier before applying new value
-      basePattern = basePattern.replace(/\.\s*resonance\s*\([^)]*\)/gi, '');
-      basePattern = basePattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
-
-      let patternWithResonance;
-      const stackMatch = basePattern.match(/stack\s*\(/);
-
-      if (stackMatch) {
-        let stackStart = stackMatch.index + stackMatch[0].length - 1;
-        let depth = 1;
-        let stackEnd = stackStart + 1;
-        let inString = false;
-        let stringChar = null;
-
-        while (stackEnd < basePattern.length && depth > 0) {
-          const char = basePattern[stackEnd];
-          if (!inString && (char === '"' || char === "'")) {
-            inString = true;
-            stringChar = char;
-          } else if (inString && char === stringChar && basePattern[stackEnd - 1] !== '\\') {
-            inString = false;
-            stringChar = null;
-          }
-
-          if (!inString) {
-            if (char === '(') depth++;
-            else if (char === ')') depth--;
-          }
-
-          if (depth > 0) stackEnd++;
-        }
-
-        if (depth === 0) {
-          const beforeStackEnd = basePattern.substring(0, stackEnd + 1);
-          const afterStackEnd = basePattern.substring(stackEnd + 1);
-          patternWithResonance = `${beforeStackEnd}.resonance(${resonanceValue})${afterStackEnd}`;
-        } else {
-          patternWithResonance = `${basePattern}.resonance(${resonanceValue})`;
-        }
-      } else {
-        patternWithResonance = `${basePattern}.resonance(${resonanceValue})`;
-      }
-
-      await soundManager.setMasterPatternCode(patternWithResonance);
-      this.currentResonanceValue = resonanceValue;
-      this.lastResonanceUpdate = Date.now();
-      console.log(`🎛️ ✅ Chaospad: Resonance ${resonanceValue} applied successfully`);
-    } catch (error) {
-      console.error('⚠️ Chaospad: Error applying resonance to master pattern:', error);
-    }
-  }
 
   /**
    * Reset Chaospad-controlled modifiers back to defaults
    */
-  async resetChaospadToDefaults() {
+  resetChaospadToDefaults(immediate = false) {
     if (!this.chaospadEnabled) return;
-    try {
-      await this.applyCutoffToMaster(this.chaospadDefaults.cutoff);
-      await this.applyResonanceToMaster(this.chaospadDefaults.resonance);
-    } catch (error) {
-      console.warn('⚠️ Chaospad: Unable to reset to default values', error);
-    }
+    this.currentCutoffValue = this.chaospadDefaults.cutoff;
+    this.currentResonanceValue = this.chaospadDefaults.resonance;
+    soundManager.setMasterFilterFrequency(this.currentCutoffValue, immediate);
+    soundManager.setMasterFilterResonance(this.currentResonanceValue, immediate);
   }
 
-  /**
-   * Remove cutoff modifier from master pattern
-   */
-  async removeCutoffFromMaster() {
-    try {
-      let pattern = soundManager.getMasterPatternCode();
-      
-      if (!pattern || pattern.trim() === '') {
-        return;
-      }
-
-      // Remove cutoff modifier
-      pattern = pattern.replace(/\.\s*cutoff\s*\([^)]*\)/gi, '');
-      pattern = pattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
-
-      // Update master pattern
-      await soundManager.setMasterPatternCode(pattern);
-      this.currentCutoffValue = null;
-      this.lastCutoffUpdate = null;
-      console.log('🎛️ Removed Chaospad cutoff from master pattern');
-    } catch (error) {
-      console.warn('⚠️ Error removing cutoff from master pattern:', error);
-    }
-  }
-
-  /**
-   * Remove resonance modifier from master pattern
-   */
-  async removeResonanceFromMaster() {
-    try {
-      let pattern = soundManager.getMasterPatternCode();
-
-      if (!pattern || pattern.trim() === '') {
-        return;
-      }
-
-      pattern = pattern.replace(/\.\s*resonance\s*\([^)]*\)/gi, '');
-      pattern = pattern.trim().replace(/\.\s*$/, '').replace(/\.\.+/g, '.').trim();
-
-      await soundManager.setMasterPatternCode(pattern);
-      this.currentResonanceValue = null;
-      this.lastResonanceUpdate = null;
-      console.log('🎛️ Removed Chaospad resonance from master pattern');
-    } catch (error) {
-      console.warn('⚠️ Error removing resonance from master pattern:', error);
-    }
-  }
 
   shouldUseSpiralVisualizer(patternCode) {
     if (!patternCode) return false;
