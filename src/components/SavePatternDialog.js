@@ -4,6 +4,7 @@
  */
 
 import { patternsAPI, getCurrentUser } from '../api.js';
+import { lockScroll, unlockScroll } from '../scrollLock.js';
 
 export class SavePatternDialog {
   constructor() {
@@ -365,7 +366,7 @@ export class SavePatternDialog {
     this.clearUserSearchResults();
 
     this.modal.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
+    lockScroll('save-pattern-dialog');
   }
 
   /**
@@ -374,7 +375,7 @@ export class SavePatternDialog {
   hide() {
     if (this.modal) {
       this.modal.style.display = 'none';
-      document.body.style.overflow = '';
+      unlockScroll('save-pattern-dialog');
     }
   }
 

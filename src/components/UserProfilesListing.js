@@ -4,6 +4,7 @@
  */
 
 import { usersAPI } from '../api.js';
+import { lockScroll, unlockScroll } from '../scrollLock.js';
 
 export class UserProfilesListing {
   constructor() {
@@ -199,7 +200,7 @@ export class UserProfilesListing {
   async show() {
     if (this.modal) {
       this.modal.style.display = 'flex';
-      document.body.style.overflow = 'hidden';
+      lockScroll('user-profiles-modal');
       // Load users when showing
       await this.loadUsers();
       // Focus search input
@@ -216,7 +217,7 @@ export class UserProfilesListing {
   hide() {
     if (this.modal) {
       this.modal.style.display = 'none';
-      document.body.style.overflow = '';
+      unlockScroll('user-profiles-modal');
       // Clear search
       const searchInput = document.getElementById('profiles-search-input');
       if (searchInput) {

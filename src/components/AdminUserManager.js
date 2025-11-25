@@ -1,4 +1,5 @@
 import { usersAPI } from '../api.js';
+import { lockScroll, unlockScroll } from '../scrollLock.js';
 
 export class AdminUserManager {
   constructor() {
@@ -152,14 +153,14 @@ export class AdminUserManager {
   async show() {
     if (!this.modal) return;
     this.modal.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
+    lockScroll('admin-user-manager');
     await this.loadUsers();
   }
 
   hide() {
     if (!this.modal) return;
     this.modal.style.display = 'none';
-    document.body.style.overflow = '';
+    unlockScroll('admin-user-manager');
     this.setStatus('');
   }
 }

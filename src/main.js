@@ -16,6 +16,7 @@ import { SavePatternDialog } from './components/SavePatternDialog.js';
 import { ProfileOnboardingModal } from './components/ProfileOnboardingModal.js';
 import { AdminUserManager } from './components/AdminUserManager.js';
 import { getCurrentUser, authAPI } from './api.js';
+import { lockScroll, unlockScroll, forceUnlockScroll } from './scrollLock.js';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -923,13 +924,13 @@ const createPatternHistoryModal = () => {
     overlay.setAttribute('aria-hidden', 'true');
     context = null;
     currentEntries = [];
-    document.body.style.overflow = '';
+    unlockScroll('pattern-history-modal');
   };
 
   const openModal = () => {
     overlay.classList.add('is-open');
     overlay.setAttribute('aria-hidden', 'false');
-    document.body.style.overflow = 'hidden';
+    lockScroll('pattern-history-modal');
   };
 
   const renderEntries = (entries, options = {}) => {
@@ -4057,7 +4058,7 @@ class InteractiveSoundApp {
       } else {
         // Exit CSS fallback fullscreen
         this.masterPunchcardContainer.classList.remove('is-fullscreen');
-        document.body.style.overflow = '';
+        unlockScroll('visualizer-fullscreen');
         this.updateVisualizerFullscreenButton(false);
         this.removeMobileFullscreenCloseButton();
       }
@@ -4106,7 +4107,7 @@ class InteractiveSoundApp {
       // Fallback: If fullscreen API is not available, use CSS-based fullscreen for mobile
       if (this.isMobileDevice()) {
         this.masterPunchcardContainer.classList.add('is-fullscreen');
-        document.body.style.overflow = 'hidden';
+        lockScroll('visualizer-fullscreen');
         this.updateVisualizerFullscreenButton(true);
         this.addMobileFullscreenCloseButton();
         // Trigger refresh after CSS fullscreen
@@ -4124,7 +4125,7 @@ class InteractiveSoundApp {
       // Fallback for mobile if fullscreen fails
       if (this.isMobileDevice()) {
         this.masterPunchcardContainer.classList.add('is-fullscreen');
-        document.body.style.overflow = 'hidden';
+        lockScroll('visualizer-fullscreen');
         this.updateVisualizerFullscreenButton(true);
         this.addMobileFullscreenCloseButton();
         setTimeout(() => {
@@ -4183,7 +4184,7 @@ class InteractiveSoundApp {
       this.masterPunchcardContainer.classList.toggle('is-fullscreen', isFullscreen);
       // If exiting fullscreen and using CSS fallback, restore body overflow
       if (!isFullscreen && this.isMobileDevice()) {
-        document.body.style.overflow = '';
+        unlockScroll('visualizer-fullscreen');
         this.removeMobileFullscreenCloseButton();
       } else if (isFullscreen && this.isMobileDevice()) {
         // Add close button when entering native fullscreen on mobile
@@ -4208,9 +4209,9 @@ class InteractiveSoundApp {
       ? soundManager.isMasterActive()
       : !!soundManager.masterActive;
     
-    this.scopeSpectrumObserver = null;
-    this.scopeSpectrumCopyLoop = null;
-    this.stopVisualizerAnimation();
+      this.scopeSpectrumObserver = null;
+      this.scopeSpectrumCopyLoop = null;
+      this.stopVisualizerAnimation();
     this.teardownExternalVisualizerCanvas();
     
     if (this.selectedVisualizer !== 'pianoroll') {
@@ -4229,87 +4230,87 @@ class InteractiveSoundApp {
     if (this.selectedVisualizer !== 'off') {
       await this.prepareCanvasForExternalVisualizer();
       
-      if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
-        soundManager.setupVisualizerAnalyser();
-        await new Promise(resolve => setTimeout(resolve, 100));
-        const analyserId = canvasId;
-        const getAnalyserById = window.strudel?.getAnalyserById || globalThis.getAnalyserById;
-        if (getAnalyserById) {
-          try {
-            const analyser = getAnalyserById(analyserId);
-            if (analyser && analyser.context === soundManager.audioContext) {
-              console.log(`✅ Verified analyser "${analyserId}" is ready in correct audio context`);
-            } else {
-              console.warn(`⚠️ Analyser "${analyserId}" not ready or in wrong context`);
-            }
-          } catch (e) {
-            console.warn(`⚠️ Could not verify analyser:`, e.message);
-          }
-        }
-      }
-      
-      const canvasElement = document.getElementById(canvasId);
-      if (canvasElement) {
-        canvasElement.style.position = 'relative';
-        canvasElement.style.display = 'block';
-        canvasElement.style.visibility = 'visible';
-        canvasElement.style.opacity = '1';
-        canvasElement.style.left = '0';
-        canvasElement.style.top = '0';
-        canvasElement.style.width = '100%';
-        canvasElement.style.height = '100%';
-        canvasElement.id = canvasId;
-        
-        const container = document.getElementById('master-punchcard');
-        if (container && canvasElement.parentNode !== container) {
-          container.appendChild(canvasElement);
-        }
-        
-        if (container) {
-          const rect = container.getBoundingClientRect();
-          const pixelRatio = window.devicePixelRatio || 1;
-          const displayWidth = Math.max(rect.width || 320, 320);
-          const displayHeight = Math.max(rect.height || 200, 200);
-          canvasElement.width = displayWidth * pixelRatio;
-          canvasElement.height = displayHeight * pixelRatio;
-          canvasElement.style.width = `${displayWidth}px`;
-          canvasElement.style.height = `${displayHeight}px`;
-          
-          if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
-            canvasElement.offsetHeight;
-            console.log(`✅ Canvas "${canvasId}" ready for ${this.selectedVisualizer}`);
-          }
-        }
-      } else {
-        console.error(`❌ Canvas "${canvasId}" not found!`);
-      }
-      
-      if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
-        if (canvasElement && canvasElement.id !== canvasId) {
-          canvasElement.id = canvasId;
-        }
-        if (this.masterPunchcardCanvas) {
-          this.masterPunchcardCanvas.style.display = 'block';
-        }
-      }
-      
-      if (this.selectedVisualizer === 'pianoroll' || this.selectedVisualizer === 'spectrum') {
+    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
+      soundManager.setupVisualizerAnalyser();
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const analyserId = canvasId;
+      const getAnalyserById = window.strudel?.getAnalyserById || globalThis.getAnalyserById;
+      if (getAnalyserById) {
         try {
-          const { getDrawContext } = await import('@strudel/draw');
-          const ctx = getDrawContext(canvasId, { contextType: '2d' });
-          window.__strudelVisualizerCtx = ctx;
-          console.log(`✅ Registered canvas "${canvasId}" with getDrawContext for ${this.selectedVisualizer}`);
-        } catch (error) {
-          console.warn(`⚠️ Failed to register canvas with getDrawContext for ${this.selectedVisualizer}:`, error);
+          const analyser = getAnalyserById(analyserId);
+          if (analyser && analyser.context === soundManager.audioContext) {
+            console.log(`✅ Verified analyser "${analyserId}" is ready in correct audio context`);
+          } else {
+            console.warn(`⚠️ Analyser "${analyserId}" not ready or in wrong context`);
+          }
+        } catch (e) {
+          console.warn(`⚠️ Could not verify analyser:`, e.message);
         }
       }
+    }
+    
+    const canvasElement = document.getElementById(canvasId);
+    if (canvasElement) {
+      canvasElement.style.position = 'relative';
+      canvasElement.style.display = 'block';
+      canvasElement.style.visibility = 'visible';
+      canvasElement.style.opacity = '1';
+      canvasElement.style.left = '0';
+      canvasElement.style.top = '0';
+      canvasElement.style.width = '100%';
+      canvasElement.style.height = '100%';
+      canvasElement.id = canvasId;
       
-      const ctxExpression = "(window.__strudelVisualizerCtx || (document.getElementById('master-punchcard-canvas') && document.getElementById('master-punchcard-canvas').getContext && document.getElementById('master-punchcard-canvas').getContext('2d')))";
+      const container = document.getElementById('master-punchcard');
+      if (container && canvasElement.parentNode !== container) {
+        container.appendChild(canvasElement);
+      }
       
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const pixelRatio = window.devicePixelRatio || 1;
+        const displayWidth = Math.max(rect.width || 320, 320);
+        const displayHeight = Math.max(rect.height || 200, 200);
+        canvasElement.width = displayWidth * pixelRatio;
+        canvasElement.height = displayHeight * pixelRatio;
+        canvasElement.style.width = `${displayWidth}px`;
+        canvasElement.style.height = `${displayHeight}px`;
+        
+        if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
+          canvasElement.offsetHeight;
+            console.log(`✅ Canvas "${canvasId}" ready for ${this.selectedVisualizer}`);
+        }
+      }
+    } else {
+      console.error(`❌ Canvas "${canvasId}" not found!`);
+    }
+    
+    if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
+      if (canvasElement && canvasElement.id !== canvasId) {
+        canvasElement.id = canvasId;
+      }
+        if (this.masterPunchcardCanvas) {
+      this.masterPunchcardCanvas.style.display = 'block';
+        }
+    }
+    
+      if (this.selectedVisualizer === 'pianoroll' || this.selectedVisualizer === 'spectrum') {
+      try {
+        const { getDrawContext } = await import('@strudel/draw');
+        const ctx = getDrawContext(canvasId, { contextType: '2d' });
+        window.__strudelVisualizerCtx = ctx;
+        console.log(`✅ Registered canvas "${canvasId}" with getDrawContext for ${this.selectedVisualizer}`);
+      } catch (error) {
+        console.warn(`⚠️ Failed to register canvas with getDrawContext for ${this.selectedVisualizer}:`, error);
+      }
+    }
+    
+    const ctxExpression = "(window.__strudelVisualizerCtx || (document.getElementById('master-punchcard-canvas') && document.getElementById('master-punchcard-canvas').getContext && document.getElementById('master-punchcard-canvas').getContext('2d')))";
+    
       if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'punchcard') {
-        patternWithVisualizer = basePattern;
-      } else if (this.selectedVisualizer === 'spectrum') {
-        patternWithVisualizer = `${basePattern}._spectrum({
+      patternWithVisualizer = basePattern;
+    } else if (this.selectedVisualizer === 'spectrum') {
+      patternWithVisualizer = `${basePattern}._spectrum({
         id: '${canvasId}',
         ctx: ${ctxExpression},
         thickness: 3,
@@ -4317,8 +4318,8 @@ class InteractiveSoundApp {
         min: -80,
         max: 0
       })`;
-      } else if (this.selectedVisualizer === 'pianoroll') {
-        patternWithVisualizer = `${basePattern}.pianoroll({
+    } else if (this.selectedVisualizer === 'pianoroll') {
+        patternWithVisualizer = `${basePattern}.pianoroll({ 
           id: '${canvasId}',
           ctx: ${ctxExpression},
           cycles: 4,
@@ -4331,7 +4332,7 @@ class InteractiveSoundApp {
           colorizeInactive: true,
           background: '#05060a'
         })`;
-      }
+    }
     }
     
     if (!patternWithVisualizer || patternWithVisualizer.trim() === '') {
@@ -4340,16 +4341,16 @@ class InteractiveSoundApp {
     }
     
     if (this.selectedVisualizer !== 'off' && this.selectedVisualizer !== 'punchcard') {
-      const usesInternalVisualizer = this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart';
+    const usesInternalVisualizer = this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart';
       if (!usesInternalVisualizer) {
-        const checkRegex = new RegExp(`\\.\\s*_?${this.selectedVisualizer}\\s*\\(`);
+      const checkRegex = new RegExp(`\\.\\s*_?${this.selectedVisualizer}\\s*\\(`);
         if (!checkRegex.test(patternWithVisualizer)) {
-          console.error(`❌ Visualizer "${this.selectedVisualizer}" not found in pattern! Pattern:`, patternWithVisualizer);
-        } else {
-          console.log(`✅ Visualizer "${this.selectedVisualizer}" found in pattern`);
-        }
+      console.error(`❌ Visualizer "${this.selectedVisualizer}" not found in pattern! Pattern:`, patternWithVisualizer);
+            } else {
+        console.log(`✅ Visualizer "${this.selectedVisualizer}" found in pattern`);
+      }
       } else {
-        console.log(`✅ Using internal analyser visualizer for ${this.selectedVisualizer}`);
+      console.log(`✅ Using internal analyser visualizer for ${this.selectedVisualizer}`);
       }
     }
     
@@ -5106,15 +5107,15 @@ class InteractiveSoundApp {
   }
 
   async getMasterPatternWithoutVisualizer() {
-    let basePattern = soundManager.getMasterPatternCode();
-    
-    if (!basePattern || basePattern.trim() === '') {
+      let basePattern = soundManager.getMasterPatternCode();
+      
+      if (!basePattern || basePattern.trim() === '') {
       if (soundManager.trackedPatterns && soundManager.trackedPatterns.size > 0) {
         console.log(`🔄 Master pattern empty; rebuilding from ${soundManager.trackedPatterns.size} tracked pattern(s)`);
         soundManager.updateMasterPattern(new Set(), new Set());
         basePattern = soundManager.getMasterPatternCode();
-      }
-      
+          }
+          
       if (!basePattern || basePattern.trim() === '') {
         const editorPattern = getStrudelEditorValue('master-pattern').trim();
         if (editorPattern) {
@@ -5122,13 +5123,13 @@ class InteractiveSoundApp {
           basePattern = editorPattern;
         }
       }
-      
+
       if (!basePattern || basePattern.trim() === '') {
         console.warn('⚠️ No master pattern available; using silence');
         basePattern = 'silence';
       }
     }
-    
+
     // Remove JS comments except channel markers
     basePattern = basePattern.replace(/\/\/.*$/gm, '');
     basePattern = basePattern.replace(/\/\*[\s\S]*?\*\//g, (comment) => (
@@ -5165,13 +5166,13 @@ class InteractiveSoundApp {
         const startPos = match.index;
         const openParenPos = match.index + match[0].length - 1;
         const closeParenPos = findMatchingParen(sanitized, openParenPos);
-        
+      
         if (closeParenPos !== -1) {
           sanitized = sanitized.substring(0, startPos) + sanitized.substring(closeParenPos + 1);
           searchPattern.lastIndex = 0;
         } else {
           break;
-        }
+      }
       }
     });
     
@@ -5866,7 +5867,7 @@ class InteractiveSoundApp {
 
   enableNativeStrudelHighlighting() {
     this.nativeHighlightingEnabled = false;
-    this.nativeHighlightingDisabled = true;
+        this.nativeHighlightingDisabled = true;
   }
 
   /**
@@ -6035,7 +6036,7 @@ class InteractiveSoundApp {
   
   
   
-
+  
   /**
    * Initialize MIDI controls for an element
    */
@@ -6081,7 +6082,7 @@ class InteractiveSoundApp {
   getElementMidiSettings(elementId) {
     if (!this.elementMidiSettings) {
       this.elementMidiSettings = {};
-    }
+            }
     
     if (this.elementMidiSettings[elementId]) {
       const existing = this.elementMidiSettings[elementId];
@@ -6163,7 +6164,7 @@ class InteractiveSoundApp {
     const midiPortMatch = pattern.match(/\.midiport\s*\(\s*(\d+)\s*\)/i);
     const channel = midiPortMatch ? this.normalizeMidiChannel(parseInt(midiPortMatch[1], 10) + 1) : 1;
     return { enabled: true, channel };
-  }
+      }
   
   stripMidiModifiers(pattern) {
     if (!pattern) return pattern;
@@ -6196,8 +6197,8 @@ class InteractiveSoundApp {
     }
     
     return `${cleanedPattern}${midiModifier}`;
-  }
-  
+    }
+    
   async applyMidiSettingsToPattern(elementId, options = {}) {
     if (!elementId) return;
     const { persistConfig = true } = options;
@@ -6229,7 +6230,7 @@ class InteractiveSoundApp {
           setStrudelEditorValue('modal-pattern', finalPattern);
         } catch (error) {
           console.warn('⚠️ Unable to update modal pattern with MIDI changes:', error);
-        }
+    }
       }
     }
     const isInMaster = soundManager.trackedPatterns && soundManager.trackedPatterns.has(elementId);
@@ -6241,7 +6242,7 @@ class InteractiveSoundApp {
         const isPlaying = soundManager.isPlaying(elementId);
         if (!isPlaying) {
           await soundManager.preEvaluatePattern(elementId, finalPattern);
-        }
+    }
       }
     } catch (error) {
       console.warn(`⚠️ Unable to apply MIDI settings to ${elementId}:`, error);
@@ -6256,7 +6257,7 @@ class InteractiveSoundApp {
       alert('Please log in to save patterns');
       return;
     }
-    
+
     const savedConfig = this.loadElementConfig(elementId);
     if (!savedConfig || !savedConfig.pattern) {
       this.uiController?.updateStatus?.('Nothing to save for this channel.');
@@ -6273,7 +6274,7 @@ class InteractiveSoundApp {
         patternHistoryStore.markChannelSnapshot(elementId, finalPattern);
         this.uiController?.updateStatus?.(`Saved channel ${elementId} to cloud.`);
       });
-    } else {
+      } else {
       this.uiController?.updateStatus?.('Save dialog not available.');
     }
   }
@@ -6347,7 +6348,7 @@ class InteractiveSoundApp {
       this.uiController?.updateStatus?.('Save dialog not available.');
     }
   }
-  
+
   /**
    * Handle pause button click
    */
@@ -6556,15 +6557,15 @@ class InteractiveSoundApp {
           
           // Fallback to config description if no title found
           if (!elementName) {
-            try {
-              const saved = localStorage.getItem(`element-config-${id}`);
-              if (saved) {
-                const config = JSON.parse(saved);
+          try {
+            const saved = localStorage.getItem(`element-config-${id}`);
+            if (saved) {
+              const config = JSON.parse(saved);
                 elementName = config.title || config.description || '';
-              }
-            } catch (e) {
-              // Ignore
             }
+          } catch (e) {
+            // Ignore
+          }
           }
           
           // Final fallback to element config description
@@ -7118,7 +7119,7 @@ class InteractiveSoundApp {
         if (midiChannelSelect) {
           midiChannelSelect.value = '1';
           midiChannelSelect.disabled = true;
-        }
+          }
         if (this.elementMidiSettings) {
           delete this.elementMidiSettings[elementId];
         }
@@ -12301,7 +12302,7 @@ class InteractiveSoundApp {
               Send MIDI
               <input type="checkbox" class="midi-enable-toggle" />
             </label>
-          </div>
+            </div>
           <div class="midi-channel-row">
             <label class="midi-channel-label">
               Channel
@@ -12492,7 +12493,7 @@ async function initUserAuth() {
   profileOnboardingModal.init();
   profileOnboardingModal.setOnComplete((updatedUser) => {
     // Ensure overflow is restored when onboarding completes
-    document.body.style.overflow = '';
+    unlockScroll('profile-onboarding-modal');
     handleAuthenticatedUser(updatedUser);
   });
 
@@ -12674,14 +12675,14 @@ function handleAuthenticatedUser(user) {
   if (loginModal) {
     loginModal.hide();
   }
-  document.body.style.overflow = '';
+  forceUnlockScroll();
   updateUserUI(user);
   if (!user.profileCompleted && profileOnboardingModal) {
     profileOnboardingModal.show(user);
   } else {
     // Ensure scrolling is restored if profile onboarding doesn't show
     // This fixes the case where login modal hides but overflow wasn't restored
-    document.body.style.overflow = '';
+    forceUnlockScroll();
   }
 }
 

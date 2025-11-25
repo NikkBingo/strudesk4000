@@ -1,4 +1,5 @@
 import { usersAPI } from '../api.js';
+import { lockScroll, unlockScroll } from '../scrollLock.js';
 
 export class ProfileOnboardingModal {
   constructor() {
@@ -108,14 +109,14 @@ export class ProfileOnboardingModal {
       if (statusEl) statusEl.textContent = '';
 
       this.modal.style.display = 'flex';
-      document.body.style.overflow = 'hidden';
+      lockScroll('profile-onboarding-modal');
     }
   }
 
   hide() {
     if (this.modal) {
       this.modal.style.display = 'none';
-      document.body.style.overflow = '';
+      unlockScroll('profile-onboarding-modal');
     }
   }
 
