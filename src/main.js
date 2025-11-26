@@ -15,8 +15,10 @@ import { UserProfilesListing } from './components/UserProfilesListing.js';
 import { SavePatternDialog } from './components/SavePatternDialog.js';
 import { ProfileOnboardingModal } from './components/ProfileOnboardingModal.js';
 import { AdminUserManager } from './components/AdminUserManager.js';
+import { CollabPanel } from './components/CollabPanel.js';
 import { getCurrentUser, authAPI } from './api.js';
 import { lockScroll, unlockScroll, forceUnlockScroll } from './scrollLock.js';
+import { collaborationClient } from './collaboration/socketClient.js';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -3428,6 +3430,9 @@ class InteractiveSoundApp {
       }
     }
     this.handleChaospadOrientation = this.handleChaospadOrientation.bind(this);
+    this.collabUnsubscribers = [];
+    this.masterUpdateQueue = [];
+    this.masterUpdateTimer = null;
   }
 
   /**
@@ -3683,6 +3688,7 @@ class InteractiveSoundApp {
       }
     }, 100);
     
+    this.setupCollaborationBridge();
     console.log('Interactive Sound App initialized');
     console.log('💡 Tip: Press Escape key or click Stop All button to silence everything');
   }
@@ -13253,6 +13259,81 @@ class InteractiveSoundApp {
     // Setup MIDI controls
     this.initializeMidiControls(element, elementId);
   }
+
+  setupCollaborationBridge() {
+    this.collabUnsubscribers.forEach((unsubscribe) => {
+      try {
+        if (typeof unsubscribe === 'function') {
+          unsubscribe();
+        }
+      } catch {
+        // ignore
+      }
+    });
+    this.collabUnsubscribers = [];
+
+    const snapshotHandler = (snapshot) => {
+      if (!snapshot?.masterCode) return;
+      this.queueCollaborativeMaster(snapshot.masterCode, 'snapshot');
+    };
+
+    const masterHandler = (payload) => {
+      if (!payload?.masterCode) return;
+      this.queueCollaborativeMaster(payload.masterCode, 'socket');
+    };
+
+    this.collabUnsubscribers.push(collaborationClient.on('session:snapshot', snapshotHandler));
+    this.collabUnsubscribers.push(collaborationClient.on('master:updated', masterHandler));
+  }
+
+  queueCollaborativeMaster(code, source = 'socket') {
+    const trimmed = (code || '').trim();
+    if (!trimmed) return;
+    this.masterUpdateQueue.push({ code: trimmed, source });
+    if (this.masterUpdateTimer) return;
+    this.masterUpdateTimer = setTimeout(() => {
+      const latest = this.masterUpdateQueue[this.masterUpdateQueue.length - 1];
+      this.masterUpdateQueue = [];
+      this.masterUpdateTimer = null;
+      if (latest) {
+        this.applyCollaborativeMaster(latest.code, latest.source);
+      }
+    }, 150);
+  }
+
+  applyCollaborativeMaster(code, source = 'socket') {
+    const trimmed = (code || '').trim();
+    if (!trimmed) return;
+    let currentValue = '';
+    try {
+      currentValue = getStrudelEditorValue('master-pattern')?.trim() || '';
+    } catch {
+      const fallbackField = document.getElementById('master-pattern');
+      currentValue = fallbackField?.value?.trim() || '';
+    }
+    if (currentValue === trimmed) {
+      return;
+    }
+
+    try {
+      setStrudelEditorValue('master-pattern', trimmed);
+    } catch {
+      const textarea = document.getElementById('master-pattern');
+      if (textarea) {
+        textarea.value = trimmed;
+        const event = new Event('input', { bubbles: true });
+        textarea.dispatchEvent(event);
+      }
+    }
+
+    soundManager.setMasterPatternCode(trimmed);
+    this.updateMasterPatternDisplay();
+    if (source === 'socket') {
+      uiController.updateStatus('Master updated from collaborators');
+    } else if (source === 'snapshot') {
+      uiController.updateStatus('Synced latest master pattern');
+    }
+  }
 }
 
 // User authentication and menu management
@@ -13263,6 +13344,19 @@ let userProfilesListing = null;
 let savePatternDialog = null;
 let profileOnboardingModal = null;
 let adminUserManager = null;
+let collabPanel = null;
+
+function initCollaborationUI() {
+  if (collabPanel) {
+    return collabPanel;
+  }
+  collabPanel = new CollabPanel();
+  collabPanel.init();
+  if (currentUser) {
+    collabPanel.setCurrentUser(currentUser);
+  }
+  return collabPanel;
+}
 
 async function initUserAuth() {
   loginModal = new LoginModal();
@@ -13457,6 +13551,7 @@ function showLoginButton() {
   if (loginBtn) loginBtn.style.display = 'block';
   if (userMenu) userMenu.style.display = 'none';
   if (adminLink) adminLink.style.display = 'none';
+  collabPanel?.setCurrentUser(null);
   
   // Hide load/save buttons when not logged in
   updateLoadSaveButtonsVisibility(false);
@@ -13469,6 +13564,7 @@ function showLoginButton() {
 function handleAuthenticatedUser(user) {
   if (!user) return;
   currentUser = user;
+  collabPanel?.setCurrentUser(user);
   if (loginModal) {
     loginModal.hide();
   }
@@ -13493,12 +13589,14 @@ if (document.readyState === 'loading') {
     const app = new InteractiveSoundApp();
     app.init();
     initializePatternHistoryUI();
+    initCollaborationUI();
     initUserAuth();
   });
 } else {
   const app = new InteractiveSoundApp();
   app.init();
   initializePatternHistoryUI();
+  initCollaborationUI();
   initUserAuth();
 }
 

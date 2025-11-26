@@ -253,6 +253,67 @@ export const patternsAPI = {
 };
 
 /**
+ * Collaboration Sessions API
+ */
+export const collabAPI = {
+  async createSession(title) {
+    return apiRequest('/collab-sessions', {
+      method: 'POST',
+      body: JSON.stringify({ title })
+    });
+  },
+
+  async getSession(sessionId, { refresh = false } = {}) {
+    const params = refresh ? '?refresh=true' : '';
+    return apiRequest(`/collab-sessions/${encodeURIComponent(sessionId)}${params}`);
+  },
+
+  async getCpuStats(sessionId) {
+    return apiRequest(`/collab-sessions/${encodeURIComponent(sessionId)}/cpu`);
+  },
+
+  async joinSession(sessionId) {
+    return apiRequest(`/collab-sessions/${encodeURIComponent(sessionId)}/join`, {
+      method: 'POST'
+    });
+  },
+
+  async leaveSession(sessionId) {
+    return apiRequest(`/collab-sessions/${encodeURIComponent(sessionId)}/leave`, {
+      method: 'POST'
+    });
+  },
+
+  async saveChannel(sessionId, channelPayload) {
+    return apiRequest(`/collab-sessions/${encodeURIComponent(sessionId)}/channels`, {
+      method: 'POST',
+      body: JSON.stringify(channelPayload)
+    });
+  },
+
+  async publishChannel(sessionId, channelId, status = 'live') {
+    return apiRequest(`/collab-sessions/${encodeURIComponent(sessionId)}/channels/${encodeURIComponent(channelId)}/publish`, {
+      method: 'POST',
+      body: JSON.stringify({ status })
+    });
+  },
+
+  async overrideMaster(sessionId, masterCode) {
+    return apiRequest(`/collab-sessions/${encodeURIComponent(sessionId)}/master`, {
+      method: 'POST',
+      body: JSON.stringify({ masterCode })
+    });
+  },
+
+  async updateDelay(sessionId, applyDelayMs) {
+    return apiRequest(`/collab-sessions/${encodeURIComponent(sessionId)}/delay`, {
+      method: 'POST',
+      body: JSON.stringify({ applyDelayMs })
+    });
+  }
+};
+
+/**
  * Check if user is authenticated
  */
 export async function isAuthenticated() {
@@ -279,6 +340,7 @@ export default {
   auth: authAPI,
   users: usersAPI,
   patterns: patternsAPI,
+  collab: collabAPI,
   isAuthenticated,
   getCurrentUser
 };

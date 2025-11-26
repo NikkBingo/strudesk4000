@@ -13,6 +13,8 @@ const log = (...args) => {
 log('📦 [1/5] Loading dependencies...');
 
 import express from 'express';
+import { createServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import session from 'express-session';
 import passport from 'passport';
@@ -30,6 +32,8 @@ import prisma from './db.js'; // Import shared Prisma client instance
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import patternRoutes from './routes/patterns.js';
+import collabRoutes from './routes/collabSessions.js';
+import { collabSessionManager } from './services/collabSessionManager.js';
 import { isTestMode } from './utils/config.js';
 log('✅ [4/5] Routes loaded');
 
@@ -149,7 +153,8 @@ console.log('🍪 Session config:', {
   maxAge: sessionConfig.cookie.maxAge
 });
 
-app.use(session(sessionConfig));
+const sessionMiddleware = session(sessionConfig);
+app.use(sessionMiddleware);
 
 // Middleware to log cookie setting for debugging
 app.use((req, res, next) => {
@@ -229,6 +234,157 @@ app.use((req, res, next) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/patterns', patternRoutes);
+app.use('/api/collab-sessions', collabRoutes);
+
+const httpServer = createServer(app);
+const io = new SocketIOServer(httpServer, {
+  cors: {
+    origin: frontendUrl,
+    credentials: true
+  }
+});
+
+const wrapSocketMiddleware = (middleware) => (socket, next) =>
+  middleware(socket.request, socket.request.res || {}, next);
+
+io.use(wrapSocketMiddleware(sessionMiddleware));
+io.use(wrapSocketMiddleware(passport.initialize()));
+io.use(wrapSocketMiddleware(passport.session()));
+
+const sessionRoom = (sessionId) => `collab-session:${sessionId}`;
+
+io.on('connection', (socket) => {
+  const user = socket.request.user;
+  if (!user) {
+    socket.emit('auth:error', { error: 'Authentication required' });
+    socket.disconnect(true);
+    return;
+  }
+
+  console.log(`🔌 Socket connected for user ${user.id}`);
+  const joinedSessions = new Set();
+  const acknowledge = (cb, payload) => {
+    if (typeof cb === 'function') {
+      cb(payload);
+    }
+  };
+
+  socket.on('session:join', async ({ sessionId } = {}, callback) => {
+    if (!sessionId) {
+      return acknowledge(callback, { success: false, error: 'sessionId is required' });
+    }
+    try {
+      const snapshot = await collabSessionManager.joinSession(sessionId, user.id);
+      if (!snapshot) {
+        return acknowledge(callback, { success: false, error: 'Session not found' });
+      }
+      joinedSessions.add(sessionId);
+      socket.join(sessionRoom(sessionId));
+      acknowledge(callback, { success: true, snapshot });
+      socket.to(sessionRoom(sessionId)).emit('session:participant-event', {
+        type: 'join',
+        sessionId,
+        userId: user.id
+      });
+    } catch (error) {
+      console.error('Socket session:join error', error);
+      acknowledge(callback, { success: false, error: error.message });
+    }
+  });
+
+  socket.on('session:leave', async ({ sessionId } = {}, callback) => {
+    if (!sessionId) {
+      return acknowledge(callback, { success: false, error: 'sessionId is required' });
+    }
+    try {
+      await collabSessionManager.leaveSession(sessionId, user.id);
+      joinedSessions.delete(sessionId);
+      socket.leave(sessionRoom(sessionId));
+      acknowledge(callback, { success: true });
+      socket.to(sessionRoom(sessionId)).emit('session:participant-event', {
+        type: 'leave',
+        sessionId,
+        userId: user.id
+      });
+    } catch (error) {
+      console.error('Socket session:leave error', error);
+      acknowledge(callback, { success: false, error: error.message });
+    }
+  });
+
+  socket.on('channel:update', async (payload = {}, callback) => {
+    const { sessionId } = payload;
+    if (!sessionId) {
+      return acknowledge(callback, { success: false, error: 'sessionId is required' });
+    }
+    try {
+      const snapshot = await collabSessionManager.upsertChannel(sessionId, user.id, payload);
+      if (!joinedSessions.has(sessionId)) {
+        socket.join(sessionRoom(sessionId));
+        joinedSessions.add(sessionId);
+      }
+      acknowledge(callback, { success: true });
+      io.to(sessionRoom(sessionId)).emit('session:snapshot', snapshot);
+    } catch (error) {
+      console.error('Socket channel:update error', error);
+      acknowledge(callback, { success: false, error: error.message });
+    }
+  });
+
+  socket.on('channel:publish', async (payload = {}, callback) => {
+    const { sessionId, channelId, status } = payload;
+    if (!sessionId || !channelId) {
+      return acknowledge(callback, { success: false, error: 'sessionId and channelId are required' });
+    }
+    try {
+      const snapshot = await collabSessionManager.publishChannel(sessionId, channelId, status || 'live');
+      acknowledge(callback, { success: true });
+      io.to(sessionRoom(sessionId)).emit('session:snapshot', snapshot);
+    } catch (error) {
+      console.error('Socket channel:publish error', error);
+      acknowledge(callback, { success: false, error: error.message });
+    }
+  });
+
+  socket.on('master:edit', async (payload = {}, callback) => {
+    const { sessionId, masterCode } = payload;
+    if (!sessionId) {
+      return acknowledge(callback, { success: false, error: 'sessionId is required' });
+    }
+    try {
+      const snapshot = await collabSessionManager.overrideMasterCode(sessionId, user.id, masterCode || '');
+      acknowledge(callback, { success: true });
+      io.to(sessionRoom(sessionId)).emit('master:updated', {
+        masterCode: snapshot?.masterCode || '',
+        mergedStack: snapshot?.mergedStack || ''
+      });
+    } catch (error) {
+      console.error('Socket master:edit error', error);
+      acknowledge(callback, { success: false, error: error.message });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`🔌 Socket disconnected for user ${user.id}`);
+    joinedSessions.forEach((sessionId) => {
+      socket.to(sessionRoom(sessionId)).emit('session:participant-event', {
+        type: 'disconnect',
+        sessionId,
+        userId: user.id
+      });
+    });
+    joinedSessions.clear();
+  });
+});
+
+collabSessionManager.on('sessionUpdated', (sessionId, snapshot) => {
+  if (!snapshot) return;
+  io.to(sessionRoom(sessionId)).emit('session:snapshot', snapshot);
+});
+
+collabSessionManager.on('masterUpdated', (sessionId, payload) => {
+  io.to(sessionRoom(sessionId)).emit('master:updated', payload);
+});
 
 // Health check with database status
 app.get('/api/health', async (req, res) => {
@@ -435,7 +591,7 @@ log(`PORT: ${PORT}`);
 let server;
 try {
   log(`Binding to 0.0.0.0:${PORT}...`);
-  server = app.listen(PORT, '0.0.0.0', () => {
+  server = httpServer.listen(PORT, '0.0.0.0', () => {
     // Force immediate output
     process.stdout.write(`✅✅✅ SERVER IS RUNNING ON PORT ${PORT} ✅✅✅\n`);
     process.stderr.write(`✅✅✅ SERVER IS RUNNING ON PORT ${PORT} ✅✅✅\n`);
