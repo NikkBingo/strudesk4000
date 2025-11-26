@@ -13459,6 +13459,25 @@ async function initUserAuth() {
     });
   }
 
+  const collabLink = document.getElementById('user-collab-link');
+  if (collabLink) {
+    collabLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (!currentUser) {
+        alert('Please log in to use live collaboration.');
+        if (loginModal) {
+          loginModal.show();
+        } else {
+          showLoginButton();
+        }
+        userMenuDropdown?.classList.remove('active');
+        return;
+      }
+      collabPanel?.show();
+      userMenuDropdown?.classList.remove('active');
+    });
+  }
+
   // Initialize user profile
   userProfile = new UserProfile();
   userProfile.init();
@@ -13520,6 +13539,7 @@ function updateUserUI(user) {
   const userName = document.getElementById('user-name');
   const userAvatar = document.getElementById('user-avatar');
   const adminLink = document.getElementById('user-admin-link');
+  const collabLink = document.getElementById('user-collab-link');
   const statusText = document.getElementById('status-text');
 
   if (loginBtn) loginBtn.style.display = 'none';
@@ -13534,6 +13554,9 @@ function updateUserUI(user) {
   if (adminLink) {
     adminLink.style.display = user.role === 'admin' ? 'block' : 'none';
   }
+  if (collabLink) {
+    collabLink.style.display = '';
+  }
   
   // Show load/save buttons when logged in
   updateLoadSaveButtonsVisibility(true);
@@ -13547,10 +13570,12 @@ function showLoginButton() {
   const loginBtn = document.getElementById('header-login-btn');
   const userMenu = document.getElementById('user-menu');
   const adminLink = document.getElementById('user-admin-link');
+  const collabLink = document.getElementById('user-collab-link');
   const statusText = document.getElementById('status-text');
   if (loginBtn) loginBtn.style.display = 'block';
   if (userMenu) userMenu.style.display = 'none';
   if (adminLink) adminLink.style.display = 'none';
+  if (collabLink) collabLink.style.display = 'none';
   collabPanel?.setCurrentUser(null);
   
   // Hide load/save buttons when not logged in

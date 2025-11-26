@@ -1,6 +1,7 @@
 import { collabAPI } from '../api.js';
 import { getStrudelEditorValue } from '../strudelReplEditor.js';
 import { collaborationClient } from '../collaboration/socketClient.js';
+import { lockScroll, unlockScroll } from '../scrollLock.js';
 
 const STATUS_VARIANTS = {
   info: 'info',
@@ -11,27 +12,75 @@ const STATUS_VARIANTS = {
 export class CollabPanel {
   constructor(socketClient = collaborationClient) {
     this.root = null;
+    this.overlay = null;
+    this.closeBtn = null;
     this.socketClient = socketClient;
     this.currentSnapshot = null;
     this.currentUser = null;
     this.statusTimer = null;
     this.boundHandlers = [];
+    this.isOpen = false;
   }
 
   init() {
-    this.root = document.getElementById('collab-panel-root');
-    if (!this.root) {
-      return;
-    }
+    this.ensureModal();
+    if (!this.root) return;
     this.render();
     this.attachEvents();
     this.bindSocketEvents();
     this.updateAuthState();
   }
 
+  ensureModal() {
+    if (this.overlay && this.root) {
+      return;
+    }
+    if (!document.getElementById('collab-modal-overlay')) {
+      const template = `
+        <div class="collab-modal-overlay" id="collab-modal-overlay" style="display: none;">
+          <div class="collab-modal">
+            <button type="button" class="collab-modal-close" id="collab-modal-close" aria-label="Close collaboration panel">&times;</button>
+            <div class="collab-panel-wrapper">
+              <div id="collab-panel-root"></div>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.insertAdjacentHTML('beforeend', template);
+    }
+    this.overlay = document.getElementById('collab-modal-overlay');
+    this.root = this.overlay?.querySelector('#collab-panel-root') || null;
+    this.closeBtn = this.overlay?.querySelector('#collab-modal-close') || null;
+  }
+
+  show() {
+    if (!this.currentUser) {
+      this.setStatus('Login to access live collaboration.', STATUS_VARIANTS.error, 2000);
+      return;
+    }
+    this.ensureModal();
+    if (!this.overlay) return;
+    this.overlay.style.display = 'flex';
+    lockScroll('collab-modal');
+    this.isOpen = true;
+  }
+
+  hide() {
+    if (!this.overlay) return;
+    this.overlay.style.display = 'none';
+    unlockScroll('collab-modal');
+    this.isOpen = false;
+  }
+
   destroy() {
     this.boundHandlers.forEach((unbind) => unbind());
     this.boundHandlers = [];
+    if (this.overlay) {
+      this.overlay.remove();
+      this.overlay = null;
+      this.root = null;
+      this.closeBtn = null;
+    }
   }
 
   setCurrentUser(user) {
@@ -50,6 +99,9 @@ export class CollabPanel {
     }
     if (authGate) {
       authGate.style.display = disabled ? 'block' : 'none';
+    }
+    if (disabled && this.isOpen) {
+      this.hide();
     }
   }
 
@@ -127,6 +179,14 @@ export class CollabPanel {
   }
 
   attachEvents() {
+    this.closeBtn?.addEventListener('click', () => {
+      this.hide();
+    });
+    this.overlay?.addEventListener('click', (event) => {
+      if (event.target === this.overlay) {
+        this.hide();
+      }
+    });
     this.root?.querySelector('#collab-create-btn')?.addEventListener('click', () => {
       this.handleCreateSession();
     });

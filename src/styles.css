@@ -5015,6 +5015,44 @@ header h1 {
   border: 1px solid rgba(99, 102, 241, 0.15);
 }
 
+.collab-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.75);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 11000;
+  padding: 24px;
+  backdrop-filter: blur(2px);
+}
+
+.collab-modal {
+  background: transparent;
+  max-width: 940px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+}
+
+.collab-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 20px;
+  background: none;
+  border: none;
+  font-size: 32px;
+  color: #4b5563;
+  cursor: pointer;
+  line-height: 1;
+  z-index: 1;
+}
+
+.collab-modal-close:hover {
+  color: #111827;
+}
+
 #collab-panel-root {
   display: flex;
   flex-direction: column;
