@@ -58,6 +58,67 @@ const SPECIAL_SAMPLE_BANK_GROUP_LABEL = 'World Instruments';
 const VCSL_OPTGROUP_LABEL = 'VCSL Instruments';
 const VCSL_FAMILY_ORDER = ['Chordophones', 'Aerophones', 'Membranophones', 'Electrophones', 'Idiophones'];
 
+// Sample packs from strudel-samples.alternet.site
+// Format: { value: 'github:user/repo', label: 'Display Name', samples: count }
+const SAMPLE_PACKS = [
+  // Top packs by sample count
+  { value: 'github:tidalcycles/tidal-drum-machine', label: 'Tidal Drum Machine (683)', samples: 683 },
+  { value: 'github:yaxu/vcsl', label: 'VCSL Instruments (128)', samples: 128 },
+  { value: 'github:tidalcycles/uzu-drumkit', label: 'Uzu Drumkit (16)', samples: 16 },
+  { value: 'github:tidalcycles/mridangam', label: 'Mridangam (13)', samples: 13 },
+  { value: 'github:tidalcycles/piano', label: 'Piano (1)', samples: 1 },
+  
+  // Yaxu repositories
+  { value: 'github:yaxu/picule', label: 'Picule (75)', samples: 75 },
+  { value: 'github:yaxu/clean-break', label: 'Clean Break (32)', samples: 32 },
+  { value: 'github:yaxu/clean-breaks/main', label: 'Clean Breaks Main (32)', samples: 32 },
+  { value: 'github:yaxu/mrid', label: 'Mrid (13)', samples: 13 },
+  { value: 'github:yaxu/svg', label: 'SVG (1)', samples: 1 },
+  
+  // Dough sample packs
+  { value: 'github:Bubobubobubobubo/Dough-Amiga', label: 'Dough Amiga (116)', samples: 116 },
+  { value: 'github:Bubobubobubobubo/Dough-Waveform', label: 'Dough Waveform (65)', samples: 65 },
+  { value: 'github:Bubobubobubobubo/Dough-Fox', label: 'Dough Fox (63)', samples: 63 },
+  { value: 'github:Bubobubobubobubo/Dough-Bourge', label: 'Dough Bourge (45)', samples: 45 },
+  { value: 'github:Bubobubobubobubo/Dough-Sample', label: 'Dough Sample (27)', samples: 27 },
+  { value: 'github:Bubobubobubobubo/Dough-Amen', label: 'Dough Amen (3)', samples: 3 },
+  { value: 'github:Bubobubobubobubo/Dough-Juj', label: 'Dough Juj (1)', samples: 1 },
+  
+  // Other verified repositories
+  { value: 'github:felixroos/estuary-sample', label: 'Estuary Sample (19)', samples: 19 },
+  { value: 'github:felixroos/sample', label: 'Felixroos Sample (17)', samples: 17 },
+  { value: 'github:witchangel/break', label: 'Witchangel Break (1)', samples: 1 },
+  { value: 'github:witchangel/pad', label: 'Witchangel Pad (1)', samples: 1 },
+  { value: 'github:switchangel/pad', label: 'Switchangel Pad', samples: 0 },
+  { value: 'github:TodePond/sample', label: 'TodePond Sample (4)', samples: 4 },
+  { value: 'github:mot4i/garden', label: 'Garden (13)', samples: 13 },
+  { value: 'github:mot4i/loom', label: 'Loom', samples: 0 },
+  { value: 'github:kyrlive/glorkglunk-wavetable', label: 'Glorkglunk Wavetable (9)', samples: 9 },
+  { value: 'github:kyrlive/gc-glitches', label: 'GC Glitches (1)', samples: 1 },
+  { value: 'github:kyrlive/gc-wavetable', label: 'GC Wavetable (1)', samples: 1 },
+  
+  // Additional verified packs
+  { value: 'github:proudly-music/break', label: 'Proudly Music Break (28)', samples: 28 },
+  { value: 'github:byolim/break', label: 'Byolim Break (10)', samples: 10 },
+  { value: 'github:luvl4ne/break', label: 'Luvl4ne Break (1)', samples: 1 },
+  { value: 'github:TorenUK/break', label: 'TorenUK Break (1)', samples: 1 },
+  { value: 'github:heavy-lifting/a-maze', label: 'A-Maze (26)', samples: 26 },
+  { value: 'github:eddyflux/crate', label: 'Eddyflux Crate (18)', samples: 18 },
+  { value: 'github:algorave-dave/sample', label: 'Algorave Dave Sample (10)', samples: 10 },
+  { value: 'github:indiepaleale/strudel-sample', label: 'Indiepaleale Strudel Sample (12)', samples: 12 },
+  { value: 'github:azhadyed/strudel-sample', label: 'Azhadyed Strudel Sample (9)', samples: 9 },
+  { value: 'github:gerzytet/strudel-sample', label: 'Gerzytet Strudel Sample (1)', samples: 1 },
+  { value: 'github:jessicaaaaaaaaaaaa/strudel-sample', label: 'Jessica Strudel Sample (2)', samples: 2 },
+  { value: 'github:reema7667/strudel-sound', label: 'Reema Strudel Sound (1)', samples: 1 },
+  { value: 'github:Samplebit/strudel_sample', label: 'Samplebit Strudel Sample (1)', samples: 1 },
+  { value: 'github:ibleedicare/strudel-bank', label: 'Ibleedicare Strudel Bank (2)', samples: 2 },
+  { value: 'github:arefo/strudel', label: 'Arefo Strudel (12)', samples: 12 },
+  { value: 'github:Prof12200/strudel_repo', label: 'Prof12200 Strudel Repo (6)', samples: 6 },
+  { value: 'github:creativenucleus/strudel-m8-168-dnb-jungle', label: 'Strudel M8 168 DNB Jungle (8)', samples: 8 },
+  { value: 'github:maudd/joonie-dnb-collection-strudel', label: 'Joonie DNB Collection (2)', samples: 2 },
+  { value: 'github:tidalcycles/dirt-samples', label: 'Dirt Samples', samples: 218 }
+];
+
 let cachedVcslManifest = null;
 let cachedNormalizedVcslManifest = null;
 const SPECIAL_SAMPLE_BANKS = [
@@ -5904,7 +5965,7 @@ class InteractiveSoundApp {
 
   enableNativeStrudelHighlighting() {
     this.nativeHighlightingEnabled = false;
-    this.nativeHighlightingDisabled = true;
+        this.nativeHighlightingDisabled = true;
     if (typeof soundManager?.setEditorHighlightingEnabled === 'function') {
       soundManager.setEditorHighlightingEnabled(false);
     }
@@ -7699,6 +7760,10 @@ class InteractiveSoundApp {
       let vcslGroup = Array.from(bankSelect.children).find(
         (child) => child.tagName === 'OPTGROUP' && child.label === VCSL_OPTGROUP_LABEL
       );
+      
+      let samplePacksGroup = Array.from(bankSelect.children).find(
+        (child) => child.tagName === 'OPTGROUP' && child.label === 'Sample Packs'
+      );
 
       // Create groups if they don't exist, in the correct order
       if (!drumsGroup) {
@@ -7743,6 +7808,12 @@ class InteractiveSoundApp {
         vcslGroup = document.createElement('optgroup');
         vcslGroup.label = VCSL_OPTGROUP_LABEL;
         bankSelect.appendChild(vcslGroup);
+      }
+      
+      if (!samplePacksGroup) {
+        samplePacksGroup = document.createElement('optgroup');
+        samplePacksGroup.label = 'Sample Packs';
+        bankSelect.appendChild(samplePacksGroup);
       }
 
       // Only rebuild the Drums group, preserve other groups
@@ -7792,6 +7863,23 @@ class InteractiveSoundApp {
           ensurePatternBankOptions(selectedValue);
         }).catch(() => {});
       }
+      
+      // Populate sample packs group
+      samplePacksGroup.innerHTML = '';
+      // Sort by sample count (descending), then by label
+      const sortedSamplePacks = [...SAMPLE_PACKS].sort((a, b) => {
+        if (b.samples !== a.samples) {
+          return b.samples - a.samples;
+        }
+        return a.label.localeCompare(b.label);
+      });
+      sortedSamplePacks.forEach((pack) => {
+        const option = document.createElement('option');
+        option.value = pack.value;
+        option.textContent = pack.label;
+        option.dataset.source = 'sample-pack';
+        samplePacksGroup.appendChild(option);
+      });
 
       // Don't add non-drum banks to drums group - they belong in their own groups
       // The other groups are preserved from the HTML, so options stay in place
@@ -9881,7 +9969,7 @@ class InteractiveSoundApp {
         const titleInput = document.getElementById('modal-title');
         
         if (file) {
-          // Hide Pattern Bank when file is selected
+          // Hide Sound Bank when file is selected
           // Time Signature visibility is controlled by editor state (step vs code editor)
           if (patternBankGroup) {
             patternBankGroup.style.display = 'none';
@@ -9898,7 +9986,7 @@ class InteractiveSoundApp {
             titleInput.value = nameWithoutExt;
           }
       } else {
-          // Show Pattern Bank when file is cleared
+          // Show Sound Bank when file is cleared
           // Time Signature visibility is controlled by editor state (step vs code editor)
           if (patternBankGroup) {
             patternBankGroup.style.display = 'block';
@@ -11484,7 +11572,7 @@ class InteractiveSoundApp {
           this.saveElementConfig(elementId, updatedConfig, skipMasterSave);
         };
         
-        // If bank is selected, clear file input and show Pattern Bank
+        // If bank is selected, clear file input and show Sound Bank
         // Time Signature visibility is controlled by editor state (step vs code editor)
         if (bankValue && bankValue !== '') {
           if (fileInput) {
@@ -11814,7 +11902,15 @@ class InteractiveSoundApp {
               let bankDisplayName;
               const specialtyMatch = SPECIAL_SAMPLE_BANKS.find(sampleBank => sampleBank.value === lowerBankValue);
               if (bankValue.startsWith('github:')) {
-                bankDisplayName = bankValue.replace('github:tidalcycles/', '');
+                // Try to find a matching sample pack for better display name
+                const samplePack = SAMPLE_PACKS.find(pack => pack.value === bankValue);
+                if (samplePack) {
+                  bankDisplayName = samplePack.label.replace(/\s*\(\d+\)$/, ''); // Remove sample count from label
+                } else {
+                  // Fallback: extract repo name from github: URL
+                  const repoMatch = bankValue.match(/github:([^/]+\/[^/]+)/);
+                  bankDisplayName = repoMatch ? repoMatch[1] : bankValue.replace('github:', '');
+                }
               } else if (DRUM_BANK_VALUES.has(bankValue)) {
                 // Use proper display name for drum banks
                 bankDisplayName = getDrumBankDisplayName(bankValue);
@@ -12516,10 +12612,11 @@ let adminUserManager = null;
 
 async function initUserAuth() {
   loginModal = new LoginModal();
-  loginModal.init();
+  // Set callback BEFORE init() to ensure checkAuthStatus() can use it
   loginModal.setOnLoginSuccess((user) => {
     handleAuthenticatedUser(user);
   });
+  loginModal.init();
 
   // Check if user is already logged in
   try {
@@ -12543,6 +12640,12 @@ async function initUserAuth() {
   } catch (error) {
     showLoginButton();
   }
+  
+  // Safety: Ensure scroll is unlocked after initialization
+  // This fixes cases where scroll might be locked during initialization
+  setTimeout(() => {
+    forceUnlockScroll();
+  }, 100);
 
   // Setup login button
   const loginBtn = document.getElementById('header-login-btn');
@@ -12715,14 +12818,18 @@ function handleAuthenticatedUser(user) {
   if (loginModal) {
     loginModal.hide();
   }
+  // Force unlock scroll immediately when handling authenticated user
   forceUnlockScroll();
   updateUserUI(user);
   if (!user.profileCompleted && profileOnboardingModal) {
+    // Profile onboarding will lock scroll when shown, which is expected
     profileOnboardingModal.show(user);
   } else {
     // Ensure scrolling is restored if profile onboarding doesn't show
-    // This fixes the case where login modal hides but overflow wasn't restored
-    forceUnlockScroll();
+    // Use setTimeout to ensure this happens after any async operations
+    setTimeout(() => {
+      forceUnlockScroll();
+    }, 50);
   }
 }
 
@@ -12740,4 +12847,24 @@ if (document.readyState === 'loading') {
   initializePatternHistoryUI();
   initUserAuth();
 }
+
+// Safety: Force unlock scroll after window fully loads
+// This ensures scroll is never stuck locked after page load
+window.addEventListener('load', () => {
+  // Small delay to ensure all initialization is complete
+  setTimeout(() => {
+    // Only force unlock if no modals are actually visible
+    const loginModalVisible = document.getElementById('login-modal-overlay')?.style.display !== 'none';
+    const profileModalVisible = document.getElementById('profile-onboarding-overlay')?.style.display !== 'none';
+    const userProfileModalVisible = document.getElementById('user-profile-modal-overlay')?.style.display !== 'none';
+    const saveDialogVisible = document.getElementById('save-pattern-dialog-overlay')?.style.display !== 'none';
+    const userProfilesModalVisible = document.getElementById('user-profiles-modal-overlay')?.style.display !== 'none';
+    const adminModalVisible = document.getElementById('admin-user-manager-overlay')?.style.display !== 'none';
+    
+    if (!loginModalVisible && !profileModalVisible && !userProfileModalVisible && 
+        !saveDialogVisible && !userProfilesModalVisible && !adminModalVisible) {
+      forceUnlockScroll();
+    }
+  }, 200);
+});
 
