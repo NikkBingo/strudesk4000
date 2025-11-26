@@ -9,6 +9,60 @@ const STATUS_VARIANTS = {
   error: 'error'
 };
 
+const STEP_EDITOR_ROWS = [
+  { key: 'bd', label: 'Kick', sample: 'bd' },
+  { key: 'sd', label: 'Snare', sample: 'sd' },
+  { key: 'hh', label: 'Hi-hat', sample: 'hh' },
+  { key: 'oh', label: 'Open hat', sample: 'oh' },
+  { key: 'cp', label: 'Clap', sample: 'cp' },
+  { key: 'perc', label: 'Perc', sample: 'perc' }
+];
+
+const TIME_SIGNATURE_STEPS = {
+  '2/4': 8,
+  '3/4': 12,
+  '4/4': 16,
+  '5/4': 20,
+  '6/8': 12,
+  '7/4': 28,
+  '7/8': 14,
+  '9/8': 18,
+  '12/8': 24,
+  '2/2': 16,
+  '3/8': 6,
+  '5/8': 10
+};
+
+const DEFAULT_TIME_SIGNATURE = '4/4';
+
+const CHORD_PRESETS = [
+  {
+    id: 'i-iv-v',
+    label: 'I · IV · V',
+    noteSnippet: 'note("c4 e4 g4").slow(2) ++ note("f4 a4 c5").slow(2) ++ note("g4 b4 d5").slow(2)',
+    semitoneSnippet: 'n("0 4 7").slow(2) ++ n("5 9 12").slow(2) ++ n("7 11 14").slow(2)'
+  },
+  {
+    id: 'ii-v-i',
+    label: 'ii · V · I',
+    noteSnippet: 'note("d4 f4 a4").slow(2) ++ note("g3 b3 d4").slow(2) ++ note("c4 e4 g4").slow(2)',
+    semitoneSnippet: 'n("2 5 9").slow(2) ++ n("7 11 14").slow(2) ++ n("0 4 7").slow(2)'
+  },
+  {
+    id: 'lofi-walk',
+    label: 'Lo-fi walk',
+    noteSnippet: 'note("c4 e4 g4").stack(note("b3 d4 g4")).slow(2)',
+    semitoneSnippet: 'n("0 4 7").stack(n("11 2 7")).slow(2)'
+  }
+];
+
+const NOTE_MODE = {
+  NOTE: 'note',
+  SEMITONE: 'semitone'
+};
+
+const CODE_META_PREFIX = '// @meta';
+
 export class CollabPanel {
   constructor(socketClient = collaborationClient) {
     this.root = null;
@@ -25,6 +79,31 @@ export class CollabPanel {
     this.inviteSearchResults = [];
     this.selectedInvitees = [];
     this.inviteSearchTimeout = null;
+    this.channelEditorState = this.createDefaultEditorState();
+    this.channelTitleAuto = true;
+    this.channelLastChordLabel = null;
+  }
+
+  createDefaultEditorState() {
+    const steps = TIME_SIGNATURE_STEPS[DEFAULT_TIME_SIGNATURE] || 16;
+    return {
+      mode: 'code',
+      timeSignature: DEFAULT_TIME_SIGNATURE,
+      stepsPerBar: steps,
+      gridSelections: this.createEmptyGridSelections(steps),
+      noteMode: NOTE_MODE.NOTE,
+      bankValue: '',
+      key: '',
+      scale: 'chromatic'
+    };
+  }
+
+  createEmptyGridSelections(stepsPerBar) {
+    const selections = {};
+    STEP_EDITOR_ROWS.forEach((row) => {
+      selections[row.key] = new Array(stepsPerBar).fill(false);
+    });
+    return selections;
   }
 
   init() {
@@ -329,6 +408,51 @@ export class CollabPanel {
                 </div>
               </div>
             </div>
+            <div class="collab-channel-editor-tools">
+              <div class="form-group collab-mode-toggle-group">
+                <label>Editor mode</label>
+                <div class="collab-mode-toggle" role="group" aria-label="Editor mode">
+                  <button type="button" class="collab-mode-btn active" data-collab-editor-mode="code">Code</button>
+                  <button type="button" class="collab-mode-btn" data-collab-editor-mode="step">Step</button>
+                </div>
+              </div>
+              <div class="form-group collab-time-signature" id="collab-time-signature-group">
+                <label for="collab-channel-time-signature">Time Signature:</label>
+                <select id="collab-channel-time-signature" class="control-select" aria-label="Time Signature">
+                  <option value="4/4" selected>4/4 (Common Time)</option>
+                  <option value="3/4">3/4 (Waltz)</option>
+                  <option value="6/8">6/8</option>
+                  <option value="2/4">2/4 (March)</option>
+                  <option value="5/4">5/4</option>
+                  <option value="7/8">7/8</option>
+                  <option value="12/8">12/8</option>
+                  <option value="2/2">2/2 (Cut Time)</option>
+                  <option value="3/8">3/8</option>
+                  <option value="9/8">9/8</option>
+                  <option value="5/8">5/8</option>
+                  <option value="7/4">7/4</option>
+                </select>
+              </div>
+            </div>
+            <div class="collab-step-editor" id="collab-step-editor" hidden>
+              <div class="collab-step-grid" id="collab-step-grid"></div>
+              <p class="collab-step-hint">Click steps to toggle hits. Multi-hits create stacked samples.</p>
+            </div>
+            <div class="collab-chord-tools">
+              <label for="collab-chord-select">Chords</label>
+              <div class="collab-chord-row">
+                <select id="collab-chord-select" class="control-select">
+                  <option value="">Add a chord progression…</option>
+                  <option value="i-iv-v">I · IV · V</option>
+                  <option value="ii-v-i">ii · V · I</option>
+                  <option value="lofi-walk">Lo-fi walk</option>
+                </select>
+                <label class="collab-note-mode-toggle">
+                  <input type="checkbox" id="collab-note-mode-toggle" />
+                  <span id="collab-note-mode-label">Note names</span>
+                </label>
+              </div>
+            </div>
             <div class="collab-channel-editor">
               <div class="pattern-label-row">
                 <label for="collab-channel-code">Pattern</label>
@@ -360,6 +484,427 @@ export class CollabPanel {
     this.renderRecentSessions();
     this.renderInviteSearchResults();
     this.renderSelectedInvitees();
+    this.initializeChannelFormControls();
+  }
+
+  initializeChannelFormControls() {
+    if (!this.root) return;
+    if (!this.channelEditorState) {
+      this.channelEditorState = this.createDefaultEditorState();
+    }
+    this.channelTextarea = this.root.querySelector('#collab-channel-code');
+    this.channelTitleInput = this.root.querySelector('#collab-channel-title');
+    this.bankSelect = this.root.querySelector('#collab-pattern-bank');
+    this.timeSignatureSelect = this.root.querySelector('#collab-channel-time-signature');
+    this.keySelect = this.root.querySelector('#collab-key-select');
+    this.scaleSelect = this.root.querySelector('#collab-scale-select');
+    this.chordSelect = this.root.querySelector('#collab-chord-select');
+    this.noteToggle = this.root.querySelector('#collab-note-mode-toggle');
+    this.noteModeLabel = this.root.querySelector('#collab-note-mode-label');
+    this.channelTitleAuto = !this.channelTitleInput || this.channelTitleInput.value.trim().length === 0;
+
+    if (!this.channelTextarea) {
+      return;
+    }
+
+    this.channelTextarea.addEventListener('input', () => {
+      if (this.channelEditorState.mode === 'code') {
+        this.channelEditorState.customCode = this.channelTextarea.value;
+      }
+    });
+
+    this.channelTitleInput?.addEventListener('input', () => {
+      this.handleTitleInputChange();
+    });
+
+    this.bankSelect?.addEventListener('change', (event) => {
+      this.handleBankChange(event.target.value);
+    });
+    if (this.bankSelect) {
+      this.channelEditorState.bankValue = this.bankSelect.value?.trim() || '';
+    }
+
+    this.timeSignatureSelect?.addEventListener('change', (event) => {
+      this.handleTimeSignatureChange(event.target.value);
+    });
+    if (this.timeSignatureSelect) {
+      const initialSignature = this.timeSignatureSelect.value || DEFAULT_TIME_SIGNATURE;
+      this.channelEditorState.timeSignature = initialSignature;
+      this.channelEditorState.stepsPerBar = TIME_SIGNATURE_STEPS[initialSignature] || 16;
+    }
+
+    this.keySelect?.addEventListener('change', (event) => {
+      this.handleKeyChange(event.target.value);
+    });
+
+    this.scaleSelect?.addEventListener('change', (event) => {
+      this.handleScaleChange(event.target.value);
+    });
+    if (this.keySelect) {
+      this.channelEditorState.key = this.keySelect.value || '';
+    }
+    if (this.scaleSelect) {
+      this.channelEditorState.scale = this.scaleSelect.value || 'chromatic';
+    }
+
+    this.chordSelect?.addEventListener('change', (event) => {
+      this.handleChordSelection(event.target.value);
+    });
+
+    this.noteToggle?.addEventListener('change', (event) => {
+      this.handleNoteModeToggle(event.target.checked);
+    });
+
+    const modeButtons = this.root.querySelectorAll('[data-collab-editor-mode]');
+    modeButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const mode = button.getAttribute('data-collab-editor-mode');
+        this.setChannelEditorMode(mode || 'code');
+      });
+    });
+
+    this.buildStepEditorGrid();
+    this.autoFillTitleFromBank();
+    this.updateEditorModeButtons();
+    this.updateEditorModeVisibility();
+    if (this.channelEditorState.mode === 'step') {
+      this.populateGridFromCode(this.channelTextarea.value);
+      this.syncCodeFromGrid();
+    } else {
+      this.syncCodeAnnotationsFromState();
+    }
+    this.handleNoteModeToggle(this.channelEditorState.noteMode === NOTE_MODE.SEMITONE, { silent: true });
+  }
+
+  handleTitleInputChange() {
+    if (!this.channelTitleInput) return;
+    const value = this.channelTitleInput.value || '';
+    this.channelTitleAuto = value.trim().length === 0;
+  }
+
+  handleBankChange(value) {
+    this.channelEditorState.bankValue = value || '';
+    this.autoFillTitleFromBank();
+    if (this.channelEditorState.mode === 'step') {
+      this.syncCodeFromGrid();
+    } else {
+      this.syncCodeAnnotationsFromState();
+    }
+  }
+
+  autoFillTitleFromBank() {
+    if (!this.channelTitleAuto || !this.channelTitleInput || !this.bankSelect) return;
+    const option = this.bankSelect.selectedOptions?.[0];
+    if (option && option.textContent) {
+      this.channelTitleInput.value = option.textContent.trim();
+    }
+  }
+
+  handleTimeSignatureChange(signature) {
+    const normalized = TIME_SIGNATURE_STEPS[signature] ? signature : DEFAULT_TIME_SIGNATURE;
+    this.channelEditorState.timeSignature = normalized;
+    this.channelEditorState.stepsPerBar = TIME_SIGNATURE_STEPS[normalized] || 16;
+    this.channelEditorState.gridSelections = this.createEmptyGridSelections(this.channelEditorState.stepsPerBar);
+    this.buildStepEditorGrid();
+    if (this.channelEditorState.mode === 'step') {
+      this.syncCodeFromGrid();
+    }
+  }
+
+  handleKeyChange(value) {
+    this.channelEditorState.key = value || '';
+    this.syncCodeAnnotationsFromState();
+  }
+
+  handleScaleChange(value) {
+    this.channelEditorState.scale = value || '';
+    this.syncCodeAnnotationsFromState();
+  }
+
+  handleChordSelection(presetId) {
+    if (!presetId) return;
+    const preset = CHORD_PRESETS.find((item) => item.id === presetId);
+    if (!preset) return;
+    const snippet = this.channelEditorState.noteMode === NOTE_MODE.SEMITONE
+      ? preset.semitoneSnippet
+      : preset.noteSnippet;
+    if (!snippet) return;
+    if (this.channelEditorState.mode === 'step') {
+      this.setChannelEditorMode('code');
+    }
+    this.insertSnippetIntoCode(snippet.trim());
+    this.channelLastChordLabel = preset.label;
+    this.chordSelect.value = '';
+    this.syncCodeAnnotationsFromState();
+  }
+
+  handleNoteModeToggle(isSemitone, options = {}) {
+    this.channelEditorState.noteMode = isSemitone ? NOTE_MODE.SEMITONE : NOTE_MODE.NOTE;
+    if (!options.silent && this.channelEditorState.mode === 'code') {
+      this.syncCodeAnnotationsFromState();
+    }
+    if (this.noteModeLabel) {
+      this.noteModeLabel.textContent = isSemitone ? 'Semitone steps' : 'Note names';
+    }
+    if (this.noteToggle) {
+      this.noteToggle.checked = isSemitone;
+    }
+  }
+
+  insertSnippetIntoCode(snippet) {
+    const textarea = this.getChannelTextarea();
+    if (!textarea || !snippet) return;
+    const current = textarea.value.trimEnd();
+    textarea.value = current ? `${current}\n${snippet}\n` : `${snippet}\n`;
+    textarea.focus();
+  }
+
+  getChannelTextarea() {
+    if (this.channelTextarea && this.channelTextarea.isConnected) {
+      return this.channelTextarea;
+    }
+    this.channelTextarea = this.root?.querySelector('#collab-channel-code') || null;
+    return this.channelTextarea;
+  }
+
+  setChannelEditorMode(mode = 'code') {
+    const normalized = mode === 'step' ? 'step' : 'code';
+    if (this.channelEditorState.mode === normalized) {
+      this.updateEditorModeButtons();
+      this.updateEditorModeVisibility();
+      return;
+    }
+    this.channelEditorState.mode = normalized;
+    if (normalized === 'step') {
+      this.populateGridFromCode(this.getChannelTextarea()?.value || '');
+      this.syncCodeFromGrid();
+    } else {
+      this.syncCodeAnnotationsFromState();
+    }
+    this.updateEditorModeButtons();
+    this.updateEditorModeVisibility();
+  }
+
+  updateEditorModeButtons() {
+    const buttons = this.root?.querySelectorAll('[data-collab-editor-mode]');
+    if (!buttons) return;
+    buttons.forEach((button) => {
+      const mode = button.getAttribute('data-collab-editor-mode') || 'code';
+      button.classList.toggle('active', mode === this.channelEditorState.mode);
+    });
+  }
+
+  updateEditorModeVisibility() {
+    const stepWrapper = this.root?.querySelector('#collab-step-editor');
+    const timeGroup = this.root?.querySelector('#collab-time-signature-group');
+    const codeWrapper = this.root?.querySelector('.collab-channel-editor');
+    const textarea = this.getChannelTextarea();
+    const isStep = this.channelEditorState.mode === 'step';
+    if (stepWrapper) {
+      stepWrapper.hidden = !isStep;
+    }
+    if (timeGroup) {
+      timeGroup.hidden = !isStep;
+    }
+    if (textarea) {
+      textarea.readOnly = isStep;
+      textarea.classList.toggle('pattern-editor-readonly', isStep);
+    }
+    if (codeWrapper) {
+      codeWrapper.classList.toggle('collab-code-readonly', isStep);
+    }
+  }
+
+  buildStepEditorGrid() {
+    const container = this.root?.querySelector('#collab-step-grid');
+    if (!container) return;
+    const stepsPerBar = this.channelEditorState.stepsPerBar || 16;
+    const selections = this.channelEditorState.gridSelections
+      && Object.values(this.channelEditorState.gridSelections)[0]
+      && Object.values(this.channelEditorState.gridSelections)[0].length === stepsPerBar
+      ? this.channelEditorState.gridSelections
+      : this.createEmptyGridSelections(stepsPerBar);
+    this.channelEditorState.gridSelections = selections;
+    container.innerHTML = '';
+    STEP_EDITOR_ROWS.forEach((row) => {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'collab-step-row';
+      const label = document.createElement('span');
+      label.className = 'collab-step-label';
+      label.textContent = row.label;
+      rowEl.appendChild(label);
+      const stepsWrapper = document.createElement('div');
+      stepsWrapper.className = 'collab-step-cells';
+      stepsWrapper.style.gridTemplateColumns = `repeat(${stepsPerBar}, minmax(18px, 1fr))`;
+      for (let step = 0; step < stepsPerBar; step += 1) {
+        const cell = document.createElement('label');
+        cell.className = 'collab-step-cell';
+        if (step % 4 === 0) {
+          cell.classList.add('beat');
+        }
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = !!selections[row.key]?.[step];
+        checkbox.addEventListener('change', () => {
+          this.handleStepCheckboxChange(row.key, step, checkbox.checked);
+        });
+        cell.appendChild(checkbox);
+        stepsWrapper.appendChild(cell);
+      }
+      rowEl.appendChild(stepsWrapper);
+      container.appendChild(rowEl);
+    });
+  }
+
+  handleStepCheckboxChange(rowKey, stepIndex, isChecked) {
+    if (!this.channelEditorState.gridSelections[rowKey]) {
+      this.channelEditorState.gridSelections[rowKey] = new Array(this.channelEditorState.stepsPerBar).fill(false);
+    }
+    this.channelEditorState.gridSelections[rowKey][stepIndex] = isChecked;
+    this.syncCodeFromGrid();
+  }
+
+  syncCodeFromGrid() {
+    if (this.channelEditorState.mode !== 'step') {
+      return;
+    }
+    const textarea = this.getChannelTextarea();
+    if (!textarea) return;
+    const pattern = this.generatePatternFromGrid();
+    const annotated = this.applyCodeAnnotations(pattern);
+    textarea.value = annotated;
+  }
+
+  syncCodeAnnotationsFromState() {
+    const textarea = this.getChannelTextarea();
+    if (!textarea) return;
+    if (this.channelEditorState.mode === 'step') {
+      this.syncCodeFromGrid();
+      return;
+    }
+    const annotations = this.collectChannelAnnotations();
+    const metaLines = annotations.map(({ label, value }) => `${CODE_META_PREFIX} ${label}: ${value}`);
+    const bodyLines = textarea.value
+      .split('\n')
+      .filter((line) => !line.startsWith(CODE_META_PREFIX));
+    const body = bodyLines.join('\n').trim();
+    const assembled = [
+      metaLines.length ? metaLines.join('\n') : '',
+      body
+    ].filter(Boolean).join('\n');
+    textarea.value = assembled.trim();
+  }
+
+  collectChannelAnnotations() {
+    const annotations = [];
+    const bankLabel = this.getSelectedBankLabel();
+    if (bankLabel) {
+      annotations.push({ label: 'Bank', value: bankLabel });
+    }
+    if (this.channelEditorState.timeSignature) {
+      annotations.push({ label: 'Signature', value: this.channelEditorState.timeSignature });
+    }
+    if (this.channelEditorState.key) {
+      annotations.push({ label: 'Key', value: this.channelEditorState.key });
+    }
+    if (this.channelEditorState.scale) {
+      annotations.push({ label: 'Scale', value: this.channelEditorState.scale });
+    }
+    if (this.channelLastChordLabel) {
+      annotations.push({ label: 'Chords', value: this.channelLastChordLabel });
+    }
+    if (this.channelEditorState.noteMode === NOTE_MODE.SEMITONE) {
+      annotations.push({ label: 'Note mode', value: 'Semitone' });
+    }
+    return annotations;
+  }
+
+  getSelectedBankLabel() {
+    if (!this.bankSelect) return '';
+    const option = this.bankSelect.selectedOptions?.[0];
+    return option?.textContent?.trim() || '';
+  }
+
+  generatePatternFromGrid() {
+    const stepsPerBar = this.channelEditorState.stepsPerBar || 16;
+    const tokens = [];
+    for (let step = 0; step < stepsPerBar; step += 1) {
+      const hits = [];
+      STEP_EDITOR_ROWS.forEach((row) => {
+        if (this.channelEditorState.gridSelections[row.key]?.[step]) {
+          hits.push(row.sample);
+        }
+      });
+      if (hits.length === 0) {
+        tokens.push('~');
+      } else if (hits.length === 1) {
+        tokens.push(hits[0]);
+      } else {
+        tokens.push(`[${hits.join(' ')}]`);
+      }
+    }
+    let pattern = `s("${tokens.join(' ')}")`;
+    if (this.channelEditorState.bankValue) {
+      pattern += `.bank("${this.channelEditorState.bankValue}")`;
+    }
+    return pattern;
+  }
+
+  applyCodeAnnotations(pattern) {
+    const annotations = this.collectChannelAnnotations();
+    if (!annotations.length) {
+      return pattern;
+    }
+    const metaLines = annotations.map(({ label, value }) => `${CODE_META_PREFIX} ${label}: ${value}`);
+    return `${metaLines.join('\n')}\n${pattern}`.trim();
+  }
+
+  populateGridFromCode(code) {
+    if (!code) {
+      this.channelEditorState.gridSelections = this.createEmptyGridSelections(this.channelEditorState.stepsPerBar);
+      this.buildStepEditorGrid();
+      return;
+    }
+    const match = code.match(/s\("([^"]*)"\)/i);
+    if (!match || !match[1]) {
+      this.channelEditorState.gridSelections = this.createEmptyGridSelections(this.channelEditorState.stepsPerBar);
+      this.buildStepEditorGrid();
+      return;
+    }
+    const sequence = match[1];
+    const tokens = sequence.split(/\s+/).filter(Boolean);
+    const matchedSignature = Object.entries(TIME_SIGNATURE_STEPS)
+      .find(([, steps]) => steps === tokens.length);
+    if (matchedSignature) {
+      this.channelEditorState.timeSignature = matchedSignature[0];
+      this.channelEditorState.stepsPerBar = matchedSignature[1];
+      if (this.timeSignatureSelect) {
+        this.timeSignatureSelect.value = matchedSignature[0];
+      }
+    }
+    const stepsPerBar = this.channelEditorState.stepsPerBar;
+    const selections = this.createEmptyGridSelections(stepsPerBar);
+    for (let step = 0; step < stepsPerBar; step += 1) {
+      const token = tokens[step];
+      if (!token) continue;
+      const samples = this.parseTokenSamples(token);
+      STEP_EDITOR_ROWS.forEach((row) => {
+        selections[row.key][step] = samples.includes(row.sample);
+      });
+    }
+    this.channelEditorState.gridSelections = selections;
+    this.buildStepEditorGrid();
+  }
+
+  parseTokenSamples(token) {
+    if (!token) return [];
+    let working = token.trim();
+    if (!working || working === '~') return [];
+    if ((working.startsWith('[') && working.endsWith(']')) || (working.startsWith('{') && working.endsWith('}'))) {
+      working = working.slice(1, -1);
+    }
+    working = working.replace(/[,]+/g, ' ');
+    return working.split(/\s+/).map((part) => part.trim()).filter(Boolean);
   }
 
   attachEvents() {
@@ -566,23 +1111,36 @@ export class CollabPanel {
   collectChannelFormValues() {
     const textarea = this.root?.querySelector('#collab-channel-code');
     const titleInput = this.root?.querySelector('#collab-channel-title');
-    const bankSelect = this.root?.querySelector('#collab-pattern-bank');
-    const timeSigSelect = this.root?.querySelector('#collab-time-signature');
-    const keySelect = this.root?.querySelector('#collab-key-select');
-    const scaleSelect = this.root?.querySelector('#collab-scale-select');
-
+    if (this.channelEditorState?.mode === 'step') {
+      this.syncCodeFromGrid();
+    }
+    const title = titleInput?.value?.trim() || '';
     const metadata = {};
-    const soundBank = bankSelect?.value?.trim();
-    const timeSignature = timeSigSelect?.value?.trim();
-    const key = keySelect?.value?.trim();
-    const scale = scaleSelect?.value?.trim();
-    const title = titleInput?.value?.trim();
-
+    const soundBank = this.channelEditorState?.bankValue?.trim();
+    const soundBankLabel = this.getSelectedBankLabel();
     if (soundBank) metadata.soundBank = soundBank;
-    if (timeSignature) metadata.timeSignature = timeSignature;
-    if (key) metadata.key = key;
-    if (scale && scale !== 'chromatic') metadata.scale = scale;
-    if (title) metadata.title = title;
+    if (soundBankLabel) metadata.soundBankLabel = soundBankLabel;
+    if (this.channelEditorState?.timeSignature) {
+      metadata.timeSignature = this.channelEditorState.timeSignature;
+    }
+    if (this.channelEditorState?.key) {
+      metadata.key = this.channelEditorState.key;
+    }
+    if (this.channelEditorState?.scale && this.channelEditorState.scale !== 'chromatic') {
+      metadata.scale = this.channelEditorState.scale;
+    }
+    if (this.channelEditorState?.mode) {
+      metadata.editorMode = this.channelEditorState.mode;
+    }
+    if (this.channelEditorState?.noteMode) {
+      metadata.noteMode = this.channelEditorState.noteMode;
+    }
+    if (this.channelLastChordLabel) {
+      metadata.chords = this.channelLastChordLabel;
+    }
+    if (title) {
+      metadata.title = title;
+    }
 
     return {
       code: textarea?.value?.trim() || '',
@@ -602,6 +1160,12 @@ export class CollabPanel {
       if (textarea) {
         textarea.value = value.trim();
         textarea.focus();
+        if (this.channelEditorState?.mode === 'step') {
+          this.populateGridFromCode(textarea.value);
+          this.syncCodeFromGrid();
+        } else {
+          this.syncCodeAnnotationsFromState();
+        }
       }
       this.setStatus('Copied master editor content into snippet box.', STATUS_VARIANTS.info, 2000);
     } catch (error) {
