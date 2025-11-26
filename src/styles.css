@@ -7,6 +7,10 @@
     font-size: calc(2.5rem - 2px);
   }
 
+  .element-midi-settings {
+    display: none;
+  }
+
   .master-controls-row {
     gap: 16px;
     justify-content: stretch;
