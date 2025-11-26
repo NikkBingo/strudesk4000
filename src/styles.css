@@ -908,7 +908,7 @@ header h1 {
 }
 
 .chaospad-tilt-inline {
-  display: flex;
+  display: none;
   gap: 12px;
   align-items: center;
   opacity: 0.35;
@@ -953,6 +953,7 @@ header h1 {
     align-items: flex-start;
   }
   .chaospad-tilt-inline {
+    display: flex;
     width: 100%;
   }
   .tilt-slider {
