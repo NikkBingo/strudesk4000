@@ -11997,16 +11997,35 @@ class InteractiveSoundApp {
               let strudelPattern = normalizeEditorPattern(currentPattern);
               console.log(`📝 Bank change: normalizedPattern="${strudelPattern.substring(0, 100)}..."`);
               
-              // Determine if this is a drum bank or synth/waveform
+              // Determine if this is a drum bank, synth/waveform, or sample pack
               const isDrumBank = DRUM_BANK_VALUES.has(bankValue);
               const isSynthOrWaveform = OSCILLATOR_SYNTHS.includes(lowerBankValue) || 
                                         SAMPLE_SYNTHS.includes(lowerBankValue) ||
                                         ['sawtooth', 'square', 'triangle', 'sine'].includes(lowerBankValue);
+              const isSamplePack = bankValue.startsWith('github:');
               
-              console.log(`📝 Bank change: isDrumBank=${isDrumBank}, isSynthOrWaveform=${isSynthOrWaveform}, isSpecialSampleBank=${isSpecialSampleBank}, bankValue="${bankValue}"`);
+              console.log(`📝 Bank change: isDrumBank=${isDrumBank}, isSynthOrWaveform=${isSynthOrWaveform}, isSpecialSampleBank=${isSpecialSampleBank}, isSamplePack=${isSamplePack}, bankValue="${bankValue}"`);
               
-              // Always add/replace the modifier, even if pattern is empty (create minimal pattern)
-              if (isDrumBank || isSpecialSampleBank) {
+              // Handle sample packs differently - they load samples but don't use .bank()
+              if (isSamplePack) {
+                // Sample packs are loaded via samples() and then used with sound("sample-name")
+                // Don't add .bank() modifier - just ensure samples() is called and guide user
+                if (strudelPattern && strudelPattern.trim() !== '') {
+                  // Pattern exists - check if it already has samples() call for this pack
+                  const samplesCallPattern = new RegExp(`samples\\(["']?${bankValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']?\\)`, 'i');
+                  if (!samplesCallPattern.test(strudelPattern)) {
+                    // Add samples() call at the beginning if not present
+                    strudelPattern = `samples("${bankValue}")\n${strudelPattern}`;
+                    console.log(`📦 Added samples() call for pack: ${bankValue}`);
+                  }
+                } else {
+                  // No pattern - create minimal pattern with samples() call and example sound()
+                  strudelPattern = `samples("${bankValue}")\nsound("sample-name")`;
+                  console.log(`📦 Created minimal pattern with samples() call for pack: ${bankValue}`);
+                }
+                setStrudelEditorValue('modal-pattern', strudelPattern);
+                patternTextarea.placeholder = 'Use sound("sample-name") to play samples from this pack. Samples are loaded via samples() above.';
+              } else if (isDrumBank || isSpecialSampleBank) {
                 const appliedBankValue = isSpecialSampleBank ? lowerBankValue : bankValue;
                 // For drum banks: add/replace .bank() modifier
                 if (strudelPattern && strudelPattern.trim() !== '') {
