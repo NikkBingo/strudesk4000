@@ -3926,7 +3926,36 @@ class InteractiveSoundApp {
       // Piano key handlers
       const pianoKeys = mobilePianoKeyboard.querySelectorAll('.piano-key');
       pianoKeys.forEach(key => {
-        const playNote = (note) => {
+        const playNote = async (note) => {
+          // Ensure audio is initialized first
+          if (!soundManager.isAudioReady()) {
+            console.log('🎵 Initializing audio from piano key press...');
+            const success = await soundManager.initialize();
+            if (!success) {
+              console.warn('⚠️ Could not initialize audio');
+              return;
+            }
+          }
+          
+          // Resume audio context if suspended (mobile browsers often suspend it)
+          if (soundManager.audioContext && soundManager.audioContext.state === 'suspended') {
+            try {
+              await soundManager.audioContext.resume();
+              // Brief wait for state change
+              await new Promise(resolve => setTimeout(resolve, 50));
+              if (soundManager.audioContext.state !== 'running') {
+                console.warn('⚠️ Audio context not running after resume - state:', soundManager.audioContext.state);
+                // Continue anyway - might still work
+              } else {
+                console.log('✅ Audio context resumed successfully');
+              }
+            } catch (error) {
+              console.warn('⚠️ Could not resume audio context:', error);
+              // Continue anyway - might still work
+            }
+          }
+          
+          // Now play the note
           if (soundManager.isAudioReady()) {
             const fullNote = `${note}${currentOctave}`;
             const pattern = `note("${fullNote}").s("piano")`;
@@ -3935,6 +3964,8 @@ class InteractiveSoundApp {
             });
             key.classList.add('active');
             setTimeout(() => key.classList.remove('active'), 150);
+          } else {
+            console.warn('⚠️ Audio not ready after initialization attempt');
           }
         };
         
