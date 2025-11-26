@@ -209,30 +209,46 @@ async function fetchSamplePackSamples(packValue) {
       throw new Error('GitHub repository tree data is unavailable.');
     }
 
-    const samples = treeData.tree
+    const rootPath = normalizeSamplePackPath(subdir);
+    const validPrefix = rootPath ? `${rootPath}/` : '';
+    const audioNodes = treeData.tree
       .filter(node => node.type === 'blob' && isAudioFilePath(node.path))
       .map(node => {
-        const { matches, relativePath } = filterSamplesBySubdir(node.path, subdir);
-        if (!matches) {
+        if (rootPath) {
+          if (node.path === rootPath) {
+            // audio file exactly at the subdir path
+          } else if (!node.path.startsWith(validPrefix)) {
+            return null;
+          }
+        }
+        const relativeFromRoot = rootPath
+          ? (node.path === rootPath ? node.path.split('/').pop() || node.path : node.path.slice(validPrefix.length))
+          : node.path;
+        const normalizedRelative = normalizeSamplePackPath(relativeFromRoot);
+        if (!normalizedRelative) {
           return null;
         }
-        const fileName = relativePath.split('/').pop() || relativePath;
+        const fileName = normalizedRelative.split('/').pop() || normalizedRelative;
         const sampleName = fileName.replace(/\.[^/.]+$/, '');
         return {
           id: `${packValue}:${node.path}`,
           name: sampleName,
           path: node.path,
-          relativePath,
+          relativePath: normalizedRelative,
           fileName,
           rawUrl: buildRawGitHubUrl({ owner, repo, branch, path: node.path })
         };
       })
       .filter(Boolean)
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+
+    if (audioNodes.length === 0) {
+      throw new Error('No audio files were found in this sample pack.');
+    }
 
     const payload = {
-      samples,
-      meta: { owner, repo, branch, subdir }
+      audioNodes,
+      meta: { owner, repo, branch, rootPath }
     };
     samplePackSamplesCache.set(packValue, payload);
     return payload;
@@ -7749,9 +7765,10 @@ class InteractiveSoundApp {
       if (!bankSelect) return null;
       let wrapper = document.getElementById('sample-pack-sounds-group');
       if (wrapper) {
+        const pathContainer = wrapper.querySelector('.sample-pack-path-container');
         const select = wrapper.querySelector('select');
         const status = wrapper.querySelector('.sample-pack-sounds-status');
-        return { wrapper, select, status };
+        return { wrapper, select, status, pathContainer };
       }
       const bankFormGroup = bankSelect.closest('.form-group');
       if (!bankFormGroup) return null;
@@ -7777,16 +7794,23 @@ class InteractiveSoundApp {
       status.className = 'sample-pack-sounds-status';
       status.textContent = 'Select a sample pack to view its sounds.';
 
+      const pathContainer = document.createElement('div');
+      pathContainer.className = 'sample-pack-path-container';
+      pathContainer.style.display = 'none';
+
       wrapper.appendChild(label);
+      wrapper.appendChild(pathContainer);
       wrapper.appendChild(select);
       wrapper.appendChild(status);
       bankFormGroup.insertAdjacentElement('afterend', wrapper);
-      return { wrapper, select, status };
+      return { wrapper, select, status, pathContainer };
     };
 
     const samplePackUi = initializeSamplePackSamplesGroup();
     let currentSamplePackValue = '';
     let samplePackLoadToken = 0;
+    let currentSamplePackData = null;
+    let samplePackPathSegments = [];
 
     const hideSamplePackSamples = (message = 'Select a sample pack to view its sounds.') => {
       if (!samplePackUi) return;
@@ -7797,8 +7821,14 @@ class InteractiveSoundApp {
       option.value = '';
       option.textContent = 'Select a sample';
       samplePackUi.select.appendChild(option);
+      if (samplePackUi.pathContainer) {
+        samplePackUi.pathContainer.innerHTML = '';
+        samplePackUi.pathContainer.style.display = 'none';
+      }
       samplePackUi.status.textContent = message;
       currentSamplePackValue = '';
+      currentSamplePackData = null;
+      samplePackPathSegments = [];
     };
 
     const showSamplePackLoadingState = (packLabel = 'this pack') => {
@@ -7810,6 +7840,10 @@ class InteractiveSoundApp {
       option.value = '';
       option.textContent = 'Loading samples...';
       samplePackUi.select.appendChild(option);
+      if (samplePackUi.pathContainer) {
+        samplePackUi.pathContainer.innerHTML = '';
+        samplePackUi.pathContainer.style.display = 'none';
+      }
       samplePackUi.status.textContent = `Loading samples from ${packLabel}...`;
     };
 
@@ -7833,40 +7867,179 @@ class InteractiveSoundApp {
       }
     };
 
+    const buildRelativePathFromSegments = (segments = []) =>
+      normalizeSamplePackPath(segments.filter(Boolean).join('/'));
+
+    const getSamplePackChildEntries = (packData, relativePath = '') => {
+      const normalized = normalizeSamplePackPath(relativePath);
+      const foldersSet = new Set();
+      const samples = [];
+      const prefix = normalized ? `${normalized}/` : '';
+
+      packData.audioNodes.forEach(node => {
+        const nodeRelative = node.relativePath;
+        if (normalized) {
+          if (nodeRelative === normalized) {
+            samples.push(node);
+            return;
+          }
+          if (!nodeRelative.startsWith(prefix)) {
+            return;
+          }
+          const remaining = nodeRelative.slice(prefix.length);
+          if (!remaining) {
+            samples.push(node);
+            return;
+          }
+          const [head, ...rest] = remaining.split('/');
+          if (rest.length === 0) {
+            samples.push(node);
+          } else {
+            foldersSet.add(head);
+          }
+        } else {
+          if (!nodeRelative.includes('/')) {
+            samples.push(node);
+          } else {
+            foldersSet.add(nodeRelative.split('/')[0]);
+          }
+        }
+      });
+
+      const uniqueSamples = samples
+        .map(node => ({
+          name: node.name,
+          relativePath: node.relativePath,
+          rawUrl: node.rawUrl,
+          id: node.id
+        }))
+        .filter((sample, index, array) =>
+          array.findIndex(other => other.relativePath === sample.relativePath) === index
+        )
+        .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+
+      const folders = Array.from(foldersSet).sort((a, b) => a.localeCompare(b));
+      return { folders, samples: uniqueSamples };
+    };
+
+    const renderSamplePackSamples = () => {
+      if (!samplePackUi) return;
+      const hasData = !!currentSamplePackData;
+      if (!hasData) {
+        samplePackUi.select.disabled = true;
+        samplePackUi.select.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select a sample';
+        samplePackUi.select.appendChild(placeholder);
+        return;
+      }
+
+      const currentPath = buildRelativePathFromSegments(samplePackPathSegments);
+      const { samples } = getSamplePackChildEntries(currentSamplePackData, currentPath);
+      if (!samples.length) {
+        samplePackUi.select.disabled = true;
+        samplePackUi.select.innerHTML = '';
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No audio files in this folder';
+        samplePackUi.select.appendChild(option);
+        samplePackUi.status.textContent = samplePackPathSegments.length
+          ? 'This folder has no audio files. Select another folder.'
+          : 'No audio files found at the root. Browse folders to find samples.';
+        return;
+      }
+
+      samplePackUi.select.disabled = false;
+      samplePackUi.select.innerHTML = '';
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = `Select a sample (${samples.length})`;
+      samplePackUi.select.appendChild(placeholder);
+      samples.forEach(sample => {
+        const option = document.createElement('option');
+        option.value = sample.name;
+        option.textContent = sample.relativePath;
+        option.dataset.rawUrl = sample.rawUrl;
+        samplePackUi.select.appendChild(option);
+      });
+      samplePackUi.status.textContent = currentPath
+        ? `Showing samples in /${currentPath}`
+        : 'Showing samples in root folder.';
+    };
+
+    const renderSamplePackPathSelectors = () => {
+      if (!samplePackUi || !samplePackUi.pathContainer) return;
+      samplePackUi.pathContainer.innerHTML = '';
+      if (!currentSamplePackData) {
+        samplePackUi.pathContainer.style.display = 'none';
+        return;
+      }
+
+      let renderedAny = false;
+      for (let level = 0; ; level++) {
+        const parentSegments = samplePackPathSegments.slice(0, level);
+        const parentPath = buildRelativePathFromSegments(parentSegments);
+        const { folders } = getSamplePackChildEntries(currentSamplePackData, parentPath);
+        if (!folders.length) {
+          break;
+        }
+        renderedAny = true;
+        const select = document.createElement('select');
+        select.className = 'sample-pack-path-select';
+        select.dataset.level = String(level);
+
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = level === 0 ? 'Root folder' : 'Select subfolder';
+        select.appendChild(placeholder);
+
+        folders.forEach(folderName => {
+          const option = document.createElement('option');
+          option.value = folderName;
+          option.textContent = folderName;
+          select.appendChild(option);
+        });
+
+        const currentValue = samplePackPathSegments[level] || '';
+        select.value = currentValue;
+        select.addEventListener('change', () => {
+          samplePackPathSegments = samplePackPathSegments.slice(0, level);
+          if (select.value) {
+            samplePackPathSegments[level] = select.value;
+          }
+          renderSamplePackPathAndSamples();
+        });
+
+        samplePackUi.pathContainer.appendChild(select);
+        if (!currentValue) {
+          break;
+        }
+      }
+
+      samplePackUi.pathContainer.style.display = renderedAny ? '' : 'none';
+    };
+
+    const renderSamplePackPathAndSamples = () => {
+      renderSamplePackPathSelectors();
+      renderSamplePackSamples();
+    };
+
     const loadSamplePackSamplesIntoSelect = async (packValue, displayLabel = '') => {
       if (!samplePackUi) return;
       samplePackLoadToken += 1;
       const token = samplePackLoadToken;
       showSamplePackLoadingState(displayLabel);
       try {
-        const { samples } = await fetchSamplePackSamples(packValue);
+        const packData = await fetchSamplePackSamples(packValue);
         if (token !== samplePackLoadToken) {
           return;
         }
-        if (!samples.length) {
-          hideSamplePackSamples('No audio files were found in this sample pack.');
-          return;
-        }
-        if (samples.length === 1) {
-          hideSamplePackSamples(`This pack contains 1 sample: ${samples[0].name}. Use sound("${samples[0].name}") in the pattern.`);
-          return;
-        }
-        samplePackUi.wrapper.style.display = '';
-        samplePackUi.select.disabled = false;
-        samplePackUi.select.innerHTML = '';
-        const placeholder = document.createElement('option');
-        placeholder.value = '';
-        placeholder.textContent = `Select a sample (${samples.length} available)`;
-        samplePackUi.select.appendChild(placeholder);
-        samples.forEach(sample => {
-          const option = document.createElement('option');
-          option.value = sample.name;
-          option.textContent = sample.relativePath || sample.name;
-          option.dataset.path = sample.relativePath || sample.path;
-          samplePackUi.select.appendChild(option);
-        });
-        samplePackUi.status.textContent = 'Choose a sample to insert sound("name") into your pattern.';
         currentSamplePackValue = packValue;
+        currentSamplePackData = packData;
+        samplePackPathSegments = [];
+        samplePackUi.wrapper.style.display = '';
+        renderSamplePackPathAndSamples();
       } catch (error) {
         if (token !== samplePackLoadToken) {
           return;
@@ -7877,7 +8050,14 @@ class InteractiveSoundApp {
         option.value = '';
         option.textContent = 'Unable to load samples';
         samplePackUi.select.appendChild(option);
-        samplePackUi.status.textContent = `Unable to load samples: ${error.message}`;
+        const message = error.message?.includes('API rate limit')
+          ? 'GitHub API rate limit reached. Please wait a few minutes and try again.'
+          : error.message;
+        samplePackUi.status.textContent = `Unable to load samples: ${message}`;
+        if (samplePackUi.pathContainer) {
+          samplePackUi.pathContainer.innerHTML = '';
+          samplePackUi.pathContainer.style.display = 'none';
+        }
       }
     };
 
