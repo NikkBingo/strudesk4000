@@ -25,7 +25,7 @@ export class LoginModal {
       <div class="login-modal-overlay" id="login-modal-overlay" style="display: none;">
         <div class="login-modal">
           <div class="login-modal-header">
-            <h2>Sign in to Strudesk 4000</h2>
+            <h2 class="brand-font">Sign in to Strudesk 4000</h2>
             <button class="login-modal-close" id="login-modal-close" aria-label="Close">&times;</button>
           </div>
           <div class="login-modal-body">
