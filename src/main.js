@@ -2287,7 +2287,7 @@ const PATTERN_SNIPPET_GROUPS = [
     label: 'Device Motion',
     heading: 'Device Motion',
     matcher: (key) => {
-      const deviceKeys = ['orientation', 'acceleration', 'accelerate', 'accelerationx', 'accelerationy', 'accelerationz', 'rotationx', 'rotationy', 'rotationz', 'gravityx', 'gravityy', 'gravityz', 'mousex', 'mousey'];
+      const deviceKeys = ['orientation', 'acceleration', 'accelerationx', 'accelerationy', 'accelerationz', 'rotationx', 'rotationy', 'rotationz', 'gravityx', 'gravityy', 'gravityz', 'mousex', 'mousey'];
       return deviceKeys.some((token) => key.includes(token));
     },
     className: 'snippet-group-device'
@@ -3416,6 +3416,18 @@ class InteractiveSoundApp {
       cutoff: Math.min(this.chaospadSettings.maxFrequency, Math.max(this.chaospadSettings.minFrequency, soundManager.masterFilterFrequency || 4040)),
       resonance: Math.min(this.chaospadSettings.maxResonance, Math.max(this.chaospadSettings.minResonance, soundManager.masterFilterResonance || 0.7))
     };
+    this.chaospadOrientationActive = false;
+    this.chaospadOrientationPermission = 'unknown';
+    this.chaospadVirtualGravity = { x: 0, y: 0 };
+    if (typeof window !== 'undefined') {
+      if (typeof window.gravityX === 'undefined') {
+        window.gravityX = 0;
+      }
+      if (typeof window.gravityY === 'undefined') {
+        window.gravityY = 0;
+      }
+    }
+    this.handleChaospadOrientation = this.handleChaospadOrientation.bind(this);
   }
 
   /**
@@ -4174,6 +4186,7 @@ class InteractiveSoundApp {
           soundManager.enableMasterFilter(true);
           this.resetChaospadToDefaults(true);
         }
+        await this.updateChaospadInputMode();
       });
     }
     
@@ -4229,6 +4242,8 @@ class InteractiveSoundApp {
     this.refreshMasterPunchcard('initial').catch(err => {
       console.warn('⚠️ Unable to render initial punchcard:', err);
     });
+
+    this.updateChaospadInputMode();
   }
 
   getCurrentFullscreenElement() {
@@ -5272,6 +5287,11 @@ class InteractiveSoundApp {
       return;
     }
 
+    if (this.chaospadOrientationActive && this.isMobileDevice()) {
+      // When device orientation is supplying values, ignore touch/mouse events
+      return;
+    }
+
     const pointerEvent = e.touches && e.touches.length ? e.touches[0] : e;
     if (typeof pointerEvent.clientX !== 'number' || typeof pointerEvent.clientY !== 'number') {
       return;
@@ -5288,8 +5308,18 @@ class InteractiveSoundApp {
       return; // Canvas not sized yet
     }
     
-    const percentage = Math.max(0, Math.min(1, mouseX / canvasWidth));
+    const horizontalPercentage = Math.max(0, Math.min(1, mouseX / canvasWidth));
     const verticalPercentage = Math.max(0, Math.min(1, mouseYFromBottom / canvasHeight));
+    this.applyChaospadInputFromPercentages(horizontalPercentage, verticalPercentage, 'mouse');
+  }
+
+  applyChaospadInputFromPercentages(horizontalPercentage = 0, verticalPercentage = 0, source = 'mouse') {
+    if (!this.chaospadEnabled) {
+      return;
+    }
+
+    const clampedHorizontal = Math.max(0, Math.min(1, Number.isFinite(horizontalPercentage) ? horizontalPercentage : 0));
+    const clampedVertical = Math.max(0, Math.min(1, Number.isFinite(verticalPercentage) ? verticalPercentage : 0));
 
     const {
       minFrequency,
@@ -5298,7 +5328,7 @@ class InteractiveSoundApp {
       maxResonance
     } = this.chaospadSettings;
     
-    const cutoffValue = Math.round(minFrequency + (maxFrequency - minFrequency) * percentage);
+    const cutoffValue = Math.round(minFrequency + (maxFrequency - minFrequency) * clampedHorizontal);
 
     // Throttle updates: only update if value changed significantly (more than 50 Hz)
     // or if it's been more than 100ms since last update
@@ -5309,13 +5339,13 @@ class InteractiveSoundApp {
       (this.lastCutoffUpdate && (now - this.lastCutoffUpdate) > 100);
 
     if (shouldUpdate) {
-      console.log(`🎛️ Chaospad: Mouse at ${(percentage * 100).toFixed(1)}% - updating cutoff to ${cutoffValue} Hz`);
+      console.log(`🎛️ Chaospad [${source}]: Horizontal ${(clampedHorizontal * 100).toFixed(1)}% → ${cutoffValue} Hz`);
       this.currentCutoffValue = cutoffValue;
       this.lastCutoffUpdate = now;
       soundManager.setMasterFilterFrequency(cutoffValue);
     }
 
-    const resonanceValueRaw = minResonance + (maxResonance - minResonance) * verticalPercentage;
+    const resonanceValueRaw = minResonance + (maxResonance - minResonance) * clampedVertical;
     let resonanceValue = Math.round(resonanceValueRaw * 10) / 10;
     if (cutoffValue < 250) {
       resonanceValue = Math.min(resonanceValue, 2.5);
@@ -5326,11 +5356,99 @@ class InteractiveSoundApp {
       (this.lastResonanceUpdate && (now - this.lastResonanceUpdate) > 120);
 
     if (shouldUpdateResonance) {
-      console.log(`🎛️ Chaospad: Vertical ${(verticalPercentage * 100).toFixed(1)}% - updating resonance to ${resonanceValue}`);
+      console.log(`🎛️ Chaospad [${source}]: Vertical ${(clampedVertical * 100).toFixed(1)}% → Q ${resonanceValue}`);
       this.currentResonanceValue = resonanceValue;
       this.lastResonanceUpdate = now;
       soundManager.setMasterFilterResonance(resonanceValue);
     }
+
+    this.updateChaospadVirtualGravity(clampedHorizontal, clampedVertical, source);
+  }
+
+  updateChaospadVirtualGravity(horizontalPercentage = 0.5, verticalPercentage = 0.5, source = 'mouse') {
+    const clampedHorizontal = Math.max(0, Math.min(1, Number.isFinite(horizontalPercentage) ? horizontalPercentage : 0.5));
+    const clampedVertical = Math.max(0, Math.min(1, Number.isFinite(verticalPercentage) ? verticalPercentage : 0.5));
+    const gravityX = parseFloat(((clampedHorizontal * 2) - 1).toFixed(4));
+    const gravityY = parseFloat(((clampedVertical * 2) - 1).toFixed(4));
+    this.chaospadVirtualGravity = { x: gravityX, y: gravityY, source };
+    if (typeof window !== 'undefined') {
+      window.gravityX = gravityX;
+      window.gravityY = gravityY;
+      window.dispatchEvent(new CustomEvent('chaospad-gravitychange', {
+        detail: { gravityX, gravityY, source }
+      }));
+    }
+  }
+
+  supportsChaospadOrientation() {
+    return typeof window !== 'undefined' && typeof window.DeviceOrientationEvent !== 'undefined';
+  }
+
+  async updateChaospadInputMode() {
+    if (!this.chaospadEnabled) {
+      this.disableChaospadOrientationControl();
+      return;
+    }
+
+    if (this.isMobileDevice() && this.supportsChaospadOrientation()) {
+      await this.enableChaospadOrientationControl();
+    } else {
+      this.disableChaospadOrientationControl();
+    }
+  }
+
+  async enableChaospadOrientationControl() {
+    if (!this.supportsChaospadOrientation() || this.chaospadOrientationActive) {
+      return;
+    }
+
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      if (this.chaospadOrientationPermission !== 'granted') {
+        try {
+          const response = await DeviceOrientationEvent.requestPermission();
+          this.chaospadOrientationPermission = response;
+        } catch (error) {
+          this.chaospadOrientationPermission = 'denied';
+          console.warn('⚠️ Chaospad: Device orientation permission request failed:', error?.message || error);
+          return;
+        }
+      }
+      if (this.chaospadOrientationPermission !== 'granted') {
+        console.warn('⚠️ Chaospad: Device orientation permission not granted by the user');
+        return;
+      }
+    }
+
+    window.addEventListener('deviceorientation', this.handleChaospadOrientation, { passive: true });
+    this.chaospadOrientationActive = true;
+    console.log('🎛️ Chaospad: Device orientation control enabled');
+  }
+
+  disableChaospadOrientationControl() {
+    if (!this.chaospadOrientationActive) {
+      return;
+    }
+    window.removeEventListener('deviceorientation', this.handleChaospadOrientation);
+    this.chaospadOrientationActive = false;
+    console.log('🎛️ Chaospad: Device orientation control disabled');
+  }
+
+  handleChaospadOrientation(event) {
+    if (!this.chaospadEnabled || !event) {
+      return;
+    }
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const gamma = typeof event.gamma === 'number' ? clamp(event.gamma, -60, 60) : null;
+    const beta = typeof event.beta === 'number' ? clamp(event.beta, -60, 60) : null;
+
+    if (gamma === null && beta === null) {
+      return;
+    }
+
+    const horizontalPercentage = gamma === null ? 0.5 : (gamma + 60) / 120;
+    const normalizedBeta = beta === null ? 0.5 : (beta + 60) / 120;
+    const verticalPercentage = 1 - normalizedBeta;
+    this.applyChaospadInputFromPercentages(horizontalPercentage, verticalPercentage, 'orientation');
   }
 
 
@@ -5343,6 +5461,19 @@ class InteractiveSoundApp {
     this.currentResonanceValue = this.chaospadDefaults.resonance;
     soundManager.setMasterFilterFrequency(this.currentCutoffValue, immediate);
     soundManager.setMasterFilterResonance(this.currentResonanceValue, immediate);
+    const {
+      minFrequency,
+      maxFrequency,
+      minResonance,
+      maxResonance
+    } = this.chaospadSettings;
+    const horizontalPercentage = (this.currentCutoffValue - minFrequency) / (maxFrequency - minFrequency || 1);
+    const verticalPercentage = (this.currentResonanceValue - minResonance) / (maxResonance - minResonance || 1);
+    this.updateChaospadVirtualGravity(
+      Math.max(0, Math.min(1, horizontalPercentage)),
+      Math.max(0, Math.min(1, verticalPercentage)),
+      'reset'
+    );
   }
 
   async getMasterPatternWithoutVisualizer() {
