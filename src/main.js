@@ -4303,18 +4303,28 @@ class InteractiveSoundApp {
     // Use both click and touchstart for better mobile support
     if (playMasterBtn) {
       const handlePlayPause = async (event) => {
+        console.log(`▶️ [PLAY] Event: ${event.type}, masterActive: ${this.masterActive}`);
+        console.log(`▶️ [PLAY] Audio ready: ${soundManager.isAudioReady()}, context: ${!!soundManager.audioContext}, state: ${soundManager.audioContext?.state || 'N/A'}`);
+        console.log(`▶️ [PLAY] Strudel loaded: ${soundManager.strudelLoaded}, scheduler: ${!!window.strudel?.scheduler}, started: ${window.strudel?.scheduler?.started || false}`);
+        
         // CRITICAL: On mobile, resume audio context immediately within user gesture
         if (event.type === 'touchstart' && soundManager.audioContext) {
           event.preventDefault();
           // Immediately resume audio context within the touch gesture
           if (soundManager.audioContext.state !== 'running') {
-            console.log('🎵 Touch: Resuming audio context immediately...');
-            soundManager.audioContext.resume().catch(err => {
-              console.warn('⚠️ Could not resume in touch handler:', err);
-            });
+            console.log('🎵 [PLAY] Touch: Resuming audio context immediately...');
+            try {
+              await soundManager.audioContext.resume();
+              console.log(`🎵 [PLAY] Touch: Audio context resumed, state: ${soundManager.audioContext.state}`);
+            } catch (err) {
+              console.error('🎵 [PLAY] Touch: Could not resume in touch handler:', err);
+            }
+          } else {
+            console.log(`🎵 [PLAY] Touch: Audio context already running`);
           }
         } else if (event.type === 'touchstart') {
           event.preventDefault();
+          console.log('🎵 [PLAY] Touch: No audio context yet, will initialize in playMasterPattern');
         }
         
         if (this.masterActive) {
@@ -4380,7 +4390,11 @@ class InteractiveSoundApp {
             console.warn(`⚠️ Error applying visualizer, continuing with playback:`, visualizerError);
           }
           
+          console.log(`▶️ [PLAY] Calling playMasterPattern...`);
           const result = await soundManager.playMasterPattern();
+          console.log(`▶️ [PLAY] playMasterPattern result:`, result);
+          console.log(`▶️ [PLAY] After playMasterPattern - audioContext state: ${soundManager.audioContext?.state || 'N/A'}`);
+          console.log(`▶️ [PLAY] After playMasterPattern - scheduler started: ${window.strudel?.scheduler?.started || false}`);
           
           if (result.success) {
             this.masterActive = true;
@@ -4388,9 +4402,18 @@ class InteractiveSoundApp {
             playMasterBtn.title = 'Pause Master';
             playMasterBtn.classList.add('active');
             if (masterActiveDot) masterActiveDot.classList.add('active');
-            console.log('✅ Master playback started');
+            console.log('✅ [PLAY] Master playback started');
+            
+            // Verify audio is actually playing
+            setTimeout(() => {
+              console.log(`▶️ [PLAY] Post-start check - audioContext state: ${soundManager.audioContext?.state || 'N/A'}`);
+              console.log(`▶️ [PLAY] Post-start check - scheduler started: ${window.strudel?.scheduler?.started || false}`);
+              if (soundManager.audioContext && soundManager.audioContext.state !== 'running') {
+                console.error(`❌ [PLAY] Audio context not running after start!`);
+              }
+            }, 500);
           } else {
-            console.error('❌ Failed to play master:', result.error);
+            console.error('❌ [PLAY] Failed to play master:', result.error);
             alert(`Failed to play master: ${result.error}`);
           }
         }
@@ -8046,9 +8069,14 @@ class InteractiveSoundApp {
    */
   setupAudioInitialization() {
     const initAudio = async (event) => {
+      console.log(`🎵 [AUDIO INIT] Event: ${event.type}, target: ${event.target?.tagName || 'unknown'}`);
+      console.log(`🎵 [AUDIO INIT] isAudioReady: ${soundManager.isAudioReady()}, audioContext: ${!!soundManager.audioContext}, state: ${soundManager.audioContext?.state || 'N/A'}`);
+      
       // Only initialize if audio isn't ready yet
       if (!soundManager.isAudioReady()) {
+        console.log(`🎵 [AUDIO INIT] Starting audio initialization...`);
         const success = await soundManager.initialize();
+        console.log(`🎵 [AUDIO INIT] Initialize result: ${success}, audioContext state: ${soundManager.audioContext?.state || 'N/A'}`);
         
         if (success) {
           uiController.updateStatus('Audio enabled - Loading sounds...');
@@ -8062,7 +8090,19 @@ class InteractiveSoundApp {
           document.removeEventListener('keydown', initAudio);
           document.removeEventListener('mousedown', initAudio);
         } else {
+          console.error(`🎵 [AUDIO INIT] Failed to initialize audio`);
           uiController.updateStatus('Click to enable audio (required for sound playback)');
+        }
+      } else {
+        console.log(`🎵 [AUDIO INIT] Audio already ready, state: ${soundManager.audioContext?.state || 'N/A'}`);
+        // Even if ready, ensure audio context is running on mobile
+        if (soundManager.audioContext && soundManager.audioContext.state !== 'running') {
+          console.log(`🎵 [AUDIO INIT] Audio ready but context not running (${soundManager.audioContext.state}), resuming...`);
+          soundManager.audioContext.resume().then(() => {
+            console.log(`🎵 [AUDIO INIT] Audio context resumed, state: ${soundManager.audioContext.state}`);
+          }).catch(err => {
+            console.error(`🎵 [AUDIO INIT] Failed to resume:`, err);
+          });
         }
       }
     };
@@ -10167,21 +10207,39 @@ class InteractiveSoundApp {
           }
         }
         
+        console.log(`🎵 [PREVIEW] Starting preview for ${previewElementId}`);
+        console.log(`🎵 [PREVIEW] Audio ready: ${soundManager.isAudioReady()}, context: ${!!soundManager.audioContext}, state: ${soundManager.audioContext?.state || 'N/A'}`);
+        console.log(`🎵 [PREVIEW] Strudel loaded: ${soundManager.strudelLoaded}, scheduler: ${!!window.strudel?.scheduler}, started: ${window.strudel?.scheduler?.started || false}`);
+        
         uiController.updateStatus('▶ Previewing pattern…');
         previewButton.textContent = '⏹ Stop Preview';
         previewButton.classList.add('active');
 
         try {
           const wasMasterActive = !!soundManager.masterActive;
+          console.log(`🎵 [PREVIEW] Calling playStrudelPattern...`);
           await soundManager.playStrudelPattern(previewElementId, patternValue);
+          console.log(`🎵 [PREVIEW] After playStrudelPattern - audioContext state: ${soundManager.audioContext?.state || 'N/A'}`);
+          console.log(`🎵 [PREVIEW] After playStrudelPattern - scheduler started: ${window.strudel?.scheduler?.started || false}`);
+          
           // Ensure master is running (playStrudelPattern auto-starts for preview, but double-check)
           if (!soundManager.masterActive && soundManager.playMasterPattern) {
+            console.log(`🎵 [PREVIEW] Master not active, starting master...`);
             await soundManager.playMasterPattern();
           }
           previewStartedMaster = !wasMasterActive && !!soundManager.masterActive;
           uiController.updateStatus('✅ Preview playing');
+          
+          // Verify audio is actually playing
+          setTimeout(() => {
+            console.log(`🎵 [PREVIEW] Post-start check - audioContext state: ${soundManager.audioContext?.state || 'N/A'}`);
+            console.log(`🎵 [PREVIEW] Post-start check - scheduler started: ${window.strudel?.scheduler?.started || false}`);
+            if (soundManager.audioContext && soundManager.audioContext.state !== 'running') {
+              console.error(`❌ [PREVIEW] Audio context not running after preview start!`);
+            }
+          }, 500);
         } catch (error) {
-          console.error('Preview failed:', error);
+          console.error('❌ [PREVIEW] Preview failed:', error);
           uiController.updateStatus('⚠️ Preview failed – check console for details');
           previewButton.textContent = '▶ Preview Pattern';
           previewButton.classList.remove('active');
