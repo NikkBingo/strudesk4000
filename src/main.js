@@ -3807,6 +3807,106 @@ class InteractiveSoundApp {
     window.addEventListener('keydown', handleEscape, true); // Also on window
     console.log('✅ Escape key handler registered');
 
+    // Add Tab key handler to play sound
+    let tabSoundAudio = null;
+    const handleTab = (e) => {
+      if (e.key === 'Tab' || e.keyCode === 9) {
+        // Play the sound (don't prevent default to preserve Tab navigation)
+        if (!tabSoundAudio) {
+          tabSoundAudio = new Audio('/assets/samples/voice/Strudesk4000_de.mp3');
+          tabSoundAudio.volume = 0.7;
+        }
+        // Reset and play
+        tabSoundAudio.currentTime = 0;
+        tabSoundAudio.play().catch(error => {
+          console.warn('⚠️ Could not play Tab sound:', error);
+        });
+      }
+    };
+    
+    document.addEventListener('keydown', handleTab, true);
+    window.addEventListener('keydown', handleTab, true);
+    console.log('✅ Tab key sound handler registered');
+
+    // Add keyboard piano handler
+    const pressedKeys = new Set();
+    const noteMap = {
+      'c': 'C',
+      'd': 'D',
+      'e': 'E',
+      'f': 'F',
+      'g': 'G',
+      'a': 'A',
+      'b': 'B'
+    };
+    const sharpMap = {
+      'C': 'C#',
+      'D': 'D#',
+      'F': 'F#',
+      'G': 'G#',
+      'A': 'A#'
+    };
+    
+    const handleKeyboardPiano = (e) => {
+      const key = e.key.toLowerCase();
+      const isLetter = noteMap.hasOwnProperty(key);
+      const isNumber = /^[0-9]$/.test(key);
+      
+      // Track pressed keys
+      if (isLetter || isNumber) {
+        pressedKeys.add(key);
+      }
+      
+      // If a letter key is pressed, play the note
+      if (isLetter && !e.repeat) {
+        // Determine if shift is pressed for sharp
+        const isSharp = e.shiftKey;
+        let noteName = noteMap[key];
+        if (isSharp && sharpMap.hasOwnProperty(noteName)) {
+          noteName = sharpMap[noteName];
+        }
+        
+        // Determine octave (default 3, or number key if pressed)
+        let octave = 3;
+        for (const pressedKey of pressedKeys) {
+          if (/^[0-9]$/.test(pressedKey)) {
+            octave = parseInt(pressedKey, 10);
+            break;
+          }
+        }
+        
+        // Only play if audio is ready and not in an input field
+        const activeElement = document.activeElement;
+        const isInputField = activeElement && (
+          activeElement.tagName === 'INPUT' ||
+          activeElement.tagName === 'TEXTAREA' ||
+          activeElement.isContentEditable
+        );
+        
+        if (soundManager.isAudioReady() && !isInputField) {
+          e.preventDefault();
+          const note = `${noteName}${octave}`;
+          const pattern = `note("${note}").s("piano")`;
+          soundManager.playStrudelPattern('keyboard-piano', pattern).catch(error => {
+            console.warn('⚠️ Could not play keyboard piano note:', error);
+          });
+        }
+      }
+    };
+    
+    const handleKeyboardPianoKeyUp = (e) => {
+      const key = e.key.toLowerCase();
+      if (noteMap.hasOwnProperty(key) || /^[0-9]$/.test(key)) {
+        pressedKeys.delete(key);
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyboardPiano, true);
+    document.addEventListener('keyup', handleKeyboardPianoKeyUp, true);
+    window.addEventListener('keydown', handleKeyboardPiano, true);
+    window.addEventListener('keyup', handleKeyboardPianoKeyUp, true);
+    console.log('✅ Keyboard piano handler registered');
+
     // Add stop all button handler
     const stopAllBtn = document.getElementById('stop-all-btn');
     if (stopAllBtn) {
