@@ -40,10 +40,14 @@ log('🚀 Starting Express app setup...');
 const app = express();
 
 // Test database connection (non-blocking)
+// Note: prismaReady from db.js handles retries, this is just an initial test
 prisma.$connect().then(() => {
-  log('✅ Database connection successful');
+  log('✅ Initial database connection test successful');
 }).catch((err) => {
-  console.error('⚠️  Database connection warning (server will continue):', err.message);
+  console.error('⚠️  Initial database connection test failed (retries will continue in background):', err.message);
+  if (err.code === 'P1001') {
+    console.error('   → Database server is unreachable - check Railway service dependencies');
+  }
 });
 
 // Get directory name for ES modules
@@ -226,9 +230,108 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/patterns', patternRoutes);
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+// Health check with database status
+app.get('/api/health', async (req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    services: {
+      server: 'running',
+      database: 'unknown'
+    }
+  };
+  
+  // Check database connection
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    health.services.database = 'connected';
+    health.database = {
+      connected: true,
+      host: process.env.DATABASE_URL ? (() => {
+        try {
+          const url = new URL(process.env.DATABASE_URL);
+          return `${url.hostname}:${url.port || '5432'}`;
+        } catch {
+          return 'unknown';
+        }
+      })() : 'not configured'
+    };
+  } catch (error) {
+    health.services.database = 'disconnected';
+    health.database = {
+      connected: false,
+      error: error.code || 'unknown',
+      message: error.message || 'Connection failed'
+    };
+    health.status = 'degraded';
+  }
+  
+  const statusCode = health.services.database === 'connected' ? 200 : 503;
+  res.status(statusCode).json(health);
+});
+
+// Database diagnostics endpoint (for debugging)
+app.get('/api/diagnostics/database', (req, res) => {
+  const diagnostics = {
+    timestamp: new Date().toISOString(),
+    environment: {
+      nodeEnv: process.env.NODE_ENV || 'not set',
+      railwayDomain: process.env.RAILWAY_PUBLIC_DOMAIN || 'not set',
+      hasDatabaseUrl: !!process.env.DATABASE_URL
+    },
+    database: null,
+    troubleshooting: []
+  };
+  
+  if (process.env.DATABASE_URL) {
+    try {
+      const url = new URL(process.env.DATABASE_URL);
+      diagnostics.database = {
+        protocol: url.protocol,
+        host: url.hostname,
+        port: url.port || '5432',
+        database: url.pathname?.slice(1) || 'unknown',
+        user: url.username || 'unknown',
+        hasPassword: !!url.password,
+        isRailwayInternal: url.hostname.includes('railway.internal'),
+        isRailwayPublic: url.hostname.includes('railway.app')
+      };
+      
+      // Add troubleshooting tips based on connection type
+      if (diagnostics.database.isRailwayInternal) {
+        diagnostics.troubleshooting.push(
+          'Using Railway internal network (postgres.railway.internal)',
+          'Ensure Postgres service is running and linked as dependency',
+          'Check: App Service → Settings → Dependencies → Postgres should be listed',
+          'Try restarting Postgres service first, then app service'
+        );
+      } else if (diagnostics.database.isRailwayPublic) {
+        diagnostics.troubleshooting.push(
+          'Using Railway public domain (may require SSL)',
+          'Check if database requires SSL connection',
+          'Verify DATABASE_URL includes ?sslmode=require if needed'
+        );
+      }
+    } catch (error) {
+      diagnostics.database = {
+        error: 'Invalid DATABASE_URL format',
+        message: error.message
+      };
+      diagnostics.troubleshooting.push('DATABASE_URL format is invalid - check Railway variables');
+    }
+  } else {
+    diagnostics.database = {
+      error: 'DATABASE_URL not set',
+      message: 'Environment variable DATABASE_URL is missing'
+    };
+    diagnostics.troubleshooting.push(
+      'DATABASE_URL should be set automatically when Postgres service is linked',
+      'Check: App Service → Variables → DATABASE_URL',
+      'If missing, ensure Postgres service is added as a dependency'
+    );
+  }
+  
+  res.json(diagnostics);
 });
 
 // Root route - API information (fallback if frontend not available)
