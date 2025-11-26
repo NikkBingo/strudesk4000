@@ -4303,28 +4303,9 @@ class InteractiveSoundApp {
     // Use both click and touchstart for better mobile support
     if (playMasterBtn) {
       const handlePlayPause = async (event) => {
-        // CRITICAL: On mobile, audio context must be initialized/resumed within the user gesture
-        // Do this FIRST, before any async operations, to ensure it happens within the gesture
+        // Prevent default only on touchstart to avoid double-firing
         if (event.type === 'touchstart') {
           event.preventDefault();
-          event.stopPropagation();
-          
-          // Immediately try to initialize/resume audio context within the touch gesture
-          if (soundManager.audioContext) {
-            if (soundManager.audioContext.state !== 'running') {
-              console.log('🎵 Touch event: Resuming audio context immediately...');
-              // Don't await - just fire and continue, we'll verify later
-              soundManager.audioContext.resume().catch(err => {
-                console.warn('⚠️ Could not resume in touch handler:', err);
-              });
-            }
-          } else if (!soundManager.isAudioReady()) {
-            console.log('🎵 Touch event: Initializing audio context immediately...');
-            // Start initialization but don't wait - we'll verify later
-            soundManager.initialize().catch(err => {
-              console.warn('⚠️ Could not initialize in touch handler:', err);
-            });
-          }
         }
         
         if (this.masterActive) {
@@ -4390,93 +4371,9 @@ class InteractiveSoundApp {
             console.warn(`⚠️ Error applying visualizer, continuing with playback:`, visualizerError);
           }
           
-          // CRITICAL: On mobile, audio context must be initialized/resumed within user gesture
-          // For touch events, we already did this above, but verify it worked
-          // For click events, do it here
-          if (event.type === 'click' || !soundManager.audioContext) {
-            if (!soundManager.audioContext || !soundManager.isAudioReady()) {
-              console.log('🎵 Initializing audio from master play button...');
-              const success = await soundManager.initialize();
-              if (!success) {
-                console.error('❌ Could not initialize audio');
-                alert('Could not initialize audio. Please try clicking again.');
-                return;
-              }
-            }
-            
-            // Ensure audio context is running
-            if (soundManager.audioContext && soundManager.audioContext.state !== 'running') {
-              try {
-                console.log(`🔄 Audio context state: ${soundManager.audioContext.state}, resuming...`);
-                await soundManager.audioContext.resume();
-                // Brief wait for state change
-                await new Promise(resolve => setTimeout(resolve, 100));
-                if (soundManager.audioContext.state !== 'running') {
-                  console.warn('⚠️ Audio context not running after resume - state:', soundManager.audioContext.state);
-                  // Continue anyway - might still work
-                } else {
-                  console.log(`✅ Audio context resumed successfully`);
-                }
-              } catch (error) {
-                console.warn('⚠️ Could not resume audio context:', error);
-                // Continue anyway - might still work
-              }
-            }
-          }
-          
-          // Verify audio context exists and is ready
-          if (!soundManager.audioContext) {
-            console.error('❌ Audio context does not exist');
-            alert('Audio context not available. Please try again.');
-            return;
-          }
-          
-          // Ensure Strudel is loaded before playing
-          if (!soundManager.strudelLoaded) {
-            console.log('⏳ Waiting for Strudel to load...');
-            try {
-              await soundManager.initializeStrudelAndSounds();
-            } catch (error) {
-              console.warn('⚠️ Could not initialize Strudel:', error);
-              // Continue anyway - playMasterPattern will handle it
-            }
-          }
-          
           const result = await soundManager.playMasterPattern();
           
           if (result.success) {
-            // CRITICAL: Verify scheduler is actually running
-            if (window.strudel && window.strudel.scheduler) {
-              const scheduler = window.strudel.scheduler;
-              if (!scheduler.started) {
-                console.warn('⚠️ Scheduler not started after playMasterPattern, attempting to start...');
-                try {
-                  await scheduler.start();
-                  console.log('✅ Scheduler started successfully');
-                } catch (schedulerError) {
-                  console.error('❌ Could not start scheduler:', schedulerError);
-                }
-              } else {
-                console.log('✅ Scheduler is running');
-              }
-            }
-            
-            // CRITICAL: Verify audio context is still running
-            if (soundManager.audioContext && soundManager.audioContext.state !== 'running') {
-              console.warn('⚠️ Audio context not running after playMasterPattern, attempting to resume...');
-              try {
-                await soundManager.audioContext.resume();
-                await new Promise(resolve => setTimeout(resolve, 100));
-                if (soundManager.audioContext.state === 'running') {
-                  console.log('✅ Audio context resumed after playMasterPattern');
-                } else {
-                  console.error('❌ Audio context still not running:', soundManager.audioContext.state);
-                }
-              } catch (resumeError) {
-                console.error('❌ Could not resume audio context:', resumeError);
-              }
-            }
-            
             this.masterActive = true;
             playMasterBtn.textContent = '❚❚';
             playMasterBtn.title = 'Pause Master';
