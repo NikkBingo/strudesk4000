@@ -306,20 +306,25 @@ header h1 {
   line-height: 1;
   flex-wrap: wrap;
   justify-content: flex-end;
+  margin-left: auto;
 }
 
 @media (max-width: 640px) {
   header {
     align-items: flex-start;
+    flex-wrap: nowrap;
   }
   .header-left {
-    width: 65%;
+    flex: 1 1 auto;
     flex-direction: column;
     align-items: flex-start;
+    min-width: 0;
   }
   .header-right {
-    width: 35%;
+    flex: 0 0 auto;
     justify-content: flex-end;
+    align-items: flex-start;
+    margin-left: auto;
   }
   .header-logo {
     display: none;
@@ -5737,6 +5742,139 @@ header h1 {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.collab-channel-editor-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.collab-mode-toggle-group {
+  flex: 1 1 180px;
+  min-width: 160px;
+}
+
+.collab-mode-toggle {
+  display: inline-flex;
+  background: rgba(99, 102, 241, 0.12);
+  border-radius: 999px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.collab-mode-btn {
+  border: none;
+  background: transparent;
+  color: #4c1d95;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.collab-mode-btn.active {
+  background: #4c1d95;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(76, 29, 149, 0.25);
+}
+
+.collab-time-signature {
+  flex: 1 1 180px;
+  min-width: 160px;
+}
+
+.collab-step-editor {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #f9fafb;
+}
+
+.collab-step-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.collab-step-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.collab-step-label {
+  width: 72px;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(249, 250, 251, 0.8);
+}
+
+.collab-step-cells {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18px, 1fr));
+  gap: 4px;
+  flex: 1;
+}
+
+.collab-step-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.collab-step-cell.beat {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.collab-step-cell input {
+  accent-color: #22d3ee;
+  width: 14px;
+  height: 14px;
+}
+
+.collab-step-hint {
+  margin-top: 12px;
+  font-size: 0.8rem;
+  color: rgba(249, 250, 251, 0.7);
+}
+
+.collab-code-readonly textarea {
+  opacity: 0.75;
+}
+
+.collab-chord-tools {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.collab-chord-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.collab-note-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #4c1d95;
+}
+
+.collab-note-mode-toggle input {
+  accent-color: #4c1d95;
 }
 
 .collab-channels-list {
