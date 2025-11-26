@@ -7810,6 +7810,7 @@ class InteractiveSoundApp {
     let currentSamplePackValue = '';
     let samplePackLoadToken = 0;
     let currentSamplePackData = null;
+    let currentSamplePackSamples = [];
     let samplePackPathSegments = [];
 
     const hideSamplePackSamples = (message = 'Select a sample pack to view its sounds.') => {
@@ -7825,9 +7826,14 @@ class InteractiveSoundApp {
         samplePackUi.pathContainer.innerHTML = '';
         samplePackUi.pathContainer.style.display = 'none';
       }
+      if (samplePackUi.pathContainer) {
+        samplePackUi.pathContainer.innerHTML = '';
+        samplePackUi.pathContainer.style.display = 'none';
+      }
       samplePackUi.status.textContent = message;
       currentSamplePackValue = '';
       currentSamplePackData = null;
+      currentSamplePackSamples = [];
       samplePackPathSegments = [];
     };
 
@@ -7847,24 +7853,45 @@ class InteractiveSoundApp {
       samplePackUi.status.textContent = `Loading samples from ${packLabel}...`;
     };
 
-    const insertSamplePackSoundIntoPattern = (sampleName) => {
-      if (!sampleName) return;
-      const currentValue = getStrudelEditorValue('modal-pattern') || '';
-      const alreadyHasSound = currentValue.includes(`sound("${sampleName}")`);
-      if (alreadyHasSound) {
-        samplePackUi?.status && (samplePackUi.status.textContent = `sound("${sampleName}") is already in the pattern.`);
+    const insertSamplePackSoundIntoPattern = (sampleId) => {
+      if (!sampleId || !currentSamplePackData) {
         return;
       }
+      const sample = currentSamplePackSamples.find(entry => entry.id === sampleId);
+      if (!sample) {
+        samplePackUi?.status && (samplePackUi.status.textContent = 'Unable to insert sample (not found in current view).');
+        return;
+      }
+
+      const baseUrl = `https://raw.githubusercontent.com/${currentSamplePackData.meta.owner}/${currentSamplePackData.meta.repo}/${currentSamplePackData.meta.branch}/`;
+      const relativeRepoPath = sample.path;
+      const sampleName = sample.name;
+
+      const sampleSnippet = [
+        'samples({',
+        `  "${sampleName}": "${relativeRepoPath}"`,
+        `}, { baseUrl: "${baseUrl}" })`
+      ].join('\n');
+      const combinedExpression = `(${sampleSnippet},\n sound("${sampleName}"))`;
+      const currentValue = getStrudelEditorValue('modal-pattern') || '';
       const trimmedEnd = currentValue.trimEnd();
       const needsNewline = trimmedEnd.length > 0;
-      const nextPattern = needsNewline ? `${trimmedEnd}\n${`sound("${sampleName}")`}` : `sound("${sampleName}")`;
+      const nextPattern = needsNewline ? `${trimmedEnd}\n\n${combinedExpression}` : combinedExpression;
+
+      const alreadyHasSampleSnippet = currentValue.includes(`"${sampleName}": "${relativeRepoPath}"`);
+      const alreadyHasSound = currentValue.includes(`sound("${sampleName}")`);
+      if (alreadyHasSound || alreadyHasSampleSnippet) {
+        samplePackUi?.status && (samplePackUi.status.textContent = `sound("${sampleName}") already exists in the pattern.`);
+        samplePackUi.select.value = '';
+        return;
+      }
+
       setStrudelEditorValue('modal-pattern', nextPattern);
       if (typeof updatePreviewButtonState === 'function') {
         updatePreviewButtonState();
       }
-      if (samplePackUi?.status) {
-        samplePackUi.status.textContent = `Inserted sound("${sampleName}") into the pattern.`;
-      }
+      samplePackUi?.status && (samplePackUi.status.textContent = `Added samples() block and sound("${sampleName}") to the pattern.`);
+      samplePackUi.select.value = '';
     };
 
     const buildRelativePathFromSegments = (segments = []) =>
@@ -7956,11 +7983,13 @@ class InteractiveSoundApp {
       placeholder.value = '';
       placeholder.textContent = `Select a sample (${samples.length})`;
       samplePackUi.select.appendChild(placeholder);
+      currentSamplePackSamples = samples;
       samples.forEach(sample => {
         const option = document.createElement('option');
-        option.value = sample.name;
+        option.value = sample.id;
         option.textContent = sample.relativePath;
-        option.dataset.rawUrl = sample.rawUrl;
+        option.dataset.name = sample.name;
+        option.dataset.path = sample.path;
         samplePackUi.select.appendChild(option);
       });
       samplePackUi.status.textContent = currentPath
@@ -8063,11 +8092,11 @@ class InteractiveSoundApp {
 
     if (samplePackUi?.select && !samplePackUi.select.dataset.listenerAttached) {
       samplePackUi.select.addEventListener('change', () => {
-        const selectedSample = samplePackUi.select.value;
-        if (!selectedSample) {
+        const selectedSampleId = samplePackUi.select.value;
+        if (!selectedSampleId) {
           return;
         }
-        insertSamplePackSoundIntoPattern(selectedSample);
+        insertSamplePackSoundIntoPattern(selectedSampleId);
       });
       samplePackUi.select.dataset.listenerAttached = 'true';
     }
@@ -12465,24 +12494,11 @@ class InteractiveSoundApp {
               
               // Handle sample packs differently - they load samples but don't use .bank()
               if (isSamplePack) {
-                // Sample packs are loaded via samples() and then used with sound("sample-name")
-                // Don't add .bank() modifier - just ensure samples() is called and guide user
-                if (strudelPattern && strudelPattern.trim() !== '') {
-                  // Pattern exists - check if it already has samples() call for this pack
-                  const samplesCallPattern = new RegExp(`samples\\(["']?${bankValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']?\\)`, 'i');
-                  if (!samplesCallPattern.test(strudelPattern)) {
-                    // Add samples() call at the beginning if not present
-                    strudelPattern = `samples("${bankValue}")\n${strudelPattern}`;
-                    console.log(`📦 Added samples() call for pack: ${bankValue}`);
-                  }
-                } else {
-                  // No pattern - create minimal pattern with samples() call and example sound()
-                  strudelPattern = `samples("${bankValue}")\nsound("sample-name")`;
-                  console.log(`📦 Created minimal pattern with samples() call for pack: ${bankValue}`);
+                patternTextarea.placeholder = 'Select a sample from "Sample Pack Sounds" to insert it into your pattern.';
+                loadSamplePackSamplesIntoSelect(bankValue, bankDisplayName);
+                if (samplePackUi?.status) {
+                  samplePackUi.status.textContent = 'Choose a sample to insert. Each selection adds its own samples() block automatically.';
                 }
-                setStrudelEditorValue('modal-pattern', strudelPattern);
-              patternTextarea.placeholder = 'Use sound("sample-name") to play samples from this pack. Samples are loaded via samples() above.';
-              loadSamplePackSamplesIntoSelect(bankValue, bankDisplayName);
               } else if (isDrumBank || isSpecialSampleBank) {
                 const appliedBankValue = isSpecialSampleBank ? lowerBankValue : bankValue;
                 // For drum banks: add/replace .bank() modifier
@@ -12505,6 +12521,9 @@ class InteractiveSoundApp {
                   }
                   console.log(`📝 Created minimal pattern with .bank("${appliedBankValue}")`);
                 }
+                setStrudelEditorValue('modal-pattern', strudelPattern);
+                patternTextarea.placeholder = '';
+                hideSamplePackSamples();
                 setStrudelEditorValue('modal-pattern', strudelPattern);
                 patternTextarea.placeholder = '';
                 hideSamplePackSamples();
