@@ -151,6 +151,23 @@ model SessionChannel {
 }
 
 model SessionChannelRevision {
+  id            String   @id @default(uuid())
+  channelId     String   @map("channel_id")
+  sessionId     String   @map("session_id")
+  userId        String   @map("user_id")
+  code          String   @db.Text
+  appliedToMaster Boolean @default(false) @map("applied_to_master")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  channel       SessionChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  session       CollabSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user          User           @relation("UserSessionChannelRevisions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([userId])
+  @@map("session_channel_revisions")
+}
+
 model CollabInvite {
   id         String   @id @default(uuid())
   sessionId  String   @map("session_id")
@@ -169,20 +186,4 @@ model CollabInvite {
   @@index([inviteeId])
   @@index([inviterId])
   @@map("collab_invites")
-}
-  id            String   @id @default(uuid())
-  channelId     String   @map("channel_id")
-  sessionId     String   @map("session_id")
-  userId        String   @map("user_id")
-  code          String   @db.Text
-  appliedToMaster Boolean @default(false) @map("applied_to_master")
-  createdAt     DateTime @default(now()) @map("created_at")
-
-  channel       SessionChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  session       CollabSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  user          User           @relation("UserSessionChannelRevisions", fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([sessionId])
-  @@index([userId])
-  @@map("session_channel_revisions")
 }
