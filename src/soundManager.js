@@ -8814,10 +8814,6 @@ class SoundManager {
           } else {
             console.log(`✅ Strudel scheduler already started`);
           }
-        } else {
-          console.error(`❌ Strudel scheduler not available`);
-          return { success: false, error: 'Strudel scheduler not available' };
-        }
           
           // CRITICAL: After starting scheduler, check if webaudio output was created
           const scheduler = window.strudel.scheduler;
@@ -8994,6 +8990,9 @@ class SoundManager {
           } else {
             console.log(`   ⚠️ No superdough found in scheduler`);
           }
+        } else {
+          console.error(`❌ Strudel scheduler not available`);
+          return { success: false, error: 'Strudel scheduler not available' };
         }
         
         const code = `${evaluationSlot} = ${patternToEval}`;
