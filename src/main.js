@@ -3907,6 +3907,53 @@ class InteractiveSoundApp {
     window.addEventListener('keyup', handleKeyboardPianoKeyUp, true);
     console.log('✅ Keyboard piano handler registered');
 
+    // Add mobile piano keyboard handler
+    let currentOctave = 3;
+    const mobilePianoSection = document.getElementById('mobile-piano-section');
+    const mobilePianoKeyboard = document.getElementById('mobile-piano-keyboard');
+    
+    if (mobilePianoSection && mobilePianoKeyboard) {
+      // Octave controls
+      const octaveButtons = mobilePianoSection.querySelectorAll('.piano-octave-btn');
+      octaveButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          octaveButtons.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentOctave = parseInt(btn.dataset.octave, 10);
+        });
+      });
+      
+      // Piano key handlers
+      const pianoKeys = mobilePianoKeyboard.querySelectorAll('.piano-key');
+      pianoKeys.forEach(key => {
+        const playNote = (note) => {
+          if (soundManager.isAudioReady()) {
+            const fullNote = `${note}${currentOctave}`;
+            const pattern = `note("${fullNote}").s("piano")`;
+            soundManager.playStrudelPattern('mobile-piano', pattern).catch(error => {
+              console.warn('⚠️ Could not play mobile piano note:', error);
+            });
+            key.classList.add('active');
+            setTimeout(() => key.classList.remove('active'), 150);
+          }
+        };
+        
+        // Touch events for mobile
+        key.addEventListener('touchstart', (e) => {
+          e.preventDefault();
+          playNote(key.dataset.note);
+        });
+        
+        // Mouse events for desktop (if someone uses mouse on mobile view)
+        key.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          playNote(key.dataset.note);
+        });
+      });
+      
+      console.log('✅ Mobile piano keyboard handler registered');
+    }
+
     // Add stop all button handler
     const stopAllBtn = document.getElementById('stop-all-btn');
     if (stopAllBtn) {

@@ -5990,3 +5990,130 @@ header h1 {
   color: #0369a1;
 }
 
+/* Mobile Piano Keyboard */
+.mobile-piano-section {
+  display: none;
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 30px 0;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+@media (max-width: 640px) {
+  .mobile-piano-section {
+    display: block;
+  }
+}
+
+.mobile-piano-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.mobile-piano-header h3 {
+  margin: 0;
+  color: #4c51bf;
+  font-size: 1.25rem;
+}
+
+.mobile-piano-octave-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobile-piano-octave-controls label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #4c51bf;
+}
+
+.piano-octave-btn {
+  padding: 6px 12px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #4c51bf;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.piano-octave-btn:hover {
+  background: #f1f5f9;
+}
+
+.piano-octave-btn.active {
+  background: #4c51bf;
+  color: white;
+  border-color: #4c51bf;
+}
+
+.mobile-piano-keyboard {
+  display: flex;
+  position: relative;
+  height: 200px;
+  gap: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.piano-key {
+  border: none;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+  transition: all 0.1s;
+  font-weight: 600;
+  font-size: 0.9rem;
+  position: relative;
+}
+
+.piano-key.white {
+  background: #ffffff;
+  color: #1e293b;
+  border-right: 1px solid #e2e8f0;
+  flex: 1;
+  z-index: 1;
+  position: relative;
+}
+
+.piano-key.white:last-child {
+  border-right: none;
+}
+
+.piano-key.white:active,
+.piano-key.white.active {
+  background: #e2e8f0;
+  transform: translateY(2px);
+}
+
+.piano-key.black {
+  background: #1e293b;
+  color: white;
+  width: 12%;
+  height: 60%;
+  margin-left: -6%;
+  margin-right: -6%;
+  z-index: 2;
+  border-radius: 0 0 4px 4px;
+  position: relative;
+}
+
+.piano-key.black:active,
+.piano-key.black.active {
+  background: #0f172a;
+  transform: translateY(1px);
+}
+
+.piano-key:focus {
+  outline: none;
+}
+
