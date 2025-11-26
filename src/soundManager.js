@@ -6105,7 +6105,7 @@ class SoundManager {
       // Try to initialize Strudel first (non-fatal if it fails)
       try {
         if (!this.strudelLoaded) {
-          await this.initStrudel();
+          await this.initializeStrudelAndSounds();
         }
       } catch (_) {}
       if (!window.strudel || !window.strudel.evaluate) {
@@ -8502,7 +8502,7 @@ class SoundManager {
 
     await this.initialize();
     if (!this.strudelLoaded) {
-      await this.initStrudel();
+      await this.initializeStrudelAndSounds();
     }
 
     // Restore master gain/pan to user values before starting playback
@@ -8585,7 +8585,7 @@ class SoundManager {
       // Ensure Strudel is initialized
       if (!this.strudelLoaded) {
         console.log(`⏳ Waiting for Strudel to initialize...`);
-        await this.initStrudel();
+        await this.initializeStrudelAndSounds();
       }
       
       this._ensureMasterPatternSanitized();
@@ -9908,7 +9908,7 @@ class SoundManager {
       // Ensure Strudel is initialized
       if (!this.strudelLoaded) {
         console.log(`⏳ Waiting for Strudel to initialize...`);
-        await this.initStrudel();
+        await this.initializeStrudelAndSounds();
       }
       
       await this.ensurePatternResourcesLoaded(pattern);
@@ -10076,7 +10076,7 @@ class SoundManager {
 
       // Ensure Strudel is initialized
       if (!this.strudelLoaded) {
-        await this.initStrudel();
+        await this.initializeStrudelAndSounds();
       }
 
       // Create offline audio context for rendering
@@ -10818,7 +10818,7 @@ class SoundManager {
 
       // Ensure Strudel is initialized
       if (!this.strudelLoaded) {
-        await this.initStrudel();
+        await this.initializeStrudelAndSounds();
       }
 
       // Note: This is a simplified implementation

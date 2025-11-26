@@ -4250,9 +4250,28 @@ class InteractiveSoundApp {
     // Use both click and touchstart for better mobile support
     if (playMasterBtn) {
       const handlePlayPause = async (event) => {
-        // Prevent default to avoid double-firing on mobile
+        // CRITICAL: On mobile, audio context must be initialized/resumed within the user gesture
+        // Do this FIRST, before any async operations, to ensure it happens within the gesture
         if (event.type === 'touchstart') {
           event.preventDefault();
+          event.stopPropagation();
+          
+          // Immediately try to initialize/resume audio context within the touch gesture
+          if (soundManager.audioContext) {
+            if (soundManager.audioContext.state !== 'running') {
+              console.log('🎵 Touch event: Resuming audio context immediately...');
+              // Don't await - just fire and continue, we'll verify later
+              soundManager.audioContext.resume().catch(err => {
+                console.warn('⚠️ Could not resume in touch handler:', err);
+              });
+            }
+          } else if (!soundManager.isAudioReady()) {
+            console.log('🎵 Touch event: Initializing audio context immediately...');
+            // Start initialization but don't wait - we'll verify later
+            soundManager.initialize().catch(err => {
+              console.warn('⚠️ Could not initialize in touch handler:', err);
+            });
+          }
         }
         
         if (this.masterActive) {
@@ -4318,54 +4337,44 @@ class InteractiveSoundApp {
             console.warn(`⚠️ Error applying visualizer, continuing with playback:`, visualizerError);
           }
           
-          // Ensure audio is initialized and resumed before playing (critical for mobile)
-          if (!soundManager.audioContext || !soundManager.isAudioReady()) {
-            console.log('🎵 Initializing audio from master play button...');
-            const success = await soundManager.initialize();
-            if (!success) {
-              console.error('❌ Could not initialize audio');
-              alert('Could not initialize audio. Please try clicking again.');
-              return;
+          // CRITICAL: On mobile, audio context must be initialized/resumed within user gesture
+          // For touch events, we already did this above, but verify it worked
+          // For click events, do it here
+          if (event.type === 'click' || !soundManager.audioContext) {
+            if (!soundManager.audioContext || !soundManager.isAudioReady()) {
+              console.log('🎵 Initializing audio from master play button...');
+              const success = await soundManager.initialize();
+              if (!success) {
+                console.error('❌ Could not initialize audio');
+                alert('Could not initialize audio. Please try clicking again.');
+                return;
+              }
+            }
+            
+            // Ensure audio context is running
+            if (soundManager.audioContext && soundManager.audioContext.state !== 'running') {
+              try {
+                console.log(`🔄 Audio context state: ${soundManager.audioContext.state}, resuming...`);
+                await soundManager.audioContext.resume();
+                // Brief wait for state change
+                await new Promise(resolve => setTimeout(resolve, 100));
+                if (soundManager.audioContext.state !== 'running') {
+                  console.warn('⚠️ Audio context not running after resume - state:', soundManager.audioContext.state);
+                  // Continue anyway - might still work
+                } else {
+                  console.log(`✅ Audio context resumed successfully`);
+                }
+              } catch (error) {
+                console.warn('⚠️ Could not resume audio context:', error);
+                // Continue anyway - might still work
+              }
             }
           }
           
-          // CRITICAL: Ensure audio context is running (mobile browsers often suspend it)
-          if (soundManager.audioContext) {
-            // Always try to resume on mobile - even if state appears to be 'running'
-            // Mobile browsers can have timing issues where state appears running but isn't actually
-            try {
-              console.log(`🔄 Audio context state before resume: ${soundManager.audioContext.state}`);
-              await soundManager.audioContext.resume();
-              // Wait for state change with retries - mobile needs more time
-              let retries = 0;
-              const maxRetries = 20; // Increased for mobile
-              while (soundManager.audioContext.state !== 'running' && retries < maxRetries) {
-                await new Promise(resolve => setTimeout(resolve, 100)); // Longer wait for mobile
-                retries++;
-                console.log(`🔄 Waiting for audio context... (${retries}/${maxRetries}) state: ${soundManager.audioContext.state}`);
-              }
-              if (soundManager.audioContext.state !== 'running') {
-                console.error('❌ Audio context not running after resume - state:', soundManager.audioContext.state);
-                alert(`Audio context is not ready (state: ${soundManager.audioContext.state}). Please try again.`);
-                return;
-              } else {
-                console.log(`✅ Audio context resumed successfully - state: ${soundManager.audioContext.state}`);
-              }
-            } catch (error) {
-              console.error('❌ Could not resume audio context:', error);
-              alert(`Could not start audio: ${error.message}. Please try again.`);
-              return;
-            }
-          } else {
+          // Verify audio context exists and is ready
+          if (!soundManager.audioContext) {
             console.error('❌ Audio context does not exist');
             alert('Audio context not available. Please try again.');
-            return;
-          }
-          
-          // CRITICAL: Verify audio context is actually running before proceeding
-          if (soundManager.audioContext.state !== 'running') {
-            console.error('❌ Audio context state verification failed:', soundManager.audioContext.state);
-            alert(`Audio context is not running (state: ${soundManager.audioContext.state}). Please try again.`);
             return;
           }
           
