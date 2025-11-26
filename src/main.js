@@ -4329,34 +4329,43 @@ class InteractiveSoundApp {
             }
           }
           
-          // Ensure audio context is running (mobile browsers often suspend it)
+          // CRITICAL: Ensure audio context is running (mobile browsers often suspend it)
           if (soundManager.audioContext) {
-            if (soundManager.audioContext.state === 'suspended' || soundManager.audioContext.state !== 'running') {
-              try {
-                console.log(`🔄 Audio context state: ${soundManager.audioContext.state}, attempting to resume...`);
-                await soundManager.audioContext.resume();
-                // Wait for state change with retries
-                let retries = 0;
-                while (soundManager.audioContext.state !== 'running' && retries < 10) {
-                  await new Promise(resolve => setTimeout(resolve, 50));
-                  retries++;
-                }
-                if (soundManager.audioContext.state !== 'running') {
-                  console.warn('⚠️ Audio context not running after resume - state:', soundManager.audioContext.state);
-                  alert('Audio context is not ready. Please try again.');
-                  return;
-                } else {
-                  console.log('✅ Audio context resumed successfully');
-                }
-              } catch (error) {
-                console.error('❌ Could not resume audio context:', error);
-                alert('Could not start audio. Please try again.');
-                return;
+            // Always try to resume on mobile - even if state appears to be 'running'
+            // Mobile browsers can have timing issues where state appears running but isn't actually
+            try {
+              console.log(`🔄 Audio context state before resume: ${soundManager.audioContext.state}`);
+              await soundManager.audioContext.resume();
+              // Wait for state change with retries - mobile needs more time
+              let retries = 0;
+              const maxRetries = 20; // Increased for mobile
+              while (soundManager.audioContext.state !== 'running' && retries < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, 100)); // Longer wait for mobile
+                retries++;
+                console.log(`🔄 Waiting for audio context... (${retries}/${maxRetries}) state: ${soundManager.audioContext.state}`);
               }
+              if (soundManager.audioContext.state !== 'running') {
+                console.error('❌ Audio context not running after resume - state:', soundManager.audioContext.state);
+                alert(`Audio context is not ready (state: ${soundManager.audioContext.state}). Please try again.`);
+                return;
+              } else {
+                console.log(`✅ Audio context resumed successfully - state: ${soundManager.audioContext.state}`);
+              }
+            } catch (error) {
+              console.error('❌ Could not resume audio context:', error);
+              alert(`Could not start audio: ${error.message}. Please try again.`);
+              return;
             }
           } else {
             console.error('❌ Audio context does not exist');
             alert('Audio context not available. Please try again.');
+            return;
+          }
+          
+          // CRITICAL: Verify audio context is actually running before proceeding
+          if (soundManager.audioContext.state !== 'running') {
+            console.error('❌ Audio context state verification failed:', soundManager.audioContext.state);
+            alert(`Audio context is not running (state: ${soundManager.audioContext.state}). Please try again.`);
             return;
           }
           
@@ -4374,6 +4383,38 @@ class InteractiveSoundApp {
           const result = await soundManager.playMasterPattern();
           
           if (result.success) {
+            // CRITICAL: Verify scheduler is actually running
+            if (window.strudel && window.strudel.scheduler) {
+              const scheduler = window.strudel.scheduler;
+              if (!scheduler.started) {
+                console.warn('⚠️ Scheduler not started after playMasterPattern, attempting to start...');
+                try {
+                  await scheduler.start();
+                  console.log('✅ Scheduler started successfully');
+                } catch (schedulerError) {
+                  console.error('❌ Could not start scheduler:', schedulerError);
+                }
+              } else {
+                console.log('✅ Scheduler is running');
+              }
+            }
+            
+            // CRITICAL: Verify audio context is still running
+            if (soundManager.audioContext && soundManager.audioContext.state !== 'running') {
+              console.warn('⚠️ Audio context not running after playMasterPattern, attempting to resume...');
+              try {
+                await soundManager.audioContext.resume();
+                await new Promise(resolve => setTimeout(resolve, 100));
+                if (soundManager.audioContext.state === 'running') {
+                  console.log('✅ Audio context resumed after playMasterPattern');
+                } else {
+                  console.error('❌ Audio context still not running:', soundManager.audioContext.state);
+                }
+              } catch (resumeError) {
+                console.error('❌ Could not resume audio context:', resumeError);
+              }
+            }
+            
             this.masterActive = true;
             playMasterBtn.textContent = '❚❚';
             playMasterBtn.title = 'Pause Master';
