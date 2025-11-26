@@ -4247,8 +4247,14 @@ class InteractiveSoundApp {
     }
 
     // Play/Pause Master button (toggles between play and pause)
+    // Use both click and touchstart for better mobile support
     if (playMasterBtn) {
-      playMasterBtn.addEventListener('click', async () => {
+      const handlePlayPause = async (event) => {
+        // Prevent default to avoid double-firing on mobile
+        if (event.type === 'touchstart') {
+          event.preventDefault();
+        }
+        
         if (this.masterActive) {
           // Currently playing - pause/stop
           console.log('⏸️ Pause Master button clicked');
@@ -4313,7 +4319,7 @@ class InteractiveSoundApp {
           }
           
           // Ensure audio is initialized and resumed before playing (critical for mobile)
-          if (!soundManager.isAudioReady()) {
+          if (!soundManager.audioContext || !soundManager.isAudioReady()) {
             console.log('🎵 Initializing audio from master play button...');
             const success = await soundManager.initialize();
             if (!success) {
@@ -4323,19 +4329,45 @@ class InteractiveSoundApp {
             }
           }
           
-          // Resume audio context if suspended (mobile browsers often suspend it)
-          if (soundManager.audioContext && soundManager.audioContext.state === 'suspended') {
-            try {
-              await soundManager.audioContext.resume();
-              // Brief wait for state change
-              await new Promise(resolve => setTimeout(resolve, 50));
-              if (soundManager.audioContext.state !== 'running') {
-                console.warn('⚠️ Audio context not running after resume - state:', soundManager.audioContext.state);
-              } else {
-                console.log('✅ Audio context resumed successfully');
+          // Ensure audio context is running (mobile browsers often suspend it)
+          if (soundManager.audioContext) {
+            if (soundManager.audioContext.state === 'suspended' || soundManager.audioContext.state !== 'running') {
+              try {
+                console.log(`🔄 Audio context state: ${soundManager.audioContext.state}, attempting to resume...`);
+                await soundManager.audioContext.resume();
+                // Wait for state change with retries
+                let retries = 0;
+                while (soundManager.audioContext.state !== 'running' && retries < 10) {
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  retries++;
+                }
+                if (soundManager.audioContext.state !== 'running') {
+                  console.warn('⚠️ Audio context not running after resume - state:', soundManager.audioContext.state);
+                  alert('Audio context is not ready. Please try again.');
+                  return;
+                } else {
+                  console.log('✅ Audio context resumed successfully');
+                }
+              } catch (error) {
+                console.error('❌ Could not resume audio context:', error);
+                alert('Could not start audio. Please try again.');
+                return;
               }
+            }
+          } else {
+            console.error('❌ Audio context does not exist');
+            alert('Audio context not available. Please try again.');
+            return;
+          }
+          
+          // Ensure Strudel is loaded before playing
+          if (!soundManager.strudelLoaded) {
+            console.log('⏳ Waiting for Strudel to load...');
+            try {
+              await soundManager.initializeStrudelAndSounds();
             } catch (error) {
-              console.warn('⚠️ Could not resume audio context:', error);
+              console.warn('⚠️ Could not initialize Strudel:', error);
+              // Continue anyway - playMasterPattern will handle it
             }
           }
           
@@ -4353,7 +4385,11 @@ class InteractiveSoundApp {
             alert(`Failed to play master: ${result.error}`);
           }
         }
-      });
+      };
+      
+      // Add both click and touchstart listeners for mobile support
+      playMasterBtn.addEventListener('click', handlePlayPause);
+      playMasterBtn.addEventListener('touchstart', handlePlayPause, { passive: false });
 
       // Toggle master play/pause with spacebar (when not typing in an input)
       if (!this._masterSpacebarHandlerAttached) {
