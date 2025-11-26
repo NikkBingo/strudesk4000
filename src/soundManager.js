@@ -1990,12 +1990,19 @@ class SoundManager {
       return null;
     }
 
-    // Clean up pattern: remove newlines, normalize whitespace, and fix dot spacing
-    // First normalize all whitespace to single spaces
-    let patternToEval = pattern.replace(/\s+/g, ' ').trim();
+    // Clean up pattern but keep line breaks so multi-statement Strudel scripts stay valid
+    // Remove carriage returns, trim trailing spaces on each line, and preserve newline separators
+    let patternToEval = pattern
+      .replace(/\r/g, '')
+      .split('\n')
+      .map(line => line.replace(/[ \t]+$/g, ''))
+      .join('\n')
+      .trim();
     
-    // Remove spaces before dots (pattern might have "pattern .modifier()" which should be "pattern.modifier()")
-    patternToEval = patternToEval.replace(/\s+\./g, '.').trim();
+    // Remove spaces/tabs (but not newlines) before dots (pattern might have "pattern .modifier()")
+    patternToEval = patternToEval.replace(/[ \t]+\./g, '.').trim();
+    // If a method chain starts on a new line (".gain()"), collapse the newline before the dot
+    patternToEval = patternToEval.replace(/\n+\s*\./g, '.');
     
     // Clean up any double dots
     patternToEval = patternToEval.replace(/\.\.+/g, '.').trim();

@@ -3,6 +3,10 @@
     padding: 20px;
   }
 
+  header h1 {
+    font-size: calc(2.5rem - 2px);
+  }
+
   .master-controls-row {
     gap: 16px;
     justify-content: stretch;
@@ -37,6 +41,19 @@
   .master-controls-row input[type='range'] {
     font-size: 0.95rem;
   }
+}
+
+@font-face {
+  font-family: 'Krieger Halftone';
+  src: url('../assets/fonts/KriegerHalftoneItalic-4nVO4.otf') format('opentype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+.brand-font {
+  font-family: 'Krieger Halftone', 'Krieger', 'Segoe UI', sans-serif;
+  letter-spacing: 0.02em;
 }
 
 @media (max-width: 540px) {
