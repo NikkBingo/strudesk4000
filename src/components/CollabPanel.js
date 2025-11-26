@@ -203,8 +203,144 @@ export class CollabPanel {
               <strong>Channel snippet</strong>
               <button id="collab-load-editor-btn" class="btn-link" type="button">Use master editor content</button>
             </div>
-            <input type="text" id="collab-channel-name" placeholder="Label (optional)" />
-            <textarea id="collab-channel-code" rows="5" placeholder="// Write the pattern you want to push"></textarea>
+            <div class="collab-channel-config">
+              <div class="collab-config-grid">
+                <div class="form-group">
+                  <label for="collab-pattern-bank">Sound Bank:</label>
+                  <select id="collab-pattern-bank" class="control-select">
+                  <optgroup label="Drums">
+                    <option value="">Default</option>
+                    <option value="RolandTR808">Roland TR-808</option>
+                    <option value="RolandTR909">Roland TR-909</option>
+                    <option value="RolandTR707">Roland TR-707</option>
+                    <option value="RhythmAce">Rhythm Ace</option>
+                    <option value="AkaiLinn">Akai Linn</option>
+                    <option value="ViscoSpaceDrum">Visco Space Drum</option>
+                    <option value="CasioRZ1">Casio RZ-1</option>
+                  </optgroup>
+                  <optgroup label="Basic Waveforms">
+                    <option value="sine">Sine</option>
+                    <option value="square">Square</option>
+                    <option value="triangle">Triangle</option>
+                    <option value="sawtooth">Sawtooth</option>
+                  </optgroup>
+                  <optgroup label="Sample-based Synths">
+                    <option value="piano">Piano</option>
+                    <option value="supersaw">Saw Synth</option>
+                    <option value="casio">Casio</option>
+                    <option value="jazz">Jazz</option>
+                    <option value="metal">Metal</option>
+                    <option value="folkharp">Folk Harp</option>
+                  </optgroup>
+                  </select>
+                  <div class="pattern-help">
+                    <small>Select a sound bank to load. Banks are loaded when selected.</small>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label for="collab-channel-title">Title:</label>
+                  <input type="text" id="collab-channel-title" placeholder="e.g., My drum pattern" />
+                </div>
+                <div class="form-group">
+                  <label for="collab-time-signature">Time Signature:</label>
+                  <select id="collab-time-signature" class="control-select" aria-label="Time Signature">
+                  <option value="4/4" selected>4/4 (Common Time)</option>
+                  <option value="3/4">3/4 (Waltz)</option>
+                  <option value="6/8">6/8</option>
+                  <option value="2/4">2/4 (March)</option>
+                  <option value="5/4">5/4</option>
+                  <option value="7/8">7/8</option>
+                  <option value="12/8">12/8</option>
+                  <option value="2/2">2/2 (Cut Time)</option>
+                  <option value="3/8">3/8</option>
+                  <option value="9/8">9/8</option>
+                  <option value="5/8">5/8</option>
+                  <option value="7/4">7/4</option>
+                  </select>
+                </div>
+              </div>
+              <div class="collab-key-scale-grid">
+                <div class="form-group">
+                  <label for="collab-key-select">Key:</label>
+                  <select id="collab-key-select" class="control-select" aria-label="Key">
+                    <option value="">Select Key</option>
+                    <option value="C">C</option>
+                    <option value="C#">C#</option>
+                    <option value="Db">Db</option>
+                    <option value="D">D</option>
+                    <option value="D#">D#</option>
+                    <option value="Eb">Eb</option>
+                    <option value="E">E</option>
+                    <option value="F">F</option>
+                    <option value="F#">F#</option>
+                    <option value="Gb">Gb</option>
+                    <option value="G">G</option>
+                    <option value="G#">G#</option>
+                    <option value="Ab">Ab</option>
+                    <option value="A">A</option>
+                    <option value="A#">A#</option>
+                    <option value="Bb">Bb</option>
+                    <option value="B">B</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="collab-scale-select">Scale:</label>
+                  <select id="collab-scale-select" class="control-select" aria-label="Scale">
+                    <option value="chromatic" selected>Chromatic</option>
+                    <optgroup label="Diatonic (Major Scale) Modes">
+                      <option value="ionian">Ionian (Major)</option>
+                      <option value="dorian">Dorian</option>
+                      <option value="phrygian">Phrygian</option>
+                      <option value="lydian">Lydian</option>
+                      <option value="mixolydian">Mixolydian</option>
+                      <option value="aeolian">Aeolian (Natural Minor)</option>
+                      <option value="locrian">Locrian</option>
+                    </optgroup>
+                    <optgroup label="Melodic Minor Modes">
+                      <option value="melodic minor">Melodic Minor</option>
+                      <option value="dorian b2">Dorian ♭2</option>
+                      <option value="lydian augmented">Lydian Augmented</option>
+                      <option value="lydian dominant">Lydian Dominant</option>
+                      <option value="mixolydian b6">Mixolydian ♭6</option>
+                      <option value="locrian #2">Locrian ♮2</option>
+                      <option value="altered">Altered</option>
+                    </optgroup>
+                    <optgroup label="Harmonic Minor Modes">
+                      <option value="harmonic minor">Harmonic Minor</option>
+                      <option value="phrygian dominant">Phrygian Dominant</option>
+                      <option value="locrian #6">Locrian ♮6</option>
+                      <option value="ionian #5">Ionian ♯5</option>
+                      <option value="dorian #4">Dorian ♯4</option>
+                      <option value="lydian #2">Lydian ♯2</option>
+                      <option value="ultralocrian">Ultralocrian</option>
+                    </optgroup>
+                    <optgroup label="Pentatonic Modes">
+                      <option value="major pentatonic">Major Pentatonic</option>
+                      <option value="minor pentatonic">Minor Pentatonic</option>
+                      <option value="blues">Blues</option>
+                    </optgroup>
+                    <optgroup label="Other">
+                      <option value="whole tone">Whole Tone</option>
+                      <option value="half-whole diminished">Half–Whole</option>
+                      <option value="whole-half diminished">Whole–Half</option>
+                      <option value="minor blues">Minor Blues</option>
+                    </optgroup>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="collab-channel-editor">
+              <div class="pattern-label-row">
+                <label for="collab-channel-code">Pattern</label>
+              </div>
+              <textarea id="collab-channel-code" rows="6" placeholder="// Write the pattern you want to push"></textarea>
+              <div class="pattern-help">
+                <small>
+                  Drum sounds: https://strudel.cc/workshop/first-sounds/#drum-sounds ·
+                  Synth sounds: https://strudel.cc/workshop/first-notes/#changing-the-sound
+                </small>
+              </div>
+            </div>
             <div class="collab-channel-actions">
               <button id="collab-push-draft-btn" class="btn-secondary" data-collab-requires-auth>Save draft</button>
               <button id="collab-publish-btn" class="btn-primary" data-collab-requires-auth>Publish to master</button>
@@ -402,10 +538,8 @@ export class CollabPanel {
       this.setStatus('Join a session first.', STATUS_VARIANTS.error);
       return;
     }
-    const textarea = this.root?.querySelector('#collab-channel-code');
-    const nameInput = this.root?.querySelector('#collab-channel-name');
-    const code = textarea?.value?.trim();
-    if (!code) {
+    const formValues = this.collectChannelFormValues();
+    if (!formValues.code) {
       this.setStatus('Write a pattern before pushing.', STATUS_VARIANTS.error);
       return;
     }
@@ -413,8 +547,9 @@ export class CollabPanel {
       this.setStatus(targetStatus === 'live' ? 'Publishing…' : 'Saving draft…', STATUS_VARIANTS.info);
       await this.socketClient.pushChannelDraft({
         sessionId: this.currentSnapshot.id,
-        code,
-        name: nameInput?.value?.trim() || null,
+        code: formValues.code,
+        name: formValues.name,
+        metadata: formValues.metadata,
         status: targetStatus
       });
       if (targetStatus === 'live') {
@@ -426,6 +561,34 @@ export class CollabPanel {
       console.error('Channel submit failed', error);
       this.setStatus(error.message || 'Failed to push channel', STATUS_VARIANTS.error);
     }
+  }
+
+  collectChannelFormValues() {
+    const textarea = this.root?.querySelector('#collab-channel-code');
+    const titleInput = this.root?.querySelector('#collab-channel-title');
+    const bankSelect = this.root?.querySelector('#collab-pattern-bank');
+    const timeSigSelect = this.root?.querySelector('#collab-time-signature');
+    const keySelect = this.root?.querySelector('#collab-key-select');
+    const scaleSelect = this.root?.querySelector('#collab-scale-select');
+
+    const metadata = {};
+    const soundBank = bankSelect?.value?.trim();
+    const timeSignature = timeSigSelect?.value?.trim();
+    const key = keySelect?.value?.trim();
+    const scale = scaleSelect?.value?.trim();
+    const title = titleInput?.value?.trim();
+
+    if (soundBank) metadata.soundBank = soundBank;
+    if (timeSignature) metadata.timeSignature = timeSignature;
+    if (key) metadata.key = key;
+    if (scale && scale !== 'chromatic') metadata.scale = scale;
+    if (title) metadata.title = title;
+
+    return {
+      code: textarea?.value?.trim() || '',
+      name: title || null,
+      metadata: Object.keys(metadata).length ? metadata : undefined
+    };
   }
 
   populateFromEditor() {
