@@ -4303,8 +4303,17 @@ class InteractiveSoundApp {
     // Use both click and touchstart for better mobile support
     if (playMasterBtn) {
       const handlePlayPause = async (event) => {
-        // Prevent default only on touchstart to avoid double-firing
-        if (event.type === 'touchstart') {
+        // CRITICAL: On mobile, resume audio context immediately within user gesture
+        if (event.type === 'touchstart' && soundManager.audioContext) {
+          event.preventDefault();
+          // Immediately resume audio context within the touch gesture
+          if (soundManager.audioContext.state !== 'running') {
+            console.log('🎵 Touch: Resuming audio context immediately...');
+            soundManager.audioContext.resume().catch(err => {
+              console.warn('⚠️ Could not resume in touch handler:', err);
+            });
+          }
+        } else if (event.type === 'touchstart') {
           event.preventDefault();
         }
         

@@ -8602,15 +8602,35 @@ class SoundManager {
         return { success: false, error: 'No pattern to play' };
       }
       
-      // Ensure audio context is running (not suspended)
-      if (this.audioContext && this.audioContext.state === 'suspended') {
-        console.log(`🔊 Audio context suspended, resuming...`);
-        try {
-          await this.audioContext.resume();
-          console.log(`✅ Audio context resumed, state: ${this.audioContext.state}`);
-        } catch (resumeError) {
-          console.warn(`⚠️ Could not resume audio context:`, resumeError);
+      // CRITICAL: Ensure audio context is running (not suspended)
+      // On mobile, this must happen within the user gesture
+      if (this.audioContext) {
+        if (this.audioContext.state !== 'running') {
+          console.log(`🔊 Audio context state: ${this.audioContext.state}, resuming...`);
+          try {
+            await this.audioContext.resume();
+            // Wait a bit for state to change (mobile needs time)
+            let retries = 0;
+            while (this.audioContext.state !== 'running' && retries < 10) {
+              await new Promise(resolve => setTimeout(resolve, 50));
+              retries++;
+            }
+            if (this.audioContext.state === 'running') {
+              console.log(`✅ Audio context resumed successfully, state: ${this.audioContext.state}`);
+            } else {
+              console.warn(`⚠️ Audio context not running after resume, state: ${this.audioContext.state}`);
+              // Continue anyway - might still work
+            }
+          } catch (resumeError) {
+            console.warn(`⚠️ Could not resume audio context:`, resumeError);
+            // Continue anyway - might still work
+          }
+        } else {
+          console.log(`✅ Audio context already running`);
         }
+      } else {
+        console.error(`❌ Audio context does not exist`);
+        return { success: false, error: 'Audio context not initialized' };
       }
       
       // Evaluate and assign to master slot
@@ -9005,6 +9025,37 @@ class SoundManager {
       try {
         evalResult = await window.strudel.evaluate(code);
         console.log(`✅ Master pattern evaluated successfully, result type: ${typeof evalResult}`);
+        
+        // CRITICAL: Immediately verify audio context is still running after evaluation
+        if (this.audioContext && this.audioContext.state !== 'running') {
+          console.warn(`⚠️ Audio context not running after evaluation (${this.audioContext.state}), resuming...`);
+          try {
+            await this.audioContext.resume();
+            await new Promise(resolve => setTimeout(resolve, 50));
+            if (this.audioContext.state === 'running') {
+              console.log(`✅ Audio context resumed after evaluation`);
+            } else {
+              console.error(`❌ Audio context still not running: ${this.audioContext.state}`);
+            }
+          } catch (resumeError) {
+            console.error(`❌ Failed to resume audio context after evaluation:`, resumeError);
+          }
+        }
+        
+        // CRITICAL: Verify scheduler is running
+        if (window.strudel && window.strudel.scheduler) {
+          if (!window.strudel.scheduler.started) {
+            console.warn(`⚠️ Scheduler not started after evaluation, starting...`);
+            try {
+              await window.strudel.scheduler.start();
+              console.log(`✅ Scheduler started after evaluation`);
+            } catch (schedulerError) {
+              console.error(`❌ Failed to start scheduler:`, schedulerError);
+            }
+          } else {
+            console.log(`✅ Scheduler is running`);
+          }
+        }
       } catch (evalError) {
         // Log but don't fail on evaluation errors - Strudel might still play
         console.warn(`⚠️ Pattern evaluation warning:`, evalError.message);
