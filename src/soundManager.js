@@ -8783,10 +8783,41 @@ class SoundManager {
         // CRITICAL: Start scheduler BEFORE pattern evaluation
         // Strudel needs the scheduler running to play audio
         // This must happen before evaluation so audio can start immediately
-        if (window.strudel && window.strudel.scheduler && !window.strudel.scheduler.started) {
-          console.log(`▶️ Starting Strudel scheduler BEFORE pattern evaluation...`);
-          await window.strudel.scheduler.start();
-          console.log(`✅ Strudel scheduler started`);
+        if (window.strudel && window.strudel.scheduler) {
+          if (!window.strudel.scheduler.started) {
+            console.log(`▶️ Starting Strudel scheduler BEFORE pattern evaluation...`);
+            try {
+              await window.strudel.scheduler.start();
+              // Verify scheduler actually started
+              if (window.strudel.scheduler.started) {
+                console.log(`✅ Strudel scheduler started successfully`);
+              } else {
+                console.error(`❌ Strudel scheduler start() returned but scheduler.started is still false`);
+                // Try again
+                await window.strudel.scheduler.start();
+                if (window.strudel.scheduler.started) {
+                  console.log(`✅ Strudel scheduler started on retry`);
+                } else {
+                  console.error(`❌ Strudel scheduler failed to start after retry`);
+                }
+              }
+            } catch (schedulerError) {
+              console.error(`❌ Failed to start scheduler:`, schedulerError);
+              // Try to start again
+              try {
+                await window.strudel.scheduler.start();
+                console.log(`✅ Strudel scheduler started on second attempt`);
+              } catch (retryError) {
+                console.error(`❌ Failed to start scheduler on retry:`, retryError);
+              }
+            }
+          } else {
+            console.log(`✅ Strudel scheduler already started`);
+          }
+        } else {
+          console.error(`❌ Strudel scheduler not available`);
+          return { success: false, error: 'Strudel scheduler not available' };
+        }
           
           // CRITICAL: After starting scheduler, check if webaudio output was created
           const scheduler = window.strudel.scheduler;
@@ -9089,9 +9120,38 @@ class SoundManager {
             replScheduler.pattern = slotRef;
             console.log(`🎚️ Scheduler pattern set directly to ${evaluationSlot}`);
             
+            // CRITICAL: Verify scheduler is still started after setting pattern
+            if (!replScheduler.started) {
+              console.warn(`⚠️ Scheduler not started after setting pattern, starting...`);
+              try {
+                await replScheduler.start();
+                console.log(`✅ Scheduler started after pattern set`);
+              } catch (startError) {
+                console.error(`❌ Failed to start scheduler after pattern set:`, startError);
+              }
+            }
+            
+            // CRITICAL: Verify audio context is still running
+            if (this.audioContext && this.audioContext.state !== 'running') {
+              console.warn(`⚠️ Audio context not running after pattern set (${this.audioContext.state}), resuming...`);
+              try {
+                await this.audioContext.resume();
+                await new Promise(resolve => setTimeout(resolve, 50));
+                if (this.audioContext.state === 'running') {
+                  console.log(`✅ Audio context resumed after pattern set`);
+                } else {
+                  console.error(`❌ Audio context still not running: ${this.audioContext.state}`);
+                }
+              } catch (resumeError) {
+                console.error(`❌ Failed to resume audio context:`, resumeError);
+              }
+            }
+            
             // CRITICAL: After setting pattern, check if scheduler created any audio nodes
             console.log(`🔍 POST-PATTERN-SET: Checking scheduler state after pattern assignment...`);
             console.log(`   scheduler.pattern: ${replScheduler.pattern ? 'exists' : 'null'}`);
+            console.log(`   scheduler.started: ${replScheduler.started}`);
+            console.log(`   audioContext.state: ${this.audioContext?.state || 'N/A'}`);
             
             // Wait a bit for Strudel to potentially create audio nodes
             await new Promise(resolve => setTimeout(resolve, 100));
