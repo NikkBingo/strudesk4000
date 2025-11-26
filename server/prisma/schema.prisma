@@ -33,6 +33,10 @@ model User {
 
   patterns       Pattern[]
   sharedPatterns PatternShare[]
+  collabSessions CollabSession[]         @relation("UserOwnedSessions")
+  sessionParticipations SessionParticipant[] @relation("UserSessionParticipations")
+  sessionChannels SessionChannel[]       @relation("UserSessionChannels")
+  sessionChannelRevisions SessionChannelRevision[] @relation("UserSessionChannelRevisions")
 
   @@unique([oauthProvider, oauthId])
   @@index([verificationToken])
@@ -79,4 +83,84 @@ model PatternShare {
   @@unique([patternId, sharedWithUserId])
   @@index([sharedWithUserId])
   @@map("pattern_shares")
+}
+
+model CollabSession {
+  id             String   @id @default(uuid())
+  ownerId        String   @map("owner_id")
+  slug           String   @unique
+  title          String
+  status         String   @default("active")
+  masterCode     String?  @map("master_code") @db.Text
+  mergedStack    String?  @map("merged_stack") @db.Text
+  applyDelayMs   Int      @default(0) @map("apply_delay_ms")
+  cpuStats       Json?    @default("{}") @map("cpu_stats")
+  settings       Json?    @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  owner          User                 @relation("UserOwnedSessions", fields: [ownerId], references: [id], onDelete: Cascade)
+  participants   SessionParticipant[]
+  channels       SessionChannel[]
+  channelHistory SessionChannelRevision[]
+
+  @@index([ownerId])
+  @@map("collab_sessions")
+}
+
+model SessionParticipant {
+  id         String   @id @default(uuid())
+  sessionId  String   @map("session_id")
+  userId     String   @map("user_id")
+  role       String   @default("member")
+  joinedAt   DateTime @default(now()) @map("joined_at")
+
+  session    CollabSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user       User          @relation("UserSessionParticipations", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, userId])
+  @@index([userId])
+  @@map("session_participants")
+}
+
+model SessionChannel {
+  id              String   @id @default(uuid())
+  sessionId       String   @map("session_id")
+  userId          String   @map("user_id")
+  elementId       String?  @map("element_id")
+  name            String?
+  code            String   @db.Text
+  status          String   @default("draft")
+  volume          Float?   @map("volume_db")
+  pan             Float?
+  metadata        Json?    @default("{}")
+  lastEvaluatedAt DateTime? @map("last_evaluated_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  session         CollabSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user            User                    @relation("UserSessionChannels", fields: [userId], references: [id], onDelete: Cascade)
+  revisions       SessionChannelRevision[]
+
+  @@index([sessionId])
+  @@index([userId])
+  @@map("session_channels")
+}
+
+model SessionChannelRevision {
+  id            String   @id @default(uuid())
+  channelId     String   @map("channel_id")
+  sessionId     String   @map("session_id")
+  userId        String   @map("user_id")
+  code          String   @db.Text
+  appliedToMaster Boolean @default(false) @map("applied_to_master")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  channel       SessionChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  session       CollabSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user          User           @relation("UserSessionChannelRevisions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([userId])
+  @@map("session_channel_revisions")
 }
