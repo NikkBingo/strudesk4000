@@ -7762,7 +7762,7 @@ class InteractiveSoundApp {
       );
       
       let samplePacksGroup = Array.from(bankSelect.children).find(
-        (child) => child.tagName === 'OPTGROUP' && child.label === 'Sample Packs'
+        (child) => child.tagName === 'OPTGROUP' && child.label && child.label === 'Sample Packs'
       );
 
       // Create groups if they don't exist, in the correct order
@@ -7865,21 +7865,45 @@ class InteractiveSoundApp {
       }
       
       // Populate sample packs group
+      // samplePacksGroup should already be created above, but double-check
+      if (!samplePacksGroup) {
+        console.error('❌ samplePacksGroup not found after creation, creating it again...');
+        samplePacksGroup = document.createElement('optgroup');
+        samplePacksGroup.label = 'Sample Packs';
+        bankSelect.appendChild(samplePacksGroup);
+      }
+      
       samplePacksGroup.innerHTML = '';
-      // Sort by sample count (descending), then by label
-      const sortedSamplePacks = [...SAMPLE_PACKS].sort((a, b) => {
-        if (b.samples !== a.samples) {
-          return b.samples - a.samples;
-        }
-        return a.label.localeCompare(b.label);
-      });
-      sortedSamplePacks.forEach((pack) => {
-        const option = document.createElement('option');
-        option.value = pack.value;
-        option.textContent = pack.label;
-        option.dataset.source = 'sample-pack';
-        samplePacksGroup.appendChild(option);
-      });
+      
+      // Check if SAMPLE_PACKS is defined
+      if (typeof SAMPLE_PACKS === 'undefined') {
+        console.error('❌ SAMPLE_PACKS constant is not defined!');
+      } else if (!Array.isArray(SAMPLE_PACKS)) {
+        console.error('❌ SAMPLE_PACKS is not an array:', typeof SAMPLE_PACKS);
+      } else if (SAMPLE_PACKS.length === 0) {
+        console.warn('⚠️ SAMPLE_PACKS array is empty');
+      } else {
+        // Sort by sample count (descending), then by label
+        const sortedSamplePacks = [...SAMPLE_PACKS].sort((a, b) => {
+          if (b.samples !== a.samples) {
+            return b.samples - a.samples;
+          }
+          return a.label.localeCompare(b.label);
+        });
+        console.log(`📦 Populating ${sortedSamplePacks.length} sample packs in dropdown`);
+        sortedSamplePacks.forEach((pack) => {
+          if (!pack || !pack.value || !pack.label) {
+            console.warn('⚠️ Invalid sample pack entry:', pack);
+            return;
+          }
+          const option = document.createElement('option');
+          option.value = pack.value;
+          option.textContent = pack.label;
+          option.dataset.source = 'sample-pack';
+          samplePacksGroup.appendChild(option);
+        });
+        console.log(`✅ Added ${sortedSamplePacks.length} sample pack options to dropdown`);
+      }
 
       // Don't add non-drum banks to drums group - they belong in their own groups
       // The other groups are preserved from the HTML, so options stay in place
