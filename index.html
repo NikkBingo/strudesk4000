@@ -26,7 +26,7 @@
   <div class="container">
     <header>
       <div class="header-left">
-        <h1 class="brand-font">Strudesk 4000</h1>
+        <h1 class="brand-font brand-logo header-logo">Strudesk 4000</h1>
         <span class="version-text">SPM v0.9.1</span>
       </div>
       <div class="header-right">
@@ -346,7 +346,7 @@
         <div id="master-punchcard" class="punchcard-grid">
           <canvas id="master-punchcard-canvas" aria-label="Master visualizer"></canvas>
           <div class="punchcard-placeholder">
-            <div class="punchcard-text brand-font">STRUDESK 4000</div>
+            <div class="punchcard-text brand-font brand-logo punchcard-logo">STRUDESK 4000</div>
           </div>
         </div>
         <div class="chaospad-control">
@@ -435,7 +435,7 @@
     <!-- Credits Section -->
     <div class="credits-section">
       <p>
-        <span class="brand-font">Strudesk 4000</span>
+        <span class="brand-font brand-logo credits-logo">Strudesk 4000</span>
         <span> by <a href="https://ekommissar.com" target="_blank" rel="noopener noreferrer">eKommissar</a></span>
         <span class="credits-separator">·</span>
         <span>Based on <a href="https://strudel.cc/workshop/getting-started/" target="_blank" rel="noopener noreferrer">Strudel</a></span>
@@ -873,6 +873,31 @@
         bubble.style.setProperty('--speed', Math.random().toString());
         bubble.style.setProperty('--delay', Math.random().toString());
         bubbleRoot.appendChild(bubble);
+      }
+    })();
+  </script>
+
+  <script>
+    (function detectBrandFont() {
+      const root = document.documentElement;
+      const fallbackClass = 'brand-font-fallback';
+      const fontSpec = '1rem "Krieger Halftone"';
+      const enableFallback = () => root.classList.add(fallbackClass);
+
+      if (document.fonts && document.fonts.load && document.fonts.check) {
+        document.fonts.load(fontSpec).then(() => {
+          if (!document.fonts.check(fontSpec)) {
+            enableFallback();
+          }
+        }).catch(enableFallback);
+
+        setTimeout(() => {
+          if (!root.classList.contains(fallbackClass) && !document.fonts.check(fontSpec)) {
+            enableFallback();
+          }
+        }, 1500);
+      } else {
+        enableFallback();
       }
     })();
   </script>
