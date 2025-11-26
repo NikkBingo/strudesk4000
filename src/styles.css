@@ -6074,6 +6074,10 @@ header h1 {
   font-weight: 600;
   font-size: 0.9rem;
   position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 8px;
 }
 
 .piano-key.white {

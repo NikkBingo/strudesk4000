@@ -3955,6 +3955,7 @@ class InteractiveSoundApp {
             }
           }
           
+          // playStrudelPattern will handle Strudel initialization and scheduler startup
           // Now play the note
           if (soundManager.isAudioReady()) {
             const fullNote = `${note}${currentOctave}`;
@@ -4309,6 +4310,33 @@ class InteractiveSoundApp {
             await this.applyVisualizerToMaster();
           } catch (visualizerError) {
             console.warn(`⚠️ Error applying visualizer, continuing with playback:`, visualizerError);
+          }
+          
+          // Ensure audio is initialized and resumed before playing (critical for mobile)
+          if (!soundManager.isAudioReady()) {
+            console.log('🎵 Initializing audio from master play button...');
+            const success = await soundManager.initialize();
+            if (!success) {
+              console.error('❌ Could not initialize audio');
+              alert('Could not initialize audio. Please try clicking again.');
+              return;
+            }
+          }
+          
+          // Resume audio context if suspended (mobile browsers often suspend it)
+          if (soundManager.audioContext && soundManager.audioContext.state === 'suspended') {
+            try {
+              await soundManager.audioContext.resume();
+              // Brief wait for state change
+              await new Promise(resolve => setTimeout(resolve, 50));
+              if (soundManager.audioContext.state !== 'running') {
+                console.warn('⚠️ Audio context not running after resume - state:', soundManager.audioContext.state);
+              } else {
+                console.log('✅ Audio context resumed successfully');
+              }
+            } catch (error) {
+              console.warn('⚠️ Could not resume audio context:', error);
+            }
           }
           
           const result = await soundManager.playMasterPattern();
