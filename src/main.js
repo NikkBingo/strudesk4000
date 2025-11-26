@@ -119,6 +119,131 @@ const SAMPLE_PACKS = [
   { value: 'github:tidalcycles/dirt-samples', label: 'Dirt Samples', samples: 218 }
 ];
 
+const AUDIO_FILE_EXTENSIONS = ['.wav', '.wave', '.mp3', '.ogg', '.oga', '.flac', '.aif', '.aiff', '.m4a', '.mp4', '.webm'];
+const SAMPLE_PACK_FETCH_HEADERS = { Accept: 'application/vnd.github+json' };
+const samplePackSamplesCache = new Map();
+const samplePackFetchPromises = new Map();
+
+const normalizeSamplePackPath = (path = '') => path.replace(/^\/+|\/+$/g, '');
+
+const isAudioFilePath = (path = '') => {
+  const lower = path.toLowerCase();
+  return AUDIO_FILE_EXTENSIONS.some(ext => lower.endsWith(ext));
+};
+
+const parseSamplePackValue = (value = '') => {
+  if (typeof value !== 'string' || !value.startsWith('github:')) {
+    return null;
+  }
+  const withoutPrefix = value.slice('github:'.length);
+  const segments = withoutPrefix.split('/').filter(Boolean);
+  if (segments.length < 2) {
+    return null;
+  }
+  const owner = segments.shift();
+  const repo = segments.shift();
+  const subdir = segments.length > 0 ? segments.join('/') : '';
+  return { owner, repo, subdir: normalizeSamplePackPath(subdir) };
+};
+
+const buildRawGitHubUrl = ({ owner, repo, branch, path }) =>
+  `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
+
+async function fetchGitHubJson(url) {
+  const response = await fetch(url, {
+    headers: SAMPLE_PACK_FETCH_HEADERS
+  });
+  if (!response.ok) {
+    let errorMessage = response.statusText;
+    try {
+      const errorBody = await response.json();
+      if (errorBody?.message) {
+        errorMessage = errorBody.message;
+      }
+    } catch {
+      // ignore
+    }
+    throw new Error(`GitHub API error (${response.status}): ${errorMessage}`);
+  }
+  return response.json();
+}
+
+const filterSamplesBySubdir = (path, subdir) => {
+  if (!subdir) {
+    return { matches: true, relativePath: path };
+  }
+  const normalized = normalizeSamplePackPath(subdir);
+  if (!normalized) {
+    return { matches: true, relativePath: path };
+  }
+  if (path === normalized) {
+    return { matches: true, relativePath: path.split('/').pop() || path };
+  }
+  if (path.startsWith(`${normalized}/`)) {
+    return { matches: true, relativePath: path.slice(normalized.length + 1) };
+  }
+  return { matches: false, relativePath: path };
+};
+
+async function fetchSamplePackSamples(packValue) {
+  if (samplePackSamplesCache.has(packValue)) {
+    return samplePackSamplesCache.get(packValue);
+  }
+  if (samplePackFetchPromises.has(packValue)) {
+    return samplePackFetchPromises.get(packValue);
+  }
+
+  const fetchPromise = (async () => {
+    const parsed = parseSamplePackValue(packValue);
+    if (!parsed) {
+      throw new Error('Invalid sample pack format.');
+    }
+    const { owner, repo, subdir } = parsed;
+    const repoInfo = await fetchGitHubJson(`https://api.github.com/repos/${owner}/${repo}`);
+    const branch = repoInfo?.default_branch || 'main';
+    const treeData = await fetchGitHubJson(
+      `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`
+    );
+
+    if (!treeData?.tree) {
+      throw new Error('GitHub repository tree data is unavailable.');
+    }
+
+    const samples = treeData.tree
+      .filter(node => node.type === 'blob' && isAudioFilePath(node.path))
+      .map(node => {
+        const { matches, relativePath } = filterSamplesBySubdir(node.path, subdir);
+        if (!matches) {
+          return null;
+        }
+        const fileName = relativePath.split('/').pop() || relativePath;
+        const sampleName = fileName.replace(/\.[^/.]+$/, '');
+        return {
+          id: `${packValue}:${node.path}`,
+          name: sampleName,
+          path: node.path,
+          relativePath,
+          fileName,
+          rawUrl: buildRawGitHubUrl({ owner, repo, branch, path: node.path })
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const payload = {
+      samples,
+      meta: { owner, repo, branch, subdir }
+    };
+    samplePackSamplesCache.set(packValue, payload);
+    return payload;
+  })().finally(() => {
+    samplePackFetchPromises.delete(packValue);
+  });
+
+  samplePackFetchPromises.set(packValue, fetchPromise);
+  return fetchPromise;
+}
+
 let cachedVcslManifest = null;
 let cachedNormalizedVcslManifest = null;
 const SPECIAL_SAMPLE_BANKS = [
@@ -7618,6 +7743,157 @@ class InteractiveSoundApp {
     const sampleNameInput = document.getElementById('modal-sample-name');
     const addSampleButton = document.getElementById('modal-add-sample-btn');
     const sampleFileInput = document.getElementById('modal-sample-file');
+    const patternTextarea = document.getElementById('modal-pattern');
+
+    const initializeSamplePackSamplesGroup = () => {
+      if (!bankSelect) return null;
+      let wrapper = document.getElementById('sample-pack-sounds-group');
+      if (wrapper) {
+        const select = wrapper.querySelector('select');
+        const status = wrapper.querySelector('.sample-pack-sounds-status');
+        return { wrapper, select, status };
+      }
+      const bankFormGroup = bankSelect.closest('.form-group');
+      if (!bankFormGroup) return null;
+      wrapper = document.createElement('div');
+      wrapper.className = 'form-group sample-pack-sounds-group';
+      wrapper.id = 'sample-pack-sounds-group';
+      wrapper.style.display = 'none';
+
+      const label = document.createElement('label');
+      label.setAttribute('for', 'sample-pack-sound-select');
+      label.textContent = 'Sample Pack Sounds:';
+
+      const select = document.createElement('select');
+      select.id = 'sample-pack-sound-select';
+      select.className = 'control-select';
+      select.disabled = true;
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Select a sample';
+      select.appendChild(placeholder);
+
+      const status = document.createElement('small');
+      status.className = 'sample-pack-sounds-status';
+      status.textContent = 'Select a sample pack to view its sounds.';
+
+      wrapper.appendChild(label);
+      wrapper.appendChild(select);
+      wrapper.appendChild(status);
+      bankFormGroup.insertAdjacentElement('afterend', wrapper);
+      return { wrapper, select, status };
+    };
+
+    const samplePackUi = initializeSamplePackSamplesGroup();
+    let currentSamplePackValue = '';
+    let samplePackLoadToken = 0;
+
+    const hideSamplePackSamples = (message = 'Select a sample pack to view its sounds.') => {
+      if (!samplePackUi) return;
+      samplePackUi.wrapper.style.display = 'none';
+      samplePackUi.select.disabled = true;
+      samplePackUi.select.innerHTML = '';
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'Select a sample';
+      samplePackUi.select.appendChild(option);
+      samplePackUi.status.textContent = message;
+      currentSamplePackValue = '';
+    };
+
+    const showSamplePackLoadingState = (packLabel = 'this pack') => {
+      if (!samplePackUi) return;
+      samplePackUi.wrapper.style.display = '';
+      samplePackUi.select.disabled = true;
+      samplePackUi.select.innerHTML = '';
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'Loading samples...';
+      samplePackUi.select.appendChild(option);
+      samplePackUi.status.textContent = `Loading samples from ${packLabel}...`;
+    };
+
+    const insertSamplePackSoundIntoPattern = (sampleName) => {
+      if (!sampleName) return;
+      const currentValue = getStrudelEditorValue('modal-pattern') || '';
+      const alreadyHasSound = currentValue.includes(`sound("${sampleName}")`);
+      if (alreadyHasSound) {
+        samplePackUi?.status && (samplePackUi.status.textContent = `sound("${sampleName}") is already in the pattern.`);
+        return;
+      }
+      const trimmedEnd = currentValue.trimEnd();
+      const needsNewline = trimmedEnd.length > 0;
+      const nextPattern = needsNewline ? `${trimmedEnd}\n${`sound("${sampleName}")`}` : `sound("${sampleName}")`;
+      setStrudelEditorValue('modal-pattern', nextPattern);
+      if (typeof updatePreviewButtonState === 'function') {
+        updatePreviewButtonState();
+      }
+      if (samplePackUi?.status) {
+        samplePackUi.status.textContent = `Inserted sound("${sampleName}") into the pattern.`;
+      }
+    };
+
+    const loadSamplePackSamplesIntoSelect = async (packValue, displayLabel = '') => {
+      if (!samplePackUi) return;
+      samplePackLoadToken += 1;
+      const token = samplePackLoadToken;
+      showSamplePackLoadingState(displayLabel);
+      try {
+        const { samples } = await fetchSamplePackSamples(packValue);
+        if (token !== samplePackLoadToken) {
+          return;
+        }
+        if (!samples.length) {
+          hideSamplePackSamples('No audio files were found in this sample pack.');
+          return;
+        }
+        if (samples.length === 1) {
+          hideSamplePackSamples(`This pack contains 1 sample: ${samples[0].name}. Use sound("${samples[0].name}") in the pattern.`);
+          return;
+        }
+        samplePackUi.wrapper.style.display = '';
+        samplePackUi.select.disabled = false;
+        samplePackUi.select.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = `Select a sample (${samples.length} available)`;
+        samplePackUi.select.appendChild(placeholder);
+        samples.forEach(sample => {
+          const option = document.createElement('option');
+          option.value = sample.name;
+          option.textContent = sample.relativePath || sample.name;
+          option.dataset.path = sample.relativePath || sample.path;
+          samplePackUi.select.appendChild(option);
+        });
+        samplePackUi.status.textContent = 'Choose a sample to insert sound("name") into your pattern.';
+        currentSamplePackValue = packValue;
+      } catch (error) {
+        if (token !== samplePackLoadToken) {
+          return;
+        }
+        samplePackUi.select.disabled = true;
+        samplePackUi.select.innerHTML = '';
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'Unable to load samples';
+        samplePackUi.select.appendChild(option);
+        samplePackUi.status.textContent = `Unable to load samples: ${error.message}`;
+      }
+    };
+
+    if (samplePackUi?.select && !samplePackUi.select.dataset.listenerAttached) {
+      samplePackUi.select.addEventListener('change', () => {
+        const selectedSample = samplePackUi.select.value;
+        if (!selectedSample) {
+          return;
+        }
+        insertSamplePackSoundIntoPattern(selectedSample);
+      });
+      samplePackUi.select.dataset.listenerAttached = 'true';
+    }
+
+    hideSamplePackSamples();
+
 
     const parseSampleLocation = (rawUrl) => {
       const fallback = { baseUrl: './', samplePath: '' };
@@ -11709,6 +11985,7 @@ class InteractiveSoundApp {
             // If no pattern, don't modify it
             patternTextarea.placeholder = '';
           }
+          hideSamplePackSamples();
         } else {
           const appendSegment = (pattern, segment) => {
             if (!pattern || pattern.trim() === '') {
@@ -12024,7 +12301,8 @@ class InteractiveSoundApp {
                   console.log(`📦 Created minimal pattern with samples() call for pack: ${bankValue}`);
                 }
                 setStrudelEditorValue('modal-pattern', strudelPattern);
-                patternTextarea.placeholder = 'Use sound("sample-name") to play samples from this pack. Samples are loaded via samples() above.';
+              patternTextarea.placeholder = 'Use sound("sample-name") to play samples from this pack. Samples are loaded via samples() above.';
+              loadSamplePackSamplesIntoSelect(bankValue, bankDisplayName);
               } else if (isDrumBank || isSpecialSampleBank) {
                 const appliedBankValue = isSpecialSampleBank ? lowerBankValue : bankValue;
                 // For drum banks: add/replace .bank() modifier
@@ -12047,8 +12325,10 @@ class InteractiveSoundApp {
                   }
                   console.log(`📝 Created minimal pattern with .bank("${appliedBankValue}")`);
                 }
-                  setStrudelEditorValue('modal-pattern', strudelPattern);
-                  patternTextarea.placeholder = '';
+                setStrudelEditorValue('modal-pattern', strudelPattern);
+                patternTextarea.placeholder = '';
+                hideSamplePackSamples();
+                hideSamplePackSamples();
               } else if (isSynthOrWaveform) {
                 // For synths/waveforms: add/replace .s() modifier
                 const canonicalBankValue = normalizeSynthBankName(bankValue);
@@ -12076,6 +12356,7 @@ class InteractiveSoundApp {
                 } else {
                 // Not a drum bank or synth - just show placeholder
                 patternTextarea.placeholder = 'Add a pattern, e.g., sound("bd").bank("CustomBank")';
+                hideSamplePackSamples();
               }
               
               console.log(`📝 Final pattern in editor: ${getStrudelEditorValue('modal-pattern').substring(0, 100)}...`);
