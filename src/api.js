@@ -249,6 +249,12 @@ export const patternsAPI = {
    */
   async getPatternUsers(patternId) {
     return apiRequest(`/patterns/${patternId}/users`);
+  },
+
+  async getTopTracks(limit = 5) {
+    const params = new URLSearchParams();
+    params.append('limit', limit);
+    return apiRequest(`/patterns/top?${params.toString()}`);
   }
 };
 
