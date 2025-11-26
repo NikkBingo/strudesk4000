@@ -395,5 +395,38 @@ router.get('/:id/users', async (req, res) => {
   }
 });
 
+// Top public master patterns
+router.get('/top', optionalAuth, async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 10);
+    const topPatterns = await prisma.pattern.findMany({
+      where: {
+        type: 'master',
+        isPublic: true
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            artistName: true,
+            avatarUrl: true
+          }
+        }
+      },
+      orderBy: [
+        { userCount: 'desc' },
+        { createdAt: 'desc' }
+      ],
+      take: limit
+    });
+
+    res.json(topPatterns);
+  } catch (error) {
+    console.error('Error fetching top tracks:', error);
+    res.status(500).json({ error: 'Failed to fetch top tracks' });
+  }
+});
+
 export default router;
 

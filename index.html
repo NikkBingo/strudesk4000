@@ -355,25 +355,28 @@
           </div>
         </div>
         <div class="chaospad-control">
-          <label class="chaospad-checkbox-label">
-            <input type="checkbox" id="chaospad-checkbox" class="chaospad-checkbox">
-            <span>Chaospad</span>
-          </label>
-            <button type="button" class="chaospad-tilt-toggle" id="chaospad-tilt-toggle" disabled>
-              Tilt Controls <span class="tilt-toggle-icon">▼</span>
-            </button>
-            <div class="chaospad-tilt-panel" id="chaospad-tilt-panel">
+          <div class="chaospad-inline-controls">
+            <label class="chaospad-checkbox-label">
+              <input type="checkbox" id="chaospad-checkbox" class="chaospad-checkbox">
+              <span>Chaospad</span>
+            </label>
+            <div class="chaospad-tilt-inline" id="chaospad-tilt-inline">
               <div class="tilt-slider">
-                <label for="chaospad-tilt-x">X tilt</label>
+                <label for="chaospad-tilt-x">
+                  X tilt
+                  <span class="tilt-value" id="chaospad-tilt-x-value">0°</span>
+                </label>
                 <input type="range" id="chaospad-tilt-x" min="-45" max="45" value="0" step="1">
-                <span class="tilt-value" id="chaospad-tilt-x-value">0°</span>
               </div>
               <div class="tilt-slider">
-                <label for="chaospad-tilt-y">Y tilt</label>
+                <label for="chaospad-tilt-y">
+                  Y tilt
+                  <span class="tilt-value" id="chaospad-tilt-y-value">0°</span>
+                </label>
                 <input type="range" id="chaospad-tilt-y" min="-45" max="45" value="0" step="1">
-                <span class="tilt-value" id="chaospad-tilt-y-value">0°</span>
               </div>
             </div>
+          </div>
         </div>
       </div>
       <h2>Master</h2>
@@ -451,6 +454,17 @@
         </div>
       </div>
     </div>
+
+    <section class="top-tracks-section">
+      <div class="top-tracks-header">
+        <div>
+          <h3>Top 5 Tracks</h3>
+          <p>Community favorites you can drop into your master</p>
+        </div>
+      </div>
+      <div id="top-tracks-empty" class="top-tracks-empty">Loading top tracks…</div>
+      <div id="top-tracks-list" class="top-tracks-grid"></div>
+    </section>
 
     <!-- Credits Section -->
     <div class="credits-section">

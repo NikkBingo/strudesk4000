@@ -16,7 +16,7 @@ import { SavePatternDialog } from './components/SavePatternDialog.js';
 import { ProfileOnboardingModal } from './components/ProfileOnboardingModal.js';
 import { AdminUserManager } from './components/AdminUserManager.js';
 import { CollabPanel } from './components/CollabPanel.js';
-import { getCurrentUser, authAPI } from './api.js';
+import { getCurrentUser, authAPI, patternsAPI } from './api.js';
 import { lockScroll, unlockScroll, forceUnlockScroll } from './scrollLock.js';
 import { collaborationClient } from './collaboration/socketClient.js';
 
@@ -3428,6 +3428,7 @@ class InteractiveSoundApp {
     this.chaospadOrientationActive = false;
     this.chaospadOrientationPermission = 'unknown';
     this.chaospadVirtualGravity = { x: 0, y: 0 };
+    this.chaospadTiltAvailable = false;
     if (typeof window !== 'undefined') {
       if (typeof window.gravityX === 'undefined') {
         window.gravityX = 0;
@@ -3440,6 +3441,7 @@ class InteractiveSoundApp {
     this.collabUnsubscribers = [];
     this.masterUpdateQueue = [];
     this.masterUpdateTimer = null;
+    this.topTracks = [];
 
     if (this.isMobileView) {
       this.limitInitialElementsForMobile();
@@ -3469,54 +3471,143 @@ class InteractiveSoundApp {
     }
   }
 
-  toggleChaospadTiltPanel(visible) {
-    const panel = document.getElementById('chaospad-tilt-panel');
-    const toggle = document.getElementById('chaospad-tilt-toggle');
-    if (!panel || !toggle) return;
-    if (visible) {
-      panel.classList.add('visible');
-      toggle.disabled = false;
-      this.updateTiltSliderUI();
-    } else {
-      panel.classList.remove('visible', 'open');
-      toggle.classList.remove('open');
-      toggle.disabled = true;
-    }
+  setChaospadTiltAvailability(isAvailable) {
+    this.chaospadTiltAvailable = !!isAvailable;
+    this.refreshTiltControlsState();
+    this.syncTiltSlidersFromGravity();
   }
 
-  updateTiltSliderUI() {
+  refreshTiltControlsState() {
+    const wrapper = document.getElementById('chaospad-tilt-inline');
+    if (!wrapper) return;
+    const active = this.chaospadEnabled && this.chaospadTiltAvailable;
+    wrapper.classList.toggle('active', active);
+    wrapper.querySelectorAll('input[type="range"]').forEach(slider => {
+      slider.disabled = !active;
+    });
+    this.updateTiltValueLabels();
+  }
+
+  updateTiltValueLabels() {
     const xSlider = document.getElementById('chaospad-tilt-x');
     const ySlider = document.getElementById('chaospad-tilt-y');
     const xLabel = document.getElementById('chaospad-tilt-x-value');
     const yLabel = document.getElementById('chaospad-tilt-y-value');
-    if (!xSlider || !ySlider) return;
-    if (xLabel) xLabel.textContent = `${xSlider.value}°`;
-    if (yLabel) yLabel.textContent = `${ySlider.value}°`;
-  }
-
-  toggleChaospadTiltPanel(visible) {
-    const panel = document.getElementById('chaospad-tilt-panel');
-    const toggle = document.getElementById('chaospad-tilt-toggle');
-    if (!panel || !toggle) return;
-    if (visible) {
-      panel.classList.add('visible');
-      toggle.disabled = false;
-      this.updateTiltSliderUI();
-    } else {
-      panel.classList.remove('visible', 'open');
-      toggle.classList.remove('open');
-      toggle.disabled = true;
+    if (xSlider && xLabel) {
+      const value = parseInt(xSlider.value, 10) || 0;
+      xLabel.textContent = `${value}°`;
+    }
+    if (ySlider && yLabel) {
+      const value = parseInt(ySlider.value, 10) || 0;
+      yLabel.textContent = `${value}°`;
     }
   }
 
-  updateTiltSliderUI() {
+  applyTiltFromSliders() {
+    if (!this.chaospadEnabled) return;
     const xSlider = document.getElementById('chaospad-tilt-x');
     const ySlider = document.getElementById('chaospad-tilt-y');
-    const xLabel = document.getElementById('chaospad-tilt-x-value');
-    const yLabel = document.getElementById('chaospad-tilt-y-value');
     if (!xSlider || !ySlider) return;
-    if (xLabel) xLabel.textContent = `${xSlider.value}°`;
-    if (yLabel) yLabel.textContent = `${ySlider.value}°`;
+    const xValue = parseFloat(xSlider.value) || 0;
+    const yValue = parseFloat(ySlider.value) || 0;
+    const horizontalPercentage = (xValue + 45) / 90;
+    const verticalPercentage = 1 - ((yValue + 45) / 90);
+    this.applyChaospadInputFromPercentages(horizontalPercentage, verticalPercentage, 'slider');
+  }
+
+  syncTiltSlidersFromGravity(source = 'mouse') {
+    if (source === 'slider') return;
+    const xSlider = document.getElementById('chaospad-tilt-x');
+    const ySlider = document.getElementById('chaospad-tilt-y');
+    if (!xSlider || !ySlider || xSlider.disabled) return;
+    const gravity = this.chaospadVirtualGravity || { x: 0, y: 0 };
+    const xDeg = Math.max(-45, Math.min(45, Math.round((gravity.x || 0) * 45)));
+    const vertical = (gravity.y + 1) / 2;
+    const yDeg = Math.max(-45, Math.min(45, Math.round((1 - vertical) * 90 - 45)));
+    xSlider.value = xDeg;
+    ySlider.value = yDeg;
+    this.updateTiltValueLabels();
+  }
+
+  async loadTopTracks(limit = 5) {
+    const listEl = document.getElementById('top-tracks-list');
+    const emptyEl = document.getElementById('top-tracks-empty');
+    if (!listEl || !emptyEl) {
+      return;
+    }
+    emptyEl.style.display = 'block';
+    emptyEl.textContent = 'Loading top tracks…';
+    listEl.innerHTML = '';
+    try {
+      const tracks = await patternsAPI.getTopTracks(limit);
+      this.topTracks = tracks;
+      if (!tracks.length) {
+        emptyEl.textContent = 'No public tracks yet. Save a track to be featured.';
+        return;
+      }
+      emptyEl.style.display = 'none';
+      listEl.innerHTML = tracks.map((track, index) => this.renderTopTrackCard(track, index)).join('');
+      listEl.querySelectorAll('[data-track-index]').forEach(card => {
+        card.addEventListener('click', () => {
+          const index = Number(card.dataset.trackIndex);
+          const selectedTrack = this.topTracks[index];
+          if (selectedTrack) {
+            this.applyTopTrackToMaster(selectedTrack);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('Failed to load top tracks:', error);
+      emptyEl.style.display = 'block';
+      emptyEl.textContent = 'Unable to load top tracks. Please try again later.';
+    }
+  }
+
+  renderTopTrackCard(track, index) {
+    const title = track.title?.trim() || 'Untitled Track';
+    const artistName = track.artistName?.trim()
+      || track.user?.artistName
+      || track.user?.name
+      || 'Unknown Artist';
+    const genre = track.genre?.trim() || 'Uncategorized';
+    const imageUrl = track.metadata?.imageUrl?.trim() || track.user?.avatarUrl || '';
+    const initial = title.charAt(0).toUpperCase();
+    const hasImage = Boolean(imageUrl);
+    const safeTitle = this.escapeHtml(title);
+    const safeArtist = this.escapeHtml(artistName);
+    const safeGenre = this.escapeHtml(genre);
+    const safeImageUrl = this.escapeHtml(imageUrl);
+    return `
+      <button type="button" class="top-track-card" data-track-index="${index}">
+        <div class="top-track-image ${hasImage ? '' : 'fallback'}">
+          ${hasImage ? `<img src="${safeImageUrl}" alt="${safeTitle} cover art" loading="lazy" onerror="this.parentElement.classList.add('fallback'); this.remove();">` : ''}
+          <span class="top-track-placeholder">${this.escapeHtml(initial)}</span>
+        </div>
+        <div class="top-track-info">
+          <h4>${safeTitle}</h4>
+          <p class="top-track-artist">${safeArtist}</p>
+          <span class="top-track-genre">${safeGenre}</span>
+        </div>
+      </button>
+    `;
+  }
+
+  applyTopTrackToMaster(track) {
+    if (!track?.patternCode) {
+      return;
+    }
+    const patternCode = track.patternCode.trim();
+    setStrudelEditorValue('master-pattern', patternCode);
+    soundManager.setMasterPatternCode(patternCode);
+    this.updateMasterPatternDisplay();
+    const title = track.title || 'Untitled Track';
+    uiController.updateStatus(`Loaded “${title}” into master`);
+  }
+
+  escapeHtml(value = '') {
+    const div = document.createElement('div');
+    div.textContent = value ?? '';
+    return div.innerHTML;
   }
 
   /**
@@ -4261,7 +4352,7 @@ class InteractiveSoundApp {
         this.chaospadEnabled = e.target.checked;
         console.log(`🎛️ Chaospad ${this.chaospadEnabled ? 'enabled' : 'disabled'}`);
         this.updateMobileOrientationLock();
-        this.toggleChaospadTiltPanel(this.chaospadEnabled);
+        this.refreshTiltControlsState();
         
         // Update cursor style
         if (this.masterPunchcardCanvas) {
@@ -4281,7 +4372,28 @@ class InteractiveSoundApp {
         await this.updateChaospadInputMode();
       });
     }
-    
+
+    const tiltXSlider = document.getElementById('chaospad-tilt-x');
+    const tiltYSlider = document.getElementById('chaospad-tilt-y');
+    if (tiltXSlider) {
+      tiltXSlider.addEventListener('input', () => {
+        this.updateTiltValueLabels();
+        if (this.chaospadEnabled && this.chaospadTiltAvailable) {
+          this.applyTiltFromSliders();
+        }
+      });
+    }
+    if (tiltYSlider) {
+      tiltYSlider.addEventListener('input', () => {
+        this.updateTiltValueLabels();
+        if (this.chaospadEnabled && this.chaospadTiltAvailable) {
+          this.applyTiltFromSliders();
+        }
+      });
+    }
+    this.updateTiltValueLabels();
+    this.refreshTiltControlsState();
+
     // Setup mouse move listener for Chaospad on canvas
     if (this.masterPunchcardCanvas) {
       // Update cursor style based on Chaospad state
@@ -4336,7 +4448,10 @@ class InteractiveSoundApp {
     });
 
     this.updateChaospadInputMode();
-    this.toggleChaospadTiltPanel(this.chaospadEnabled);
+    this.refreshTiltControlsState();
+    this.loadTopTracks().catch(err => {
+      console.warn('⚠️ Unable to load top tracks:', err);
+    });
   }
 
   getCurrentFullscreenElement() {
@@ -5471,6 +5586,7 @@ class InteractiveSoundApp {
         detail: { gravityX, gravityY, source }
       }));
     }
+    this.syncTiltSlidersFromGravity(source);
   }
 
   supportsChaospadOrientation() {
@@ -13664,6 +13780,7 @@ function showLoginButton() {
   if (adminLink) adminLink.style.display = 'none';
   if (collabLink) collabLink.style.display = 'none';
   collabPanel?.setCurrentUser(null);
+  interactiveSoundAppInstance?.setChaospadTiltAvailability(false);
   
   // Hide load/save buttons when not logged in
   updateLoadSaveButtonsVisibility(false);
@@ -13677,6 +13794,7 @@ function handleAuthenticatedUser(user) {
   if (!user) return;
   currentUser = user;
   collabPanel?.setCurrentUser(user);
+  interactiveSoundAppInstance?.setChaospadTiltAvailability(true);
   if (loginModal) {
     loginModal.hide();
   }

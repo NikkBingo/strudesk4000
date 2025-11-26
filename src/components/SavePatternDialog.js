@@ -1,6 +1,6 @@
 /**
- * Save Pattern Dialog Component
- * Handles saving patterns with metadata (title, artist, version, privacy)
+ * Save Track Dialog Component
+ * Handles saving tracks with metadata (title, artist, version, privacy)
  */
 
 import { patternsAPI, getCurrentUser } from '../api.js';
@@ -32,20 +32,32 @@ export class SavePatternDialog {
       <div class="save-pattern-modal-overlay" id="save-pattern-modal-overlay" style="display: none;">
         <div class="save-pattern-modal">
           <div class="save-pattern-modal-header">
-            <h2>Save Pattern</h2>
+            <h2 id="save-pattern-modal-title">Save Track</h2>
             <button class="save-pattern-modal-close" id="save-pattern-modal-close" aria-label="Close">&times;</button>
           </div>
           <div class="save-pattern-modal-body">
             <form id="save-pattern-form">
               <div class="form-group">
-                <label for="save-pattern-title">Title (optional)</label>
-                <input type="text" id="save-pattern-title" placeholder="e.g., My Awesome Beat" />
+                <label for="save-pattern-title">Track Title</label>
+                <input type="text" id="save-pattern-title" placeholder="e.g., My Awesome Beat" required />
               </div>
 
               <div class="form-group">
-                <label for="save-pattern-artist">Artist Name (optional)</label>
-                <input type="text" id="save-pattern-artist" placeholder="Leave empty to use your default artist name" />
-                <small>Override your default artist name for this pattern</small>
+                <label for="save-pattern-artist">Artist Name</label>
+                <input type="text" id="save-pattern-artist" placeholder="Leave empty to use your default artist name" required />
+                <small>Override your default artist name for this track</small>
+              </div>
+
+              <div class="form-group" id="save-pattern-image-group">
+                <label for="save-pattern-image">Cover Image URL (optional)</label>
+                <input type="url" id="save-pattern-image" placeholder="https://example.com/cover.jpg" />
+                <small>Shown in the Top Tracks section when shared</small>
+              </div>
+
+              <div class="form-group">
+                <label for="save-pattern-image">Cover Image URL (optional)</label>
+                <input type="url" id="save-pattern-image" placeholder="https://example.com/cover.jpg" />
+                <small>Shown in the Top Tracks section when shared</small>
               </div>
 
               <div class="form-group">
@@ -123,7 +135,7 @@ export class SavePatternDialog {
               <div class="form-group">
                 <label class="privacy-toggle-label">
                   <input type="checkbox" id="save-pattern-public" />
-                  <span>Make this pattern public</span>
+                  <span>Make this track public</span>
                 </label>
                 <small>Public patterns can be seen and used by all users</small>
               </div>
@@ -139,7 +151,7 @@ export class SavePatternDialog {
 
               <div class="save-pattern-modal-footer">
                 <button type="button" class="btn-cancel" id="save-pattern-cancel-btn">Cancel</button>
-                <button type="submit" class="btn-save" id="save-pattern-save-btn">Save Pattern</button>
+                <button type="submit" class="btn-save" id="save-pattern-save-btn">Save Track</button>
               </div>
             </form>
           </div>
@@ -349,16 +361,47 @@ export class SavePatternDialog {
       // Ignore
     }
 
+    const isMasterTrack = type === 'master';
+    const modalTitle = document.getElementById('save-pattern-modal-title');
+    const saveButton = document.getElementById('save-pattern-save-btn');
+    if (modalTitle) {
+      modalTitle.textContent = isMasterTrack ? 'Save Track' : 'Save Pattern';
+    }
+    if (saveButton) {
+      saveButton.textContent = isMasterTrack ? 'Save Track' : 'Save Pattern';
+    }
+
+    const titleInput = document.getElementById('save-pattern-title');
+    const artistInput = document.getElementById('save-pattern-artist');
+    const imageGroup = document.getElementById('save-pattern-image-group');
+    const imageInput = document.getElementById('save-pattern-image');
+    if (titleInput) {
+      titleInput.required = isMasterTrack;
+      titleInput.placeholder = isMasterTrack ? 'Enter track title' : 'e.g., My Awesome Beat';
+    }
+    if (artistInput) {
+      artistInput.required = isMasterTrack;
+      artistInput.placeholder = isMasterTrack
+        ? 'Enter artist name'
+        : 'Leave empty to use your default artist name';
+    }
+    if (imageGroup) {
+      imageGroup.style.display = isMasterTrack ? 'block' : 'none';
+    }
+
     // Show/hide genre dropdown based on pattern type (only for master)
     const genreGroup = document.getElementById('save-pattern-genre-group');
     if (genreGroup) {
-      genreGroup.style.display = type === 'master' ? 'block' : 'none';
+      genreGroup.style.display = isMasterTrack ? 'block' : 'none';
     }
 
     // Clear form
     document.getElementById('save-pattern-title')?.value && (document.getElementById('save-pattern-title').value = '');
     document.getElementById('save-pattern-artist')?.value && (document.getElementById('save-pattern-artist').value = '');
     document.getElementById('save-pattern-version-name')?.value && (document.getElementById('save-pattern-version-name').value = '');
+    if (imageInput) {
+      imageInput.value = '';
+    }
     const genreSelect = document.getElementById('save-pattern-genre');
     if (genreSelect) genreSelect.value = '';
     document.getElementById('save-pattern-public')?.checked && (document.getElementById('save-pattern-public').checked = false);
@@ -400,6 +443,18 @@ export class SavePatternDialog {
       const versionName = document.getElementById('save-pattern-version-name')?.value.trim() || null;
       const genre = document.getElementById('save-pattern-genre')?.value.trim() || null;
       const isPublic = document.getElementById('save-pattern-public')?.checked || false;
+      const imageUrl = document.getElementById('save-pattern-image')?.value.trim() || null;
+
+      if (this.patternType === 'master') {
+        if (!title) {
+          alert('Track title is required.');
+          return;
+        }
+        if (!artistName) {
+          alert('Artist name is required.');
+          return;
+        }
+      }
 
       // Extract raw pattern code (remove metadata if present)
       let rawPattern = this.currentPattern;
@@ -445,6 +500,11 @@ export class SavePatternDialog {
       cleanedPattern = cleanedPattern.replace(/\.+$/, '').trim();
       cleanedPattern = cleanedPattern.replace(/\s+\./g, '.');
 
+      const metadata = {};
+      if (imageUrl) {
+        metadata.imageUrl = imageUrl;
+      }
+
       const patternData = {
         type: this.patternType,
         elementId: this.elementId,
@@ -454,7 +514,7 @@ export class SavePatternDialog {
         versionName,
         genre: this.patternType === 'master' ? genre : null, // Only set genre for master patterns
         isPublic,
-        metadata: {} // Can store additional config here
+        metadata: Object.keys(metadata).length ? metadata : undefined
       };
 
       const savedPattern = await patternsAPI.createPattern(patternData);
@@ -469,7 +529,7 @@ export class SavePatternDialog {
       }
 
       this.hide();
-      alert('Pattern saved successfully!');
+      alert(this.patternType === 'master' ? 'Track saved successfully!' : 'Pattern saved successfully!');
     } catch (error) {
       console.error('Error saving pattern:', error);
       alert('Failed to save pattern: ' + (error.message || 'Unknown error'));
