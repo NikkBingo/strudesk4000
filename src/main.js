@@ -3846,24 +3846,35 @@ class InteractiveSoundApp {
       'G': 'G#',
       'A': 'A#'
     };
+    const flatMap = {
+      'C': 'Db',  // C# = Db
+      'D': 'Eb',  // D# = Eb
+      'F': 'Gb',  // F# = Gb
+      'G': 'Ab',  // G# = Ab
+      'A': 'Bb'   // A# = Bb
+    };
     
-    const handleKeyboardPiano = (e) => {
+    const handleKeyboardPiano = async (e) => {
       const key = e.key.toLowerCase();
       const isLetter = noteMap.hasOwnProperty(key);
       const isNumber = /^[0-9]$/.test(key);
+      const isPlus = key === '+' || key === '='; // + key (may be = on some keyboards)
       
-      // Track pressed keys
-      if (isLetter || isNumber) {
+      // Track pressed keys (including + for appending notes)
+      if (isLetter || isNumber || isPlus) {
         pressedKeys.add(key);
       }
       
-      // If a letter key is pressed, play the note
+      // If a letter key is pressed, update the pattern
       if (isLetter && !e.repeat) {
-        // Determine if shift is pressed for sharp
+        // Determine if shift is pressed for sharp, or ctrl/cmd for flat
         const isSharp = e.shiftKey;
+        const isFlat = e.ctrlKey || e.metaKey; // Support both Ctrl and Cmd (Mac)
         let noteName = noteMap[key];
         if (isSharp && sharpMap.hasOwnProperty(noteName)) {
           noteName = sharpMap[noteName];
+        } else if (isFlat && flatMap.hasOwnProperty(noteName)) {
+          noteName = flatMap[noteName];
         }
         
         // Determine octave (default 3, or number key if pressed)
@@ -3875,7 +3886,7 @@ class InteractiveSoundApp {
           }
         }
         
-        // Only play if audio is ready and not in an input field
+        // Only update if audio is ready and not in an input field
         const activeElement = document.activeElement;
         const isInputField = activeElement && (
           activeElement.tagName === 'INPUT' ||
@@ -3886,17 +3897,59 @@ class InteractiveSoundApp {
         if (soundManager.isAudioReady() && !isInputField) {
           e.preventDefault();
           const note = `${noteName}${octave}`;
-          const pattern = `note("${note}").s("piano")`;
-          soundManager.playStrudelPattern('keyboard-piano', pattern).catch(error => {
-            console.warn('⚠️ Could not play keyboard piano note:', error);
-          });
+          const elementId = 'keyboard-piano';
+          
+          // Check if plus key is also pressed (for appending notes)
+          // If + is in pressedKeys, it means it was pressed before this note key
+          const shouldAppend = pressedKeys.has('+') || pressedKeys.has('=');
+          
+          // Ensure element exists in master
+          if (!soundManager.trackedPatterns.has(elementId)) {
+            const initialPattern = `note("${note}").s("piano")`;
+            await soundManager.saveElementToMaster(elementId, initialPattern, 0.8, 0);
+            // Update master pattern display
+            if (this.updateMasterPatternDisplay) {
+              this.updateMasterPatternDisplay();
+            }
+          } else {
+            // Get existing pattern
+            const trackedEntry = soundManager.trackedPatterns.get(elementId);
+            let existingPattern = trackedEntry?.rawPattern || trackedEntry?.pattern || '';
+            
+            if (shouldAppend && existingPattern) {
+              // Parse existing pattern to extract note() content
+              const noteMatch = existingPattern.match(/note\s*\(\s*["']([^"']+)["']/);
+              if (noteMatch) {
+                const existingNotes = noteMatch[1];
+                const newNotes = `${existingNotes} ${note}`;
+                // Replace the note content
+                existingPattern = existingPattern.replace(
+                  /note\s*\(\s*["']([^"']+)["']/,
+                  `note("${newNotes}"`
+                );
+              } else {
+                // No existing note() found, create new one
+                existingPattern = `note("${note}").s("piano")`;
+              }
+            } else {
+              // Replace with new note
+              existingPattern = `note("${note}").s("piano")`;
+            }
+            
+            // Update the pattern
+            await soundManager.updatePatternInPlace(elementId, existingPattern);
+            // Update master pattern display
+            if (this.updateMasterPatternDisplay) {
+              this.updateMasterPatternDisplay();
+            }
+          }
         }
       }
     };
     
     const handleKeyboardPianoKeyUp = (e) => {
       const key = e.key.toLowerCase();
-      if (noteMap.hasOwnProperty(key) || /^[0-9]$/.test(key)) {
+      if (noteMap.hasOwnProperty(key) || /^[0-9]$/.test(key) || key === '+' || key === '=') {
         pressedKeys.delete(key);
       }
     };
