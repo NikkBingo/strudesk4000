@@ -20,6 +20,8 @@ export class CollabPanel {
     this.statusTimer = null;
     this.boundHandlers = [];
     this.isOpen = false;
+    this.pendingInvites = [];
+    this.recentSessions = [];
   }
 
   init() {
@@ -63,6 +65,8 @@ export class CollabPanel {
     this.overlay.style.display = 'flex';
     lockScroll('collab-modal');
     this.isOpen = true;
+    this.refreshUserInvites();
+    this.refreshRecentSessions();
   }
 
   hide() {
@@ -86,6 +90,15 @@ export class CollabPanel {
   setCurrentUser(user) {
     this.currentUser = user;
     this.updateAuthState();
+    if (user) {
+      this.refreshUserInvites();
+      this.refreshRecentSessions();
+    } else {
+      this.pendingInvites = [];
+      this.recentSessions = [];
+      this.renderPendingInvites();
+      this.renderRecentSessions();
+    }
   }
 
   updateAuthState() {
@@ -125,17 +138,24 @@ export class CollabPanel {
             <button id="collab-create-btn" class="btn-primary" data-collab-requires-auth>Create session</button>
           </div>
         </div>
-        <div class="collab-form-row">
-          <label for="collab-join-input">Join code or ID</label>
-          <div class="collab-form-controls">
-            <input type="text" id="collab-join-input" placeholder="slug-or-session-id" data-collab-requires-auth />
-            <button id="collab-join-btn" class="btn-secondary" data-collab-requires-auth>Join</button>
-          </div>
-        </div>
         <div class="collab-status-message" id="collab-status-message" role="status" aria-live="polite"></div>
+        <section class="collab-recents-section">
+          <div class="collab-list-header">
+            <strong>Recent sessions</strong>
+            <button id="collab-refresh-recents-btn" class="btn-link" type="button">Refresh</button>
+          </div>
+          <div id="collab-recents-list" class="collab-chip-list collab-empty-state">Log in to see your recent collaborations.</div>
+        </section>
+        <section class="collab-invites-section">
+          <div class="collab-list-header">
+            <strong>Invitations for you</strong>
+            <button id="collab-refresh-invites-btn" class="btn-link" type="button">Refresh</button>
+          </div>
+          <div id="collab-my-invites" class="collab-invites-list collab-empty-state">No pending invites.</div>
+        </section>
         <div class="collab-session-details" id="collab-session-details" hidden>
           <div class="collab-session-meta">
-            <div><strong>Share code:</strong> <span id="collab-share-code">—</span></div>
+            <div><strong>Session reference:</strong> <span id="collab-share-code">—</span></div>
             <div><strong>Delay to apply:</strong>
               <input type="range" min="0" max="5000" step="50" id="collab-delay-slider" data-collab-requires-auth />
               <span id="collab-delay-value">0 ms</span>
@@ -146,6 +166,16 @@ export class CollabPanel {
               <span class="collab-cpu-warning" id="collab-cpu-warning"></span>
               <button id="collab-refresh-cpu-btn" class="btn-link" type="button">Refresh stats</button>
             </div>
+          </div>
+          <div class="collab-owner-tools" id="collab-owner-tools" hidden>
+            <div class="collab-list-header">
+              <strong>Invite collaborator by display name</strong>
+            </div>
+            <div class="collab-form-controls">
+              <input type="text" id="collab-invite-name" placeholder="Exact display name" data-collab-requires-auth />
+              <button id="collab-send-invite-btn" class="btn-primary" data-collab-requires-auth>Send invite</button>
+            </div>
+            <small class="collab-helper-text">Names are case-insensitive. Users must accept the invite from their Live Collaboration panel.</small>
           </div>
           <div class="collab-participants">
             <div class="collab-list-header">
@@ -176,6 +206,8 @@ export class CollabPanel {
         </div>
       </div>
     `;
+    this.renderPendingInvites();
+    this.renderRecentSessions();
   }
 
   attachEvents() {
@@ -189,9 +221,6 @@ export class CollabPanel {
     });
     this.root?.querySelector('#collab-create-btn')?.addEventListener('click', () => {
       this.handleCreateSession();
-    });
-    this.root?.querySelector('#collab-join-btn')?.addEventListener('click', () => {
-      this.handleJoinSession();
     });
     this.root?.querySelector('#collab-leave-btn')?.addEventListener('click', () => {
       this.handleLeaveSession();
@@ -213,6 +242,40 @@ export class CollabPanel {
     this.root?.querySelector('#collab-refresh-cpu-btn')?.addEventListener('click', () => {
       if (this.currentSnapshot?.slug) {
         this.fetchCpuStats(this.currentSnapshot.id || this.currentSnapshot.slug);
+      }
+    });
+    this.root?.querySelector('#collab-refresh-invites-btn')?.addEventListener('click', () => {
+      this.refreshUserInvites();
+    });
+    this.root?.querySelector('#collab-refresh-recents-btn')?.addEventListener('click', () => {
+      this.refreshRecentSessions();
+    });
+    this.root?.querySelector('#collab-send-invite-btn')?.addEventListener('click', () => {
+      this.handleSendInvite();
+    });
+    this.root?.querySelector('#collab-my-invites')?.addEventListener('click', (event) => {
+      const acceptTarget = event.target.closest('[data-accept-invite]');
+      if (acceptTarget) {
+        const inviteId = acceptTarget.getAttribute('data-accept-invite');
+        if (inviteId) {
+          this.handleRespondInvite(inviteId, true);
+        }
+        return;
+      }
+      const declineTarget = event.target.closest('[data-decline-invite]');
+      if (declineTarget) {
+        const inviteId = declineTarget.getAttribute('data-decline-invite');
+        if (inviteId) {
+          this.handleRespondInvite(inviteId, false);
+        }
+      }
+    });
+    this.root?.querySelector('#collab-recents-list')?.addEventListener('click', (event) => {
+      const chip = event.target.closest('[data-collab-session-id]');
+      if (!chip) return;
+      const sessionId = chip.getAttribute('data-collab-session-id');
+      if (sessionId) {
+        this.connectToSession(sessionId);
       }
     });
     this.root?.querySelector('#collab-delay-slider')?.addEventListener('input', (event) => {
@@ -274,29 +337,11 @@ export class CollabPanel {
       const snapshot = await collabAPI.createSession(title);
       this.updateSnapshot(snapshot);
       await this.socketClient.joinSession(snapshot.id);
+      await this.refreshRecentSessions();
       this.setStatus('Session created. Share the code with your friends!', STATUS_VARIANTS.success, 4000);
     } catch (error) {
       console.error('Create session failed', error);
       this.setStatus(error.message || 'Failed to create session', STATUS_VARIANTS.error);
-    }
-  }
-
-  async handleJoinSession() {
-    const joinInput = this.root?.querySelector('#collab-join-input');
-    const code = joinInput?.value?.trim();
-    if (!code) {
-      this.setStatus('Enter a session code or ID.', STATUS_VARIANTS.error);
-      return;
-    }
-    try {
-      this.setStatus('Joining session…', STATUS_VARIANTS.info);
-      const snapshot = await collabAPI.joinSession(code);
-      this.updateSnapshot(snapshot);
-      await this.socketClient.joinSession(code);
-      this.setStatus('Joined session.', STATUS_VARIANTS.success, 3000);
-    } catch (error) {
-      console.error('Join session failed', error);
-      this.setStatus(error.message || 'Failed to join session', STATUS_VARIANTS.error);
     }
   }
 
@@ -310,6 +355,7 @@ export class CollabPanel {
       this.currentSnapshot = null;
       this.renderEmptyState();
       this.setStatus('You left the session.', STATUS_VARIANTS.info, 2000);
+      await this.refreshRecentSessions();
     } catch (error) {
       console.error('Leave session failed', error);
       this.setStatus(error.message || 'Failed to leave session', STATUS_VARIANTS.error);
@@ -417,6 +463,10 @@ export class CollabPanel {
     if ((snapshot.applyDelayMs ?? 0) > 0) {
       this.setStatus(`Master updates apply after ${snapshot.applyDelayMs} ms to protect playback.`, STATUS_VARIANTS.info, 3000);
     }
+    const ownerTools = this.root?.querySelector('#collab-owner-tools');
+    if (ownerTools) {
+      ownerTools.hidden = !(this.currentUser && snapshot.owner && this.currentUser.id === snapshot.owner.id);
+    }
     this.renderParticipants(snapshot.participants || []);
     this.renderChannels(snapshot.channels || []);
     const samples = snapshot.cpuStats?.recentServerSamples || [];
@@ -489,10 +539,172 @@ export class CollabPanel {
     }
   }
 
+  async refreshUserInvites() {
+    if (!this.currentUser) {
+      this.pendingInvites = [];
+      this.renderPendingInvites();
+      return;
+    }
+    try {
+      this.pendingInvites = await collabAPI.getPendingInvites();
+      this.renderPendingInvites();
+    } catch (error) {
+      console.error('Failed to load invites:', error);
+      this.setStatus(error.message || 'Failed to load invites', STATUS_VARIANTS.error, 3000);
+    }
+  }
+
+  renderPendingInvites() {
+    const container = this.root?.querySelector('#collab-my-invites');
+    if (!container) return;
+    if (!this.currentUser) {
+      container.classList.add('collab-empty-state');
+      container.innerHTML = 'Login to see your invitations.';
+      return;
+    }
+    if (!this.pendingInvites.length) {
+      container.classList.add('collab-empty-state');
+      container.innerHTML = 'No pending invites.';
+      return;
+    }
+    container.classList.remove('collab-empty-state');
+    container.innerHTML = this.pendingInvites
+      .map((invite) => {
+        const inviter = invite.inviter?.name || 'Someone';
+        const title = invite.session?.title || 'Untitled session';
+        const createdAt = invite.createdAt ? new Date(invite.createdAt).toLocaleString() : '';
+        return `
+          <div class="collab-invite-card">
+            <div class="collab-invite-card__details">
+              <strong>${title}</strong>
+              <span>Invited by ${inviter}</span>
+              <span class="collab-invite-card__meta">${createdAt}</span>
+            </div>
+            <div class="collab-invite-card__actions">
+              <button class="btn-primary btn-small" data-accept-invite="${invite.id}">Accept</button>
+              <button class="btn-ghost btn-small" data-decline-invite="${invite.id}">Decline</button>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  async handleRespondInvite(inviteId, accept) {
+    if (!inviteId) return;
+    try {
+      this.setStatus(accept ? 'Accepting invite…' : 'Declining invite…', STATUS_VARIANTS.info);
+      const result = accept
+        ? await collabAPI.acceptInvite(inviteId)
+        : await collabAPI.declineInvite(inviteId);
+      await this.refreshUserInvites();
+      if (accept && result?.session) {
+        this.updateSnapshot(result.session);
+        await this.socketClient.joinSession(result.session.id);
+        await this.refreshRecentSessions();
+        this.setStatus('Invite accepted. Connected to session.', STATUS_VARIANTS.success, 3000);
+      } else if (accept) {
+        this.setStatus('Invite accepted.', STATUS_VARIANTS.success, 2000);
+      } else {
+        this.setStatus('Invite declined.', STATUS_VARIANTS.info, 2000);
+      }
+    } catch (error) {
+      console.error('Failed to respond to invite:', error);
+      this.setStatus(error.message || 'Failed to respond to invite', STATUS_VARIANTS.error, 3000);
+    }
+  }
+
+  async handleSendInvite() {
+    if (!this.currentSnapshot?.id) {
+      this.setStatus('Start a session before inviting collaborators.', STATUS_VARIANTS.error, 3000);
+      return;
+    }
+    const input = this.root?.querySelector('#collab-invite-name');
+    const displayName = input?.value?.trim();
+    if (!displayName) {
+      this.setStatus('Enter a display name to invite.', STATUS_VARIANTS.error, 2000);
+      return;
+    }
+    try {
+      this.setStatus('Sending invite…', STATUS_VARIANTS.info);
+      await collabAPI.sendInvite(this.currentSnapshot.id, displayName);
+      this.setStatus(`Invitation sent to ${displayName}.`, STATUS_VARIANTS.success, 2500);
+      if (input) {
+        input.value = '';
+      }
+    } catch (error) {
+      console.error('Failed to send invite:', error);
+      this.setStatus(error.message || 'Failed to send invite', STATUS_VARIANTS.error, 3000);
+    }
+  }
+
+  async refreshRecentSessions() {
+    if (!this.currentUser) {
+      this.recentSessions = [];
+      this.renderRecentSessions();
+      return;
+    }
+    try {
+      this.recentSessions = await collabAPI.listRecentSessions();
+      this.renderRecentSessions();
+    } catch (error) {
+      console.error('Failed to fetch recent sessions:', error);
+      this.setStatus(error.message || 'Failed to load recent sessions', STATUS_VARIANTS.error, 3000);
+    }
+  }
+
+  renderRecentSessions() {
+    const list = this.root?.querySelector('#collab-recents-list');
+    if (!list) return;
+    if (!this.currentUser) {
+      list.classList.add('collab-empty-state');
+      list.innerHTML = 'Login to see your recent collaborations.';
+      return;
+    }
+    if (!this.recentSessions.length) {
+      list.classList.add('collab-empty-state');
+      list.innerHTML = 'No recent sessions yet.';
+      return;
+    }
+    list.classList.remove('collab-empty-state');
+    list.innerHTML = this.recentSessions
+      .map((session) => {
+        const updated = session.updatedAt ? new Date(session.updatedAt).toLocaleDateString() : '';
+        return `
+          <button class="collab-chip" data-collab-session-id="${session.id}">
+            <span>${session.title}</span>
+            <span class="collab-chip__meta">${updated}</span>
+          </button>
+        `;
+      })
+      .join('');
+  }
+
+  async connectToSession(sessionId) {
+    if (!sessionId) return;
+    try {
+      this.setStatus('Connecting…', STATUS_VARIANTS.info);
+      const snapshot = await collabAPI.joinSession(sessionId);
+      if (snapshot) {
+        this.updateSnapshot(snapshot);
+        await this.socketClient.joinSession(sessionId);
+        await this.refreshRecentSessions();
+        this.setStatus('Connected to session.', STATUS_VARIANTS.success, 2500);
+      }
+    } catch (error) {
+      console.error('Failed to connect to session:', error);
+      this.setStatus(error.message || 'Failed to connect to session', STATUS_VARIANTS.error, 3000);
+    }
+  }
+
   renderEmptyState() {
     const details = this.root?.querySelector('#collab-session-details');
     if (details) {
       details.hidden = true;
+    }
+    const ownerTools = this.root?.querySelector('#collab-owner-tools');
+    if (ownerTools) {
+      ownerTools.hidden = true;
     }
     const label = this.root?.querySelector('#collab-session-label');
     if (label) {

@@ -13,7 +13,7 @@ datasource db {
 model User {
   id            String   @id @default(uuid())
   email         String   @unique
-  name          String
+  name          String   @unique
   oauthProvider String   @map("oauth_provider") // 'google' | 'github' | 'test' | 'local'
   oauthId       String   @map("oauth_id")
   passwordHash  String?  @map("password_hash")
@@ -37,6 +37,8 @@ model User {
   sessionParticipations SessionParticipant[] @relation("UserSessionParticipations")
   sessionChannels SessionChannel[]       @relation("UserSessionChannels")
   sessionChannelRevisions SessionChannelRevision[] @relation("UserSessionChannelRevisions")
+  invitesSent CollabInvite[] @relation("UserInvitesSent")
+  invitesReceived CollabInvite[] @relation("UserInvitesReceived")
 
   @@unique([oauthProvider, oauthId])
   @@index([verificationToken])
@@ -103,6 +105,7 @@ model CollabSession {
   participants   SessionParticipant[]
   channels       SessionChannel[]
   channelHistory SessionChannelRevision[]
+  invites        CollabInvite[]
 
   @@index([ownerId])
   @@map("collab_sessions")
@@ -148,6 +151,25 @@ model SessionChannel {
 }
 
 model SessionChannelRevision {
+model CollabInvite {
+  id         String   @id @default(uuid())
+  sessionId  String   @map("session_id")
+  inviterId  String   @map("inviter_id")
+  inviteeId  String   @map("invitee_id")
+  status     String   @default("pending")
+  createdAt  DateTime @default(now()) @map("created_at")
+  respondedAt DateTime? @map("responded_at")
+
+  session  CollabSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  inviter  User          @relation("UserInvitesSent", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee  User          @relation("UserInvitesReceived", fields: [inviteeId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, inviteeId])
+  @@index([sessionId])
+  @@index([inviteeId])
+  @@index([inviterId])
+  @@map("collab_invites")
+}
   id            String   @id @default(uuid())
   channelId     String   @map("channel_id")
   sessionId     String   @map("session_id")

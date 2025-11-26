@@ -97,6 +97,29 @@ function toChannelPayload(channel) {
   };
 }
 
+function toInvitePayload(invite) {
+  if (!invite) return null;
+  return {
+    id: invite.id,
+    status: invite.status,
+    createdAt: invite.createdAt,
+    respondedAt: invite.respondedAt,
+    sessionId: invite.sessionId,
+    inviter: invite.inviter && {
+      id: invite.inviter.id,
+      name: invite.inviter.name,
+      artistName: invite.inviter.artistName,
+      avatarUrl: invite.inviter.avatarUrl
+    },
+    session: invite.session && {
+      id: invite.session.id,
+      title: invite.session.title,
+      slug: invite.session.slug,
+      ownerId: invite.session.ownerId
+    }
+  };
+}
+
 function shapeSession(session) {
   if (!session) {
     return null;
@@ -492,6 +515,217 @@ class CollabSessionManager extends EventEmitter {
       data: { applyDelayMs: clamped }
     });
     return this.refreshSessionCache(sessionId);
+  }
+
+  async listUserInvites(userId) {
+    const invites = await prisma.collabInvite.findMany({
+      where: {
+        inviteeId: userId,
+        status: 'pending'
+      },
+      include: {
+        inviter: {
+          select: {
+            id: true,
+            name: true,
+            artistName: true,
+            avatarUrl: true
+          }
+        },
+        session: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            ownerId: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 25
+    });
+    return invites.map(toInvitePayload);
+  }
+
+  async listRecentSessions(userId, limit = 10) {
+    const sessions = await prisma.collabSession.findMany({
+      where: {
+        participants: {
+          some: { userId }
+        }
+      },
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        updatedAt: true,
+        owner: {
+          select: {
+            id: true,
+            name: true,
+            artistName: true,
+            avatarUrl: true
+          }
+        }
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: limit
+    });
+    return sessions;
+  }
+
+  async sendInvite(sessionId, inviterId, displayName) {
+    sessionId = await this.requireSessionId(sessionId);
+    const session = await prisma.collabSession.findUnique({
+      where: { id: sessionId },
+      select: { ownerId: true }
+    });
+    if (!session) {
+      throw new Error('Session not found');
+    }
+    if (session.ownerId !== inviterId) {
+      throw new Error('Only the session owner can send invites');
+    }
+    const trimmed = displayName?.trim();
+    if (!trimmed) {
+      throw new Error('Display name is required');
+    }
+    const invitee = await prisma.user.findFirst({
+      where: {
+        name: {
+          equals: trimmed,
+          mode: 'insensitive'
+        }
+      },
+      select: {
+        id: true,
+        name: true,
+        artistName: true,
+        avatarUrl: true
+      }
+    });
+    if (!invitee) {
+      throw new Error('User not found');
+    }
+    if (invitee.id === inviterId) {
+      throw new Error('You cannot invite yourself');
+    }
+    const participant = await prisma.sessionParticipant.findUnique({
+      where: {
+        sessionId_userId: {
+          sessionId,
+          userId: invitee.id
+        }
+      }
+    });
+    if (participant) {
+      throw new Error('User is already participating in this session');
+    }
+
+    const invite = await prisma.collabInvite.upsert({
+      where: {
+        sessionId_inviteeId: {
+          sessionId,
+          inviteeId: invitee.id
+        }
+      },
+      create: {
+        sessionId,
+        inviterId,
+        inviteeId: invitee.id
+      },
+      update: {
+        inviterId,
+        status: 'pending',
+        respondedAt: null
+      },
+      include: {
+        inviter: {
+          select: {
+            id: true,
+            name: true,
+            artistName: true,
+            avatarUrl: true
+          }
+        },
+        session: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            ownerId: true
+          }
+        }
+      }
+    });
+    return toInvitePayload(invite);
+  }
+
+  async respondToInvite(inviteId, userId, action) {
+    const invite = await prisma.collabInvite.findUnique({
+      where: { id: inviteId },
+      include: {
+        session: {
+          select: {
+            id: true,
+            slug: true,
+            title: true
+          }
+        },
+        inviter: {
+          select: {
+            id: true,
+            name: true,
+            artistName: true,
+            avatarUrl: true
+          }
+        }
+      }
+    });
+    if (!invite) {
+      throw new Error('Invite not found');
+    }
+    if (invite.inviteeId !== userId) {
+      throw new Error('Not authorized to respond to this invite');
+    }
+    if (invite.status !== 'pending') {
+      return { invite: toInvitePayload(invite), session: null };
+    }
+
+    const status = action === 'accept' ? 'accepted' : 'declined';
+    const updatedInvite = await prisma.collabInvite.update({
+      where: { id: inviteId },
+      data: {
+        status,
+        respondedAt: new Date()
+      },
+      include: {
+        inviter: {
+          select: {
+            id: true,
+            name: true,
+            artistName: true,
+            avatarUrl: true
+          }
+        },
+        session: {
+          select: {
+            id: true,
+            slug: true,
+            title: true
+          }
+        }
+      }
+    });
+
+    let snapshot = null;
+    if (status === 'accepted') {
+      snapshot = await this.joinSession(invite.sessionId, userId);
+    }
+    return {
+      invite: toInvitePayload(updatedInvite),
+      session: snapshot
+    };
   }
 }
 

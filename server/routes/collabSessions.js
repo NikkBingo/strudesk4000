@@ -18,6 +18,54 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
+router.get('/invites', requireAuth, async (req, res) => {
+  try {
+    const invites = await collabSessionManager.listUserInvites(req.user.id);
+    res.json(invites);
+  } catch (error) {
+    console.error('Error fetching invites:', error);
+    res.status(500).json({ error: 'Failed to fetch invites' });
+  }
+});
+
+router.post('/invites/:inviteId/accept', requireAuth, async (req, res) => {
+  try {
+    const result = await collabSessionManager.respondToInvite(
+      req.params.inviteId,
+      req.user.id,
+      'accept'
+    );
+    res.json(result);
+  } catch (error) {
+    console.error('Error accepting invite:', error);
+    res.status(400).json({ error: error.message || 'Failed to accept invite' });
+  }
+});
+
+router.post('/invites/:inviteId/decline', requireAuth, async (req, res) => {
+  try {
+    const result = await collabSessionManager.respondToInvite(
+      req.params.inviteId,
+      req.user.id,
+      'decline'
+    );
+    res.json(result);
+  } catch (error) {
+    console.error('Error declining invite:', error);
+    res.status(400).json({ error: error.message || 'Failed to decline invite' });
+  }
+});
+
+router.get('/recent', requireAuth, async (req, res) => {
+  try {
+    const sessions = await collabSessionManager.listRecentSessions(req.user.id);
+    res.json(sessions);
+  } catch (error) {
+    console.error('Error fetching recent sessions:', error);
+    res.status(500).json({ error: 'Failed to fetch recent sessions' });
+  }
+});
+
 router.get('/:sessionId', requireAuth, async (req, res) => {
   try {
     const snapshot = await collabSessionManager.getSessionSnapshot(req.params.sessionId, {
@@ -30,6 +78,22 @@ router.get('/:sessionId', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching session snapshot:', error);
     res.status(500).json({ error: 'Failed to fetch session' });
+  }
+});
+
+router.post('/:sessionId/invite', requireAuth, async (req, res) => {
+  try {
+    const invite = await collabSessionManager.sendInvite(
+      req.params.sessionId,
+      req.user.id,
+      req.body?.displayName
+    );
+    res.status(201).json(invite);
+  } catch (error) {
+    console.error('Error sending invite:', error);
+    const message = error.message || 'Failed to send invite';
+    const status = message.includes('not found') ? 404 : message.includes('owner') ? 403 : 400;
+    res.status(status).json({ error: message });
   }
 });
 
