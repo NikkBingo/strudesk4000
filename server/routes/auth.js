@@ -121,6 +121,10 @@ router.post('/register', async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
+    const trimmedName = name?.trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Display name is required' });
+    }
 
     const normalizedEmail = email.toLowerCase().trim();
     const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
@@ -128,11 +132,16 @@ router.post('/register', async (req, res) => {
       return res.status(409).json({ error: 'Email is already registered' });
     }
 
+    const existingDisplayName = await prisma.user.findUnique({ where: { name: trimmedName } });
+    if (existingDisplayName) {
+      return res.status(409).json({ error: 'Display name is already taken' });
+    }
+
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await prisma.user.create({
       data: {
         email: normalizedEmail,
-        name: name?.trim() || normalizedEmail.split('@')[0],
+        name: trimmedName,
         oauthProvider: 'local',
         oauthId: normalizedEmail,
         passwordHash,
@@ -172,6 +181,9 @@ router.post('/register', async (req, res) => {
       const target = error.meta?.target || [];
       if (target.includes('email')) {
         return res.status(409).json({ error: 'Email is already registered' });
+      }
+      if (target.includes('name')) {
+        return res.status(409).json({ error: 'Display name is already taken' });
       }
     }
     

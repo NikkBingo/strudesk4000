@@ -284,6 +284,33 @@ export const collabAPI = {
     });
   },
 
+  async getPendingInvites() {
+    return apiRequest('/collab-sessions/invites');
+  },
+
+  async acceptInvite(inviteId) {
+    return apiRequest(`/collab-sessions/invites/${encodeURIComponent(inviteId)}/accept`, {
+      method: 'POST'
+    });
+  },
+
+  async declineInvite(inviteId) {
+    return apiRequest(`/collab-sessions/invites/${encodeURIComponent(inviteId)}/decline`, {
+      method: 'POST'
+    });
+  },
+
+  async listRecentSessions() {
+    return apiRequest('/collab-sessions/recent');
+  },
+
+  async sendInvite(sessionId, displayName) {
+    return apiRequest(`/collab-sessions/${encodeURIComponent(sessionId)}/invite`, {
+      method: 'POST',
+      body: JSON.stringify({ displayName })
+    });
+  },
+
   async saveChannel(sessionId, channelPayload) {
     return apiRequest(`/collab-sessions/${encodeURIComponent(sessionId)}/channels`, {
       method: 'POST',
