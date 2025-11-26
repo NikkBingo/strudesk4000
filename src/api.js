@@ -304,10 +304,10 @@ export const collabAPI = {
     return apiRequest('/collab-sessions/recent');
   },
 
-  async sendInvite(sessionId, displayName) {
+  async sendInvites(sessionId, inviteeIds) {
     return apiRequest(`/collab-sessions/${encodeURIComponent(sessionId)}/invite`, {
       method: 'POST',
-      body: JSON.stringify({ displayName })
+      body: JSON.stringify({ inviteeIds })
     });
   },
 
