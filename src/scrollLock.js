@@ -3,6 +3,8 @@ const activeReasons = new Set();
 function applyLockState() {
   const body = document.body;
   if (!body) {
+    // If body isn't ready yet, try again on next tick
+    setTimeout(applyLockState, 0);
     return;
   }
   if (activeReasons.size > 0) {
