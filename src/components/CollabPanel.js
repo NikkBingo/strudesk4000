@@ -1,4 +1,4 @@
-import { collabAPI } from '../api.js';
+import { collabAPI, usersAPI } from '../api.js';
 import { getStrudelEditorValue } from '../strudelReplEditor.js';
 import { collaborationClient } from '../collaboration/socketClient.js';
 import { lockScroll, unlockScroll } from '../scrollLock.js';
@@ -22,6 +22,9 @@ export class CollabPanel {
     this.isOpen = false;
     this.pendingInvites = [];
     this.recentSessions = [];
+    this.inviteSearchResults = [];
+    this.selectedInvitees = [];
+    this.inviteSearchTimeout = null;
   }
 
   init() {
@@ -93,11 +96,17 @@ export class CollabPanel {
     if (user) {
       this.refreshUserInvites();
       this.refreshRecentSessions();
+      this.renderInviteSearchResults();
+      this.renderSelectedInvitees();
     } else {
       this.pendingInvites = [];
       this.recentSessions = [];
+      this.inviteSearchResults = [];
+      this.selectedInvitees = [];
       this.renderPendingInvites();
       this.renderRecentSessions();
+      this.renderInviteSearchResults();
+      this.renderSelectedInvitees();
     }
   }
 
@@ -169,13 +178,18 @@ export class CollabPanel {
           </div>
           <div class="collab-owner-tools" id="collab-owner-tools" hidden>
             <div class="collab-list-header">
-              <strong>Invite collaborator by display name</strong>
+              <strong>Invite collaborators (max 5 at a time)</strong>
             </div>
-            <div class="collab-form-controls">
-              <input type="text" id="collab-invite-name" placeholder="Exact display name" data-collab-requires-auth />
-              <button id="collab-send-invite-btn" class="btn-primary" data-collab-requires-auth>Send invite</button>
+            <div class="collab-invite-search">
+              <input type="text" id="collab-invite-search" placeholder="Search users by display name or email..." data-collab-requires-auth />
+              <div id="collab-invite-results" class="collab-invite-results collab-empty-state">Start typing to search users.</div>
+              <div id="collab-selected-invitees" class="collab-selected-invitees collab-empty-state">No users selected yet.</div>
+              <small class="collab-helper-text" id="collab-selected-count">Selected 0 of 5 slots.</small>
+              <div class="collab-channel-actions">
+                <button id="collab-send-invite-btn" class="btn-primary" data-collab-requires-auth>Send invites</button>
+              </div>
             </div>
-            <small class="collab-helper-text">Names are case-insensitive. Users must accept the invite from their Live Collaboration panel.</small>
+            <small class="collab-helper-text">Selected users will receive an invite in their Live Collaboration panel.</small>
           </div>
           <div class="collab-participants">
             <div class="collab-list-header">
@@ -208,6 +222,8 @@ export class CollabPanel {
     `;
     this.renderPendingInvites();
     this.renderRecentSessions();
+    this.renderInviteSearchResults();
+    this.renderSelectedInvitees();
   }
 
   attachEvents() {
@@ -249,6 +265,25 @@ export class CollabPanel {
     });
     this.root?.querySelector('#collab-refresh-recents-btn')?.addEventListener('click', () => {
       this.refreshRecentSessions();
+    });
+    this.root?.querySelector('#collab-invite-search')?.addEventListener('input', (event) => {
+      const value = event.target.value.trim();
+      this.scheduleInviteSearch(value);
+    });
+    this.root?.querySelector('#collab-invite-results')?.addEventListener('click', (event) => {
+      const target = event.target.closest('[data-add-invitee]');
+      if (!target) return;
+      const userId = target.getAttribute('data-add-invitee');
+      const user = this.inviteSearchResults.find((u) => u.id === userId);
+      if (user) {
+        this.addInvitee(user);
+      }
+    });
+    this.root?.querySelector('#collab-selected-invitees')?.addEventListener('click', (event) => {
+      const target = event.target.closest('[data-remove-invitee]');
+      if (!target) return;
+      const userId = target.getAttribute('data-remove-invitee');
+      this.removeInvitee(userId);
     });
     this.root?.querySelector('#collab-send-invite-btn')?.addEventListener('click', () => {
       this.handleSendInvite();
@@ -619,19 +654,18 @@ export class CollabPanel {
       this.setStatus('Start a session before inviting collaborators.', STATUS_VARIANTS.error, 3000);
       return;
     }
-    const input = this.root?.querySelector('#collab-invite-name');
-    const displayName = input?.value?.trim();
-    if (!displayName) {
-      this.setStatus('Enter a display name to invite.', STATUS_VARIANTS.error, 2000);
+    if (!this.selectedInvitees.length) {
+      this.setStatus('Select up to five users to invite.', STATUS_VARIANTS.error, 2500);
       return;
     }
     try {
-      this.setStatus('Sending invite…', STATUS_VARIANTS.info);
-      await collabAPI.sendInvite(this.currentSnapshot.id, displayName);
-      this.setStatus(`Invitation sent to ${displayName}.`, STATUS_VARIANTS.success, 2500);
-      if (input) {
-        input.value = '';
-      }
+      this.setStatus('Sending invites…', STATUS_VARIANTS.info);
+      const ids = this.selectedInvitees.map((user) => user.id);
+      await collabAPI.sendInvites(this.currentSnapshot.id, ids);
+      this.selectedInvitees = [];
+      this.renderSelectedInvitees();
+      this.setStatus(`Invitations sent to ${ids.length} user${ids.length > 1 ? 's' : ''}.`, STATUS_VARIANTS.success, 2500);
+      this.refreshUserInvites();
     } catch (error) {
       console.error('Failed to send invite:', error);
       this.setStatus(error.message || 'Failed to send invite', STATUS_VARIANTS.error, 3000);
@@ -675,6 +709,105 @@ export class CollabPanel {
             <span>${session.title}</span>
             <span class="collab-chip__meta">${updated}</span>
           </button>
+        `;
+      })
+      .join('');
+  }
+
+  scheduleInviteSearch(query) {
+    if (this.inviteSearchTimeout) {
+      clearTimeout(this.inviteSearchTimeout);
+    }
+    if (!query) {
+      this.inviteSearchResults = [];
+      this.renderInviteSearchResults();
+      return;
+    }
+    this.inviteSearchTimeout = setTimeout(() => {
+      this.performInviteSearch(query);
+    }, 250);
+  }
+
+  async performInviteSearch(query) {
+    try {
+      const users = await usersAPI.listUsers(query, 10);
+      this.inviteSearchResults = users.filter((user) => user.id !== this.currentUser?.id);
+      this.renderInviteSearchResults();
+    } catch (error) {
+      console.error('Invite search failed:', error);
+      this.inviteSearchResults = [];
+      this.renderInviteSearchResults('Failed to search users. Try again.');
+    }
+  }
+
+  renderInviteSearchResults(message) {
+    const container = this.root?.querySelector('#collab-invite-results');
+    if (!container) return;
+    if (message) {
+      container.classList.add('collab-empty-state');
+      container.innerHTML = message;
+      return;
+    }
+    if (!this.inviteSearchResults.length) {
+      container.classList.add('collab-empty-state');
+      container.innerHTML = 'Start typing to search users.';
+      return;
+    }
+    container.classList.remove('collab-empty-state');
+    container.innerHTML = this.inviteSearchResults
+      .map((user) => {
+        const disabled = this.selectedInvitees.some((selected) => selected.id === user.id) || this.selectedInvitees.length >= 5;
+        const displayName = user.artistName?.trim() || user.name || user.email || 'Unnamed';
+        return `
+          <button class="collab-invite-result${disabled ? ' disabled' : ''}" data-add-invitee="${user.id}" ${disabled ? 'disabled' : ''}>
+            <span>${displayName}</span>
+            <span class="collab-invite-result__meta">${user.email || ''}</span>
+          </button>
+        `;
+      })
+      .join('');
+  }
+
+  addInvitee(user) {
+    if (this.selectedInvitees.length >= 5) {
+      this.setStatus('You can invite up to five users at a time.', STATUS_VARIANTS.error, 2500);
+      return;
+    }
+    if (this.selectedInvitees.some((invitee) => invitee.id === user.id)) {
+      return;
+    }
+    this.selectedInvitees.push(user);
+    this.renderSelectedInvitees();
+    this.renderInviteSearchResults();
+  }
+
+  removeInvitee(userId) {
+    this.selectedInvitees = this.selectedInvitees.filter((invitee) => invitee.id !== userId);
+    this.renderSelectedInvitees();
+    this.renderInviteSearchResults();
+  }
+
+  renderSelectedInvitees() {
+    const container = this.root?.querySelector('#collab-selected-invitees');
+    const countLabel = this.root?.querySelector('#collab-selected-count');
+    if (countLabel) {
+      countLabel.textContent = `Selected ${this.selectedInvitees.length} of 5 slots.`;
+    }
+    if (!container) return;
+    if (!this.selectedInvitees.length) {
+      container.classList.add('collab-empty-state');
+      container.innerHTML = 'No users selected yet.';
+      return;
+    }
+    container.classList.remove('collab-empty-state');
+    container.innerHTML = this.selectedInvitees
+      .map((invitee) => {
+        const displayName = invitee.artistName?.trim() || invitee.name || invitee.email || 'Unnamed';
+        return `
+          <span class="collab-selected-invitee">
+            <span>${displayName}</span>
+            <button type="button" data-remove-invitee="${invitee.id}" aria-label="Remove ${displayName}">&times;</button>
+          </span>
         `;
       })
       .join('');

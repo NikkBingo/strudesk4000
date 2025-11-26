@@ -83,12 +83,12 @@ router.get('/:sessionId', requireAuth, async (req, res) => {
 
 router.post('/:sessionId/invite', requireAuth, async (req, res) => {
   try {
-    const invite = await collabSessionManager.sendInvite(
+    const invites = await collabSessionManager.sendInvites(
       req.params.sessionId,
       req.user.id,
-      req.body?.displayName
+      req.body?.inviteeIds || []
     );
-    res.status(201).json(invite);
+    res.status(201).json({ invites });
   } catch (error) {
     console.error('Error sending invite:', error);
     const message = error.message || 'Failed to send invite';

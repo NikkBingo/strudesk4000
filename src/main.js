@@ -3349,6 +3349,9 @@ function drawSpiralSegment(ctx, options) {
   ctx.globalAlpha = 1;
 }
 
+const DESKTOP_DEFAULT_ELEMENTS = 4;
+const MOBILE_DEFAULT_ELEMENTS = 2;
+
 class InteractiveSoundApp {
   constructor() {
     interactiveSoundAppInstance = this;
@@ -3357,7 +3360,11 @@ class InteractiveSoundApp {
     this.currentEditingElementId = null;
     this.mutedElements = new Set(); // Track muted elements
     this.soloedElements = new Set(); // Track soloed elements
-    this.elementCounter = 4; // Start from 5 for new elements (4 default elements)
+    this.isMobileView = typeof window !== 'undefined'
+      ? window.matchMedia('(max-width: 640px)').matches
+      : false;
+    this.initialElementCount = this.isMobileView ? MOBILE_DEFAULT_ELEMENTS : DESKTOP_DEFAULT_ELEMENTS;
+    this.elementCounter = this.initialElementCount; // Start from number of visible elements
     
     // Master pattern system
     this.masterActive = false;
@@ -3433,6 +3440,83 @@ class InteractiveSoundApp {
     this.collabUnsubscribers = [];
     this.masterUpdateQueue = [];
     this.masterUpdateTimer = null;
+
+    if (this.isMobileView) {
+      this.limitInitialElementsForMobile();
+    }
+  }
+
+  limitInitialElementsForMobile() {
+    const container = document.querySelector('.elements-container');
+    if (container) {
+      const elements = Array.from(container.querySelectorAll('.sound-element'));
+      elements.slice(this.initialElementCount).forEach(el => el.remove());
+    }
+    if (Array.isArray(soundConfig.elements) && soundConfig.elements.length > this.initialElementCount) {
+      soundConfig.elements.splice(this.initialElementCount);
+    }
+  }
+
+  updateMobileOrientationLock() {
+    const orientation = screen?.orientation;
+    if (!this.isMobileView || !orientation || typeof orientation.lock !== 'function') {
+      return;
+    }
+    if (this.chaospadEnabled) {
+      orientation.lock('portrait').catch(() => {});
+    } else if (typeof orientation.unlock === 'function') {
+      orientation.unlock();
+    }
+  }
+
+  toggleChaospadTiltPanel(visible) {
+    const panel = document.getElementById('chaospad-tilt-panel');
+    const toggle = document.getElementById('chaospad-tilt-toggle');
+    if (!panel || !toggle) return;
+    if (visible) {
+      panel.classList.add('visible');
+      toggle.disabled = false;
+      this.updateTiltSliderUI();
+    } else {
+      panel.classList.remove('visible', 'open');
+      toggle.classList.remove('open');
+      toggle.disabled = true;
+    }
+  }
+
+  updateTiltSliderUI() {
+    const xSlider = document.getElementById('chaospad-tilt-x');
+    const ySlider = document.getElementById('chaospad-tilt-y');
+    const xLabel = document.getElementById('chaospad-tilt-x-value');
+    const yLabel = document.getElementById('chaospad-tilt-y-value');
+    if (!xSlider || !ySlider) return;
+    if (xLabel) xLabel.textContent = `${xSlider.value}°`;
+    if (yLabel) yLabel.textContent = `${ySlider.value}°`;
+  }
+
+  toggleChaospadTiltPanel(visible) {
+    const panel = document.getElementById('chaospad-tilt-panel');
+    const toggle = document.getElementById('chaospad-tilt-toggle');
+    if (!panel || !toggle) return;
+    if (visible) {
+      panel.classList.add('visible');
+      toggle.disabled = false;
+      this.updateTiltSliderUI();
+    } else {
+      panel.classList.remove('visible', 'open');
+      toggle.classList.remove('open');
+      toggle.disabled = true;
+    }
+  }
+
+  updateTiltSliderUI() {
+    const xSlider = document.getElementById('chaospad-tilt-x');
+    const ySlider = document.getElementById('chaospad-tilt-y');
+    const xLabel = document.getElementById('chaospad-tilt-x-value');
+    const yLabel = document.getElementById('chaospad-tilt-y-value');
+    if (!xSlider || !ySlider) return;
+    if (xLabel) xLabel.textContent = `${xSlider.value}°`;
+    if (yLabel) yLabel.textContent = `${ySlider.value}°`;
   }
 
   /**
@@ -4176,6 +4260,8 @@ class InteractiveSoundApp {
       chaospadCheckbox.addEventListener('change', async (e) => {
         this.chaospadEnabled = e.target.checked;
         console.log(`🎛️ Chaospad ${this.chaospadEnabled ? 'enabled' : 'disabled'}`);
+        this.updateMobileOrientationLock();
+        this.toggleChaospadTiltPanel(this.chaospadEnabled);
         
         // Update cursor style
         if (this.masterPunchcardCanvas) {
@@ -4250,6 +4336,7 @@ class InteractiveSoundApp {
     });
 
     this.updateChaospadInputMode();
+    this.toggleChaospadTiltPanel(this.chaospadEnabled);
   }
 
   getCurrentFullscreenElement() {
@@ -7421,7 +7508,7 @@ class InteractiveSoundApp {
         const elementNumber = parseInt(elementId.replace('element-', ''));
         
         // Remove dynamically created elements (element-5 and above)
-        if (elementNumber > 4) {
+        if (elementNumber > this.initialElementCount) {
           console.log(`🗑️ Removing dynamically created element: ${elementId}`);
           element.remove();
         }
@@ -7429,7 +7516,7 @@ class InteractiveSoundApp {
     });
     
     // Reset element counter to initial state
-    this.elementCounter = 4;
+    this.elementCounter = this.initialElementCount;
     
     // Clear ALL localStorage (complete cache clear)
     console.log('🗑️ Clearing all localStorage...');

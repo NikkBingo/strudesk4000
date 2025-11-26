@@ -574,7 +574,7 @@ class CollabSessionManager extends EventEmitter {
     return sessions;
   }
 
-  async sendInvite(sessionId, inviterId, displayName) {
+  async sendInvites(sessionId, inviterId, inviteeIds = []) {
     sessionId = await this.requireSessionId(sessionId);
     const session = await prisma.collabSession.findUnique({
       where: { id: sessionId },
@@ -586,17 +586,16 @@ class CollabSessionManager extends EventEmitter {
     if (session.ownerId !== inviterId) {
       throw new Error('Only the session owner can send invites');
     }
-    const trimmed = displayName?.trim();
-    if (!trimmed) {
-      throw new Error('Display name is required');
+
+    const uniqueIds = Array.isArray(inviteeIds)
+      ? [...new Set(inviteeIds.filter(Boolean))].slice(0, 5)
+      : [];
+    if (!uniqueIds.length) {
+      throw new Error('Select at least one user to invite');
     }
-    const invitee = await prisma.user.findFirst({
-      where: {
-        name: {
-          equals: trimmed,
-          mode: 'insensitive'
-        }
-      },
+
+    const users = await prisma.user.findMany({
+      where: { id: { in: uniqueIds } },
       select: {
         id: true,
         name: true,
@@ -604,61 +603,70 @@ class CollabSessionManager extends EventEmitter {
         avatarUrl: true
       }
     });
-    if (!invitee) {
-      throw new Error('User not found');
-    }
-    if (invitee.id === inviterId) {
-      throw new Error('You cannot invite yourself');
-    }
-    const participant = await prisma.sessionParticipant.findUnique({
-      where: {
-        sessionId_userId: {
-          sessionId,
-          userId: invitee.id
-        }
-      }
-    });
-    if (participant) {
-      throw new Error('User is already participating in this session');
+    if (!users.length) {
+      throw new Error('No matching users found');
     }
 
-    const invite = await prisma.collabInvite.upsert({
-      where: {
-        sessionId_inviteeId: {
-          sessionId,
-          inviteeId: invitee.id
+    const invites = [];
+    for (const invitee of users) {
+      if (invitee.id === inviterId) {
+        continue;
+      }
+      const participant = await prisma.sessionParticipant.findUnique({
+        where: {
+          sessionId_userId: {
+            sessionId,
+            userId: invitee.id
+          }
         }
-      },
-      create: {
-        sessionId,
-        inviterId,
-        inviteeId: invitee.id
-      },
-      update: {
-        inviterId,
-        status: 'pending',
-        respondedAt: null
-      },
-      include: {
-        inviter: {
-          select: {
-            id: true,
-            name: true,
-            artistName: true,
-            avatarUrl: true
+      });
+      if (participant) {
+        continue;
+      }
+
+      const invite = await prisma.collabInvite.upsert({
+        where: {
+          sessionId_inviteeId: {
+            sessionId,
+            inviteeId: invitee.id
           }
         },
-        session: {
-          select: {
-            id: true,
-            title: true,
-            slug: true,
-            ownerId: true
+        create: {
+          sessionId,
+          inviterId,
+          inviteeId: invitee.id
+        },
+        update: {
+          inviterId,
+          status: 'pending',
+          respondedAt: null
+        },
+        include: {
+          inviter: {
+            select: {
+              id: true,
+              name: true,
+              artistName: true,
+              avatarUrl: true
+            }
+          },
+          session: {
+            select: {
+              id: true,
+              title: true,
+              slug: true,
+              ownerId: true
+            }
           }
         }
-      }
-    });
-    return toInvitePayload(invite);
+      });
+      invites.push(toInvitePayload(invite));
+    }
+
+    if (!invites.length) {
+      throw new Error('No eligible users to invite');
+    }
+    return invites;
   }
 
   async respondToInvite(inviteId, userId, action) {

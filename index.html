@@ -348,7 +348,10 @@
         <div id="master-punchcard" class="punchcard-grid">
           <canvas id="master-punchcard-canvas" aria-label="Master visualizer"></canvas>
           <div class="punchcard-placeholder">
+          <div class="punchcard-logo-placeholder">
+            <img src="/assets/img/strudesk4000logo.png" alt="Strudesk 4000 logo" class="punchcard-logo-img" />
             <div class="punchcard-text brand-font brand-logo punchcard-logo">STRUDESK 4000</div>
+          </div>
           </div>
         </div>
         <div class="chaospad-control">
@@ -356,6 +359,21 @@
             <input type="checkbox" id="chaospad-checkbox" class="chaospad-checkbox">
             <span>Chaospad</span>
           </label>
+            <button type="button" class="chaospad-tilt-toggle" id="chaospad-tilt-toggle" disabled>
+              Tilt Controls <span class="tilt-toggle-icon">▼</span>
+            </button>
+            <div class="chaospad-tilt-panel" id="chaospad-tilt-panel">
+              <div class="tilt-slider">
+                <label for="chaospad-tilt-x">X tilt</label>
+                <input type="range" id="chaospad-tilt-x" min="-45" max="45" value="0" step="1">
+                <span class="tilt-value" id="chaospad-tilt-x-value">0°</span>
+              </div>
+              <div class="tilt-slider">
+                <label for="chaospad-tilt-y">Y tilt</label>
+                <input type="range" id="chaospad-tilt-y" min="-45" max="45" value="0" step="1">
+                <span class="tilt-value" id="chaospad-tilt-y-value">0°</span>
+              </div>
+            </div>
         </div>
       </div>
       <h2>Master</h2>
