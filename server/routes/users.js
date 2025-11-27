@@ -23,7 +23,31 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Cannot update another user\'s profile' });
     }
 
-    const { avatarUrl, artistName, socialLinks, profileCompleted, name } = req.body;
+    const {
+      avatarUrl,
+      artistName,
+      socialLinks,
+      profileCompleted,
+      name,
+      firstName,
+      lastName,
+      birthDate,
+      city,
+      country
+    } = req.body;
+
+    let parsedBirthDate;
+    if (birthDate !== undefined) {
+      if (birthDate === null || birthDate === '') {
+        parsedBirthDate = null;
+      } else {
+        const dateValue = new Date(birthDate);
+        if (Number.isNaN(dateValue.getTime())) {
+          return res.status(400).json({ error: 'Invalid birth date format' });
+        }
+        parsedBirthDate = dateValue;
+      }
+    }
 
     const updatedUser = await prisma.user.update({
       where: { id: req.params.id },
@@ -32,12 +56,22 @@ router.put('/:id', requireAuth, async (req, res) => {
         ...(artistName !== undefined && { artistName }),
         ...(socialLinks !== undefined && { socialLinks }),
         ...(profileCompleted !== undefined && { profileCompleted: !!profileCompleted }),
-        ...(name !== undefined && { name })
+        ...(name !== undefined && { name }),
+        ...(firstName !== undefined && { firstName }),
+        ...(lastName !== undefined && { lastName }),
+        ...(birthDate !== undefined && { birthDate: parsedBirthDate }),
+        ...(city !== undefined && { city }),
+        ...(country !== undefined && { country })
       },
       select: {
         id: true,
         email: true,
         name: true,
+        firstName: true,
+        lastName: true,
+        birthDate: true,
+        city: true,
+        country: true,
         oauthProvider: true,
         avatarUrl: true,
         artistName: true,
@@ -74,6 +108,11 @@ router.get('/', async (req, res) => {
       select: {
         id: true,
         name: true,
+        firstName: true,
+        lastName: true,
+        birthDate: true,
+        city: true,
+        country: true,
         email: true,
         avatarUrl: true,
         artistName: true,
@@ -145,6 +184,11 @@ router.get('/admin/all', requireAdmin, async (req, res) => {
       select: {
         id: true,
         name: true,
+        firstName: true,
+        lastName: true,
+        birthDate: true,
+        city: true,
+        country: true,
         email: true,
         avatarUrl: true,
         artistName: true,
@@ -216,6 +260,11 @@ router.get('/:id', async (req, res) => {
         id: true,
         email: true,
         name: true,
+        firstName: true,
+        lastName: true,
+        birthDate: true,
+        city: true,
+        country: true,
         oauthProvider: true,
         avatarUrl: true,
         artistName: true,

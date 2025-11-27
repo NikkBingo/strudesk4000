@@ -95,6 +95,39 @@ export class UserProfile {
                 </div>
               </div>
 
+              <div class="user-profile-optional">
+                <div class="user-profile-optional-header">
+                  <h3>Personal details (optional)</h3>
+                  <p>These details stay private and help us personalize your experience.</p>
+                </div>
+                <div class="user-profile-optional-grid">
+                  <div class="form-group user-profile-email-field">
+                    <label>Email</label>
+                    <div class="user-profile-email" id="profile-email-display">—</div>
+                  </div>
+                  <div class="form-group">
+                    <label for="profile-first-name">First name</label>
+                    <input type="text" id="profile-first-name" placeholder="First name" />
+                  </div>
+                  <div class="form-group">
+                    <label for="profile-last-name">Last name</label>
+                    <input type="text" id="profile-last-name" placeholder="Last name" />
+                  </div>
+                  <div class="form-group">
+                    <label for="profile-birth-date">Birth date</label>
+                    <input type="date" id="profile-birth-date" />
+                  </div>
+                  <div class="form-group">
+                    <label for="profile-city">City</label>
+                    <input type="text" id="profile-city" placeholder="City" />
+                  </div>
+                  <div class="form-group">
+                    <label for="profile-country">Country</label>
+                    <input type="text" id="profile-country" placeholder="Country" />
+                  </div>
+                </div>
+              </div>
+
               <div class="user-profile-modal-footer">
                 <button
                   type="button"
@@ -278,6 +311,45 @@ export class UserProfile {
         displayJoined.textContent = 'Unknown';
       }
 
+      const emailDisplay = document.getElementById('profile-email-display');
+      if (emailDisplay) {
+        emailDisplay.textContent = this.user.email || 'Not set';
+      }
+
+      const firstNameInput = document.getElementById('profile-first-name');
+      if (firstNameInput) {
+        firstNameInput.value = this.user.firstName || '';
+      }
+
+      const lastNameInput = document.getElementById('profile-last-name');
+      if (lastNameInput) {
+        lastNameInput.value = this.user.lastName || '';
+      }
+
+      const cityInput = document.getElementById('profile-city');
+      if (cityInput) {
+        cityInput.value = this.user.city || '';
+      }
+
+      const countryInput = document.getElementById('profile-country');
+      if (countryInput) {
+        countryInput.value = this.user.country || '';
+      }
+
+      const birthDateInput = document.getElementById('profile-birth-date');
+      if (birthDateInput) {
+        if (this.user.birthDate) {
+          const birthDate = new Date(this.user.birthDate);
+          if (!Number.isNaN(birthDate.getTime())) {
+            birthDateInput.value = birthDate.toISOString().split('T')[0];
+          } else {
+            birthDateInput.value = '';
+          }
+        } else {
+          birthDateInput.value = '';
+        }
+      }
+
       // Load social links
       const socialLinks = this.user.socialLinks || {};
       const socialFields = ['twitter', 'facebook', 'instagram', 'soundcloud', 'bandcamp', 'youtube', 'spotify', 'website'];
@@ -395,6 +467,11 @@ export class UserProfile {
       const avatarInputEl = document.getElementById('profile-avatar-url');
       const avatarUrlValue = avatarInputEl ? avatarInputEl.value.trim() : '';
       const artistName = document.getElementById('profile-artist-name')?.value.trim() || null;
+      const firstNameValue = document.getElementById('profile-first-name')?.value.trim() || '';
+      const lastNameValue = document.getElementById('profile-last-name')?.value.trim() || '';
+      const birthDateValue = document.getElementById('profile-birth-date')?.value || '';
+      const cityValue = document.getElementById('profile-city')?.value.trim() || '';
+      const countryValue = document.getElementById('profile-country')?.value.trim() || '';
       
       // Collect social links
       const socialLinks = {};
@@ -406,9 +483,27 @@ export class UserProfile {
         }
       });
 
+      const normalizeText = (value) => {
+        const trimmed = value?.trim();
+        return trimmed ? trimmed : null;
+      };
+
+      let birthDateIso = null;
+      if (birthDateValue) {
+        const parsed = new Date(birthDateValue);
+        if (!Number.isNaN(parsed.getTime())) {
+          birthDateIso = parsed.toISOString();
+        }
+      }
+
       const payload = {
         artistName,
-        socialLinks
+        socialLinks,
+        firstName: normalizeText(firstNameValue),
+        lastName: normalizeText(lastNameValue),
+        city: normalizeText(cityValue),
+        country: normalizeText(countryValue),
+        birthDate: birthDateValue ? birthDateIso : null
       };
 
       if (!this.isAvatarManagedExternally()) {

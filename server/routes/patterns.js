@@ -179,6 +179,11 @@ router.get('/top', optionalAuth, async (req, res) => {
             artistName: true,
             avatarUrl: true
           }
+        },
+        analytics: {
+          select: {
+            masterLoadCount: true
+          }
         }
       },
       orderBy: [
@@ -192,6 +197,42 @@ router.get('/top', optionalAuth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching top tracks:', error);
     res.status(500).json({ error: 'Failed to fetch top tracks' });
+  }
+});
+
+router.post('/:id/master-load', optionalAuth, async (req, res) => {
+  try {
+    const patternId = req.params.id;
+    const pattern = await prisma.pattern.findUnique({
+      where: { id: patternId },
+      select: { id: true }
+    });
+
+    if (!pattern) {
+      return res.status(404).json({ error: 'Pattern not found' });
+    }
+
+    const analytics = await prisma.patternAnalytics.upsert({
+      where: { patternId },
+      create: {
+        patternId,
+        masterLoadCount: 1
+      },
+      update: {
+        masterLoadCount: {
+          increment: 1
+        }
+      },
+      select: {
+        patternId: true,
+        masterLoadCount: true
+      }
+    });
+
+    res.json(analytics);
+  } catch (error) {
+    console.error('Error recording master load:', error);
+    res.status(500).json({ error: 'Failed to record master load' });
   }
 });
 
