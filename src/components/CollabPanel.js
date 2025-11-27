@@ -364,8 +364,8 @@ export class CollabPanel {
               </div>
             </div>
             <div class="collab-channel-actions">
-              <button id="collab-push-draft-btn" class="btn-secondary" data-collab-requires-auth>Save draft</button>
-              <button id="collab-publish-btn" class="btn-primary" data-collab-requires-auth>Publish to master</button>
+              <button id="collab-push-draft-btn" class="btn-secondary collab-action-button" data-collab-requires-auth>Save draft</button>
+              <button id="collab-publish-btn" class="btn-primary collab-action-button" data-collab-requires-auth>Publish to master</button>
               <button
                 id="collab-play-master-btn"
                 class="play-master-button collab-play-master-button"
@@ -639,14 +639,27 @@ export class CollabPanel {
   }
 
   handleBankChange(value) {
-    this.channelEditorState.bankValue = value || '';
+    const parsed = parseBankSelectionValue(value);
+    const normalizedValue = parsed?.bankValue || '';
+    const isDrum = !!normalizedValue && DRUM_BANK_VALUES.has(normalizedValue);
+
+    this.channelEditorState.bankValue = normalizedValue;
+    this.channelEditorState.bankSelectionRaw = parsed?.rawValue || '';
+    this.channelEditorState.vcslInstrument = parsed?.isVcslInstrument ? parsed.vcslInstrument : '';
     this.autoFillTitleFromBank();
-    if (this.channelEditorState.mode === 'step') {
-      this.syncCodeFromGrid();
-    } else {
+
+    const forcedCodeMode = !isDrum && this.channelEditorState.mode !== 'code';
+    if (forcedCodeMode) {
+      this.setChannelEditorMode('code');
       this.syncCodeAnnotationsFromState();
+    } else {
+      if (this.channelEditorState.mode === 'step') {
+        this.syncCodeFromGrid();
+      } else {
+        this.syncCodeAnnotationsFromState();
+      }
+      this.updateTheoryBlockVisibility();
     }
-    this.updateTheoryBlockVisibility();
   }
 
   autoFillTitleFromBank() {

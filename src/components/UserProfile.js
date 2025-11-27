@@ -96,13 +96,21 @@ export class UserProfile {
               </div>
 
               <div class="user-profile-modal-footer">
-                <div>
-                  <button type="button" class="btn-danger" id="profile-delete-account-btn">Delete Account</button>
-                </div>
-                <div>
-                  <button type="button" class="btn-cancel" id="profile-cancel-btn">Cancel</button>
-                  <button type="submit" class="btn-save" id="profile-save-btn">Save Changes</button>
-                </div>
+                <button
+                  type="button"
+                  class="user-profile-footer-btn user-profile-footer-btn--danger"
+                  id="profile-delete-account-btn"
+                >Delete Account</button>
+                <button
+                  type="button"
+                  class="user-profile-footer-btn user-profile-footer-btn--neutral"
+                  id="profile-cancel-btn"
+                >Cancel</button>
+                <button
+                  type="submit"
+                  class="user-profile-footer-btn user-profile-footer-btn--primary"
+                  id="profile-save-btn"
+                >Save Changes</button>
               </div>
             </form>
           </div>
