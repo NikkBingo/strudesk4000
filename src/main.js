@@ -20,7 +20,7 @@ import { getCurrentUser, authAPI, patternsAPI } from './api.js';
 import { lockScroll, unlockScroll, forceUnlockScroll } from './scrollLock.js';
 import { collaborationClient } from './collaboration/socketClient.js';
 import { getTheoryControlsTemplate, updateTheoryControlsVisibility } from './components/TheoryControls.js';
-import { SYNTH_BANK_ALIASES, OSCILLATOR_SYNTHS, SAMPLE_SYNTHS, LEGACY_SAMPLE_SYNTHS, DRUM_BANK_VALUES } from './constants/banks.js';
+import { SYNTH_BANK_ALIASES, OSCILLATOR_SYNTHS, SAMPLE_SYNTHS, LEGACY_SAMPLE_SYNTHS, DRUM_BANK_VALUES, VCSL_OPTION_PREFIX, parseBankSelectionValue } from './constants/banks.js';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -54,7 +54,6 @@ const DRUM_BANK_VALUES = new Set([
 ]);
 
 const VCSL_SAMPLE_MANIFEST_URL = 'https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json';
-const VCSL_OPTION_PREFIX = 'vcsl:';
 let cachedVcslInstrumentOptions = null;
 let vcslInstrumentFetchPromise = null;
 
@@ -263,22 +262,6 @@ const queueSliderDisplayUpdate = (displayEl, text) => {
     sliderDisplayUpdateMap.clear();
     sliderDisplayRaf = null;
   });
-};
-
-const parseBankSelectionValue = (rawValue) => {
-  if (!rawValue || typeof rawValue !== 'string') {
-    return { rawValue: '', bankValue: '', isVcslInstrument: false, vcslInstrument: '' };
-  }
-  if (rawValue.startsWith(VCSL_OPTION_PREFIX)) {
-    const instrument = rawValue.slice(VCSL_OPTION_PREFIX.length);
-    return {
-      rawValue,
-      bankValue: 'vcsl',
-      isVcslInstrument: true,
-      vcslInstrument: instrument
-    };
-  }
-  return { rawValue, bankValue: rawValue, isVcslInstrument: false, vcslInstrument: '' };
 };
 
 const formatVcslInstrumentLabel = (name) => {
@@ -999,6 +982,13 @@ const patternHistoryStore = (() => {
     }
     writeHistory(storageKey, history);
     lastChannelSnapshots.set(elementId, trimmed);
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      try {
+        window.dispatchEvent(new CustomEvent('channel-history-updated', { detail: { elementId } }));
+      } catch {
+        // ignore
+      }
+    }
   };
 
   const getChannelVersions = (elementId) => {
@@ -9033,6 +9023,7 @@ class InteractiveSoundApp {
     };
 
     const patternEditorSelect = document.getElementById('modal-pattern-editor-select');
+    const editorModeSwitch = document.getElementById('modal-editor-mode-switch');
     const patternLabelRow = modal.querySelector('.pattern-label-row');
     let patternSnippetContainer = modal.querySelector('#modal-pattern-snippets-toggle')?.closest('.modal-presets') || null;
     let patternSnippetListEl = patternSnippetContainer ? patternSnippetContainer.querySelector('.pattern-snippet-list') : null;
@@ -9072,13 +9063,105 @@ class InteractiveSoundApp {
 
     let refreshSnippetButtons = null;
 
+    const renderMyChannelPresetButtons = () => {
+      const container = document.getElementById('modal-my-channels');
+      if (!container) return;
+      const elementId = appInstance?.currentEditingElementId;
+      const history = elementId ? patternHistoryStore.getChannelVersions(elementId) : [];
+      if (!history.length) {
+        container.innerHTML = '<div class="modal-presets-empty">No saved channels yet.</div>';
+        return;
+      }
+      container.innerHTML = history.slice(0, 12).map((entry, index) => {
+        const label = entry.title && entry.title.trim() ? entry.title.trim() : `Saved channel ${index + 1}`;
+        const meta = entry.createdAt ? new Date(entry.createdAt).toLocaleString() : '';
+        return `
+          <button type="button" class="modal-preset-button" data-my-channel-index="${index}">
+            <div class="modal-preset-heading-row">
+              <strong>${label}</strong>
+            </div>
+            ${meta ? `<span class="modal-preset-description">${meta}</span>` : ''}
+          </button>
+        `;
+      }).join('');
+    };
+
+    const myChannelsPresetContainer = document.getElementById('modal-my-channels');
+    if (myChannelsPresetContainer && !myChannelsPresetContainer.dataset.listenerAttached) {
+      myChannelsPresetContainer.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-my-channel-index]');
+        if (!button) return;
+        const index = Number(button.dataset.myChannelIndex);
+        if (Number.isNaN(index)) return;
+        const elementId = appInstance?.currentEditingElementId;
+        if (!elementId) return;
+        const history = patternHistoryStore.getChannelVersions(elementId) || [];
+        const entry = history[index];
+        if (!entry?.pattern) return;
+        setStrudelEditorValue('modal-pattern', entry.pattern);
+        updatePreviewButtonState();
+        updateNoteConversionCheckboxVisibility();
+        updateModalTheoryVisibility();
+      });
+      myChannelsPresetContainer.dataset.listenerAttached = 'true';
+    }
+
+    if (!window.__strudelChannelHistoryListenerAttached) {
+      window.addEventListener('channel-history-updated', (event) => {
+        const targetElementId = event?.detail?.elementId;
+        if (!targetElementId || targetElementId !== appInstance?.currentEditingElementId) {
+          return;
+        }
+        renderMyChannelPresetButtons();
+        if (typeof refreshSnippetButtons === 'function') {
+          refreshSnippetButtons().catch((err) => console.warn('⚠️ Unable to refresh snippet tags:', err));
+        }
+      });
+      window.__strudelChannelHistoryListenerAttached = true;
+    }
+
     const ensurePatternSnippetContainer = async () => {
+      renderMyChannelPresetButtons();
       const currentPattern = getStrudelEditorValue('modal-pattern');
       const searchTerm = patternSnippetSearchInput ? patternSnippetSearchInput.value.trim().toLowerCase() : '';
       const [snippets, referenceMap] = await Promise.all([
         getPatternSnippets(currentPattern),
         loadStrudelReferenceDocs()
       ]);
+
+      const buildMyChannelSnippetEntries = () => {
+        const elementId = this.currentEditingElementId;
+        if (!elementId) {
+          return [{
+            groupId: 'my-channels',
+            heading: 'My Channels',
+            isPlaceholder: true,
+            placeholderText: 'Save a channel to see it here.'
+          }];
+        }
+        const history = patternHistoryStore.getChannelVersions(elementId) || [];
+        if (!history.length) {
+          return [{
+            groupId: 'my-channels',
+            heading: 'My Channels',
+            isPlaceholder: true,
+            placeholderText: 'No saved channels yet.'
+          }];
+        }
+        return history.slice(0, 12).map((entry, index) => ({
+          groupId: 'my-channels',
+          heading: 'My Channels',
+          snippet: entry.pattern,
+          insertionSnippet: entry.pattern,
+          className: 'pattern-snippet-tag-my-channel',
+          displayLabel: `Saved channel ${index + 1}`,
+          secondaryLabel: entry.createdAt ? new Date(entry.createdAt).toLocaleString() : ''
+        }));
+      };
+
+      const getCombinedSnippetItems = (baseSnippets) => {
+        return [...buildMyChannelSnippetEntries(), ...baseSnippets];
+      };
 
       if (!patternSnippetContainer) {
         patternSnippetContainer = document.createElement('div');
@@ -9298,28 +9381,40 @@ class InteractiveSoundApp {
         const groupOrder = [];
 
         items.forEach((entry) => {
+          if (entry && typeof entry === 'object' && entry.isPlaceholder) {
+            const placeholderGroupId = entry.groupId || 'other';
+            const placeholderHeading = entry.heading || 'Other';
+            if (!groupMap.has(placeholderGroupId)) {
+              groupMap.set(placeholderGroupId, {
+                id: placeholderGroupId,
+                heading: placeholderHeading,
+                className: entry.className || '',
+                items: []
+              });
+              groupOrder.push(groupMap.get(placeholderGroupId));
+            }
+            groupMap.get(placeholderGroupId).items.push(entry);
+            return;
+          }
           const snippet = typeof entry === 'string' ? entry : entry.snippet;
           const groupId = typeof entry === 'string' ? 'other' : (entry.groupId || 'other');
           const className = typeof entry === 'string' ? '' : (entry.className || '');
           const heading = (typeof entry === 'string' ? 'Other' : entry.heading) || 'Other';
           const key = getSnippetKey(snippet);
           const referenceEntry = reference.get(key);
-          let rawInsertion = buildSnippetInsertion(snippet, referenceEntry);
+          let rawInsertion = typeof entry === 'object' && entry?.insertionSnippet
+            ? entry.insertionSnippet
+            : buildSnippetInsertion(snippet, referenceEntry);
           // Fix: Replace "display bank(bank)" with "bank()" in core group
           if (key === 'bank' && rawInsertion.includes('display bank(bank)')) {
             rawInsertion = 'bank()';
           }
           const insertionSnippet = rawInsertion.replace(/^[.]+/, '');
-          let displayLabel = insertionSnippet;
-          // Preserve instrument names for sound() tags that have instruments
-          // Check if it's a sound() tag with an instrument (e.g., sound("sawtooth"))
-          const soundWithInstrumentMatch = insertionSnippet.match(/^sound\s*\(\s*["']([^"']+)["']\s*\)/i);
-          if (soundWithInstrumentMatch && soundWithInstrumentMatch[1]) {
-            // Preserve the instrument name
-            const instrumentName = soundWithInstrumentMatch[1];
-            displayLabel = `sound("${instrumentName}")`;
-          } else {
-            // Remove text inside parentheses for all other tags
+          let displayLabel = (typeof entry === 'object' && entry?.displayLabel)
+            ? entry.displayLabel
+            : insertionSnippet;
+          const soundWithInstrumentMatch = displayLabel.match(/^sound\s*\(\s*["']([^"']+)["']\s*\)/i);
+          if (!soundWithInstrumentMatch) {
             displayLabel = displayLabel.replace(/\([^)]*\)/g, '()');
           }
           const lowerLabel = displayLabel.toLowerCase();
@@ -9348,6 +9443,7 @@ class InteractiveSoundApp {
             snippet,
             insertionSnippet,
             displayLabel,
+            secondaryLabel: typeof entry === 'object' ? entry.secondaryLabel : '',
             key,
             className,
             heading,
@@ -9355,8 +9451,10 @@ class InteractiveSoundApp {
           });
         });
 
-        // Sort groups by name (heading)
+        // Sort groups by name (heading) but pin My Channels first
         groupOrder.sort((a, b) => {
+          if (a.id === 'my-channels' && b.id !== 'my-channels') return -1;
+          if (b.id === 'my-channels' && a.id !== 'my-channels') return 1;
           const headingA = (a.heading || '').toLowerCase();
           const headingB = (b.heading || '').toLowerCase();
           return headingA.localeCompare(headingB);
@@ -9427,6 +9525,13 @@ class InteractiveSoundApp {
           });
 
           group.items.forEach((item) => {
+            if (item && item.isPlaceholder) {
+              const placeholder = document.createElement('div');
+              placeholder.className = 'pattern-snippet-placeholder';
+              placeholder.textContent = item.placeholderText || 'No saved channels yet.';
+              itemsContainer.appendChild(placeholder);
+              return;
+            }
             const itemWrapper = document.createElement('div');
             itemWrapper.className = 'pattern-snippet-item';
             itemWrapper.dataset.snippetKey = getSnippetKey(item.snippet);
@@ -9795,6 +9900,13 @@ class InteractiveSoundApp {
               itemWrapper.appendChild(button);
             }
             
+            if (item.secondaryLabel) {
+              const meta = document.createElement('span');
+              meta.className = 'pattern-snippet-meta';
+              meta.textContent = item.secondaryLabel;
+              itemWrapper.appendChild(meta);
+            }
+
             itemsContainer.appendChild(itemWrapper);
             
             // Show suggestions if this is the selected tag (check both local and app instance)
@@ -9921,7 +10033,7 @@ class InteractiveSoundApp {
       };
 
       if (patternSnippetListEl) {
-        renderSnippets(patternSnippetListEl, snippets, referenceMap, searchTerm);
+        renderSnippets(patternSnippetListEl, getCombinedSnippetItems(snippets), referenceMap, searchTerm);
       }
 
       refreshSnippetButtons = async () => {
@@ -9931,7 +10043,7 @@ class InteractiveSoundApp {
         const term = patternSnippetSearchInput ? patternSnippetSearchInput.value.trim().toLowerCase() : '';
         // Sync selectedTagKey from app instance
         selectedTagKey = appInstance.selectedTagKey;
-        renderSnippets(patternSnippetListEl, updatedSnippets, ref, term);
+        renderSnippets(patternSnippetListEl, getCombinedSnippetItems(updatedSnippets), ref, term);
       };
       
       // Store refreshSnippetButtons on app instance for external access
@@ -10044,6 +10156,7 @@ class InteractiveSoundApp {
         // Ensure UI reflects current state
         updatePreviewButtonState();
         updateModalTheoryVisibility();
+        renderMyChannelPresetButtons();
         refreshDrumGridForCurrentState();
         // Reset presets section state each time the modal opens
         resetPresetsSection();
@@ -10370,6 +10483,9 @@ class InteractiveSoundApp {
 
     const setPatternEditorEnabled = (enabled) => {
       drumGridState.patternEditorEnabled = !!enabled;
+      if (editorModeSwitch) {
+        editorModeSwitch.checked = !drumGridState.patternEditorEnabled;
+      }
       applyPatternEditorState();
       try {
         if (typeof localStorage !== 'undefined') {
@@ -11015,6 +11131,19 @@ class InteractiveSoundApp {
         setPatternEditorEnabled(isCodeEditor);
         refreshDrumGridForCurrentState();
       });
+    }
+    if (editorModeSwitch && !editorModeSwitch.dataset.listenerAttached) {
+      editorModeSwitch.addEventListener('change', (event) => {
+        const nextMode = event.target.checked ? 'step' : 'code';
+        if (patternEditorSelect) {
+          patternEditorSelect.value = nextMode;
+          patternEditorSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+          setPatternEditorEnabled(nextMode === 'code');
+          refreshDrumGridForCurrentState();
+        }
+      });
+      editorModeSwitch.dataset.listenerAttached = 'true';
     }
     
     // Time signature select in modal
@@ -11672,8 +11801,9 @@ class InteractiveSoundApp {
             // Build pattern: n().chord("<selected chords>").voicing() - no other modifiers
             const patternToInsert = `n().chord("<${chordString}>").voicing()`;
             
-            // Replace the entire pattern with just the chord pattern
-            setStrudelEditorValue('modal-pattern', patternToInsert);
+            // Replace the entire pattern with just the chord pattern while keeping instrument selection
+            const patternWithInstrument = ensurePatternInstrument(patternToInsert, currentPattern);
+            setStrudelEditorValue('modal-pattern', patternWithInstrument);
           }
         } catch (error) {
           console.warn('Error parsing chord progression data:', error);
@@ -11734,6 +11864,61 @@ class InteractiveSoundApp {
       }
       
       return updated;
+    };
+
+    const extractInstrumentContextFromPattern = (pattern) => {
+      if (!pattern || typeof pattern !== 'string') return null;
+      const bankMatch = pattern.match(/\.bank\s*\(\s*["']([^"']+)["']\s*\)/i);
+      const soundMatch = pattern.match(/\.s(?:ound)?\s*\(\s*["']([^"']+)["']\s*\)/i);
+      if (bankMatch && DRUM_BANK_VALUES.has(bankMatch[1])) {
+        return { type: 'drum', value: bankMatch[1] };
+      }
+      if (soundMatch) {
+        const extraBank = bankMatch && bankMatch[1].toLowerCase() === 'vcsl' ? 'vcsl' : null;
+        return { type: 'synth', value: soundMatch[1], extraBank };
+      }
+      if (bankMatch && bankMatch[1].toLowerCase() === 'vcsl') {
+        return { type: 'synth', value: null, extraBank: 'vcsl' };
+      }
+      return null;
+    };
+
+    const getSelectionInstrumentContext = () => {
+      if (!bankSelect) return null;
+      const selection = parseBankSelectionValue(bankSelect.value || '');
+      if (!selection.bankValue) return null;
+      if (DRUM_BANK_VALUES.has(selection.bankValue)) {
+        return { type: 'drum', value: selection.bankValue };
+      }
+      const normalized = selection.bankValue.toLowerCase();
+      const canonicalSynth = SYNTH_BANK_ALIASES[normalized] || selection.bankValue;
+      const soundName = selection.isVcslInstrument ? (selection.vcslInstrument || canonicalSynth) : canonicalSynth;
+      const extraBank = selection.isVcslInstrument ? 'vcsl' : null;
+      return { type: 'synth', value: soundName, extraBank };
+    };
+
+    const applyInstrumentContextToPattern = (pattern, context) => {
+      if (!context || !pattern) return pattern;
+      let updated = pattern;
+      if (context.type === 'drum' && context.value) {
+        updated = updateBankOrSoundModifier(updated, context.value, true);
+      } else if (context.type === 'synth') {
+        if (context.value) {
+          updated = updateBankOrSoundModifier(updated, context.value, false);
+        }
+        if (context.extraBank === 'vcsl') {
+          const vcslRegex = /\.bank\s*\(\s*["']vcsl["']\s*\)/i;
+          if (!vcslRegex.test(updated)) {
+            updated = `${updated}.bank("vcsl")`;
+          }
+        }
+      }
+      return updated;
+    };
+
+    const ensurePatternInstrument = (pattern, fallbackPattern) => {
+      const context = getSelectionInstrumentContext() || extractInstrumentContextFromPattern(fallbackPattern || pattern);
+      return applyInstrumentContextToPattern(pattern, context);
     };
     
     const normalizeEditorPattern = (value) => {
@@ -11927,7 +12112,8 @@ class InteractiveSoundApp {
           }
           semitoneSnapshotLocked = true;
           syncLastSemitonePattern(convertedPattern, true);
-          setStrudelEditorValue('modal-pattern', convertedPattern);
+        convertedPattern = ensurePatternInstrument(convertedPattern, patternValue);
+        setStrudelEditorValue('modal-pattern', convertedPattern);
           if (keyToPass) { soundManager.currentKey = keyToPass; }
           if (scaleToPass) { soundManager.currentScale = scaleToPass; }
           const ta = document.getElementById('modal-pattern');
@@ -12428,6 +12614,7 @@ class InteractiveSoundApp {
         }
         
         if (convertedPattern !== patternValue) {
+          convertedPattern = ensurePatternInstrument(convertedPattern, patternValue);
           setStrudelEditorValue('modal-pattern', convertedPattern);
           if (useNoteNames) {
             lastCanonicalNumericPattern = patternValue;

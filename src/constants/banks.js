@@ -17,4 +17,22 @@ export const DRUM_BANK_VALUES = new Set([
   'CasioRZ1'
 ]);
 
+export const VCSL_OPTION_PREFIX = 'vcsl:';
+
+export const parseBankSelectionValue = (rawValue) => {
+  if (!rawValue || typeof rawValue !== 'string') {
+    return { rawValue: '', bankValue: '', isVcslInstrument: false, vcslInstrument: '' };
+  }
+  if (rawValue.startsWith(VCSL_OPTION_PREFIX)) {
+    const instrument = rawValue.slice(VCSL_OPTION_PREFIX.length);
+    return {
+      rawValue,
+      bankValue: 'vcsl',
+      isVcslInstrument: true,
+      vcslInstrument: instrument
+    };
+  }
+  return { rawValue, bankValue: rawValue, isVcslInstrument: false, vcslInstrument: '' };
+};
+
 

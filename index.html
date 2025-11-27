@@ -557,6 +557,14 @@
           <div class="form-group">
             <div class="pattern-label-row">
               <label for="modal-pattern">Pattern</label>
+            <div class="pattern-editor-mode-switch">
+              <span>Code</span>
+              <label class="toggle-switch" aria-label="Toggle step editor">
+                <input type="checkbox" id="modal-editor-mode-switch">
+                <span class="toggle-slider"></span>
+              </label>
+              <span>Step</span>
+            </div>
               <select id="modal-pattern-editor-select" class="control-select" style="display: none;" aria-label="Editor Type">
                 <option value="step">Step Editor</option>
                 <option value="code">Code Editor</option>
@@ -567,6 +575,14 @@
                 <span>Presets</span>
               </button>
               <div id="modal-presets-content" class="modal-presets-content" hidden>
+                <div class="modal-presets-group">
+                  <button type="button" class="modal-presets-subtoggle pattern-snippet-group-heading" data-target="modal-my-channels" aria-expanded="false">
+                    <span>My Channels</span>
+                  </button>
+                  <div class="modal-presets-subcontent modal-presets-buttons" id="modal-my-channels">
+                    <div class="modal-presets-empty">No saved channels yet.</div>
+                  </div>
+                </div>
                 <div class="modal-presets-group">
                   <button type="button" class="modal-presets-subtoggle pattern-snippet-group-heading" data-target="modal-drum-presets" aria-expanded="false">
                     <span>Drum Patterns</span>
