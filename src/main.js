@@ -3807,26 +3807,26 @@ class InteractiveSoundApp {
     window.addEventListener('keydown', handleEscape, true); // Also on window
     console.log('✅ Escape key handler registered');
 
-    // Add Tab key handler to play sound
-    let tabSoundAudio = null;
-    const handleTab = (e) => {
-      if (e.key === 'Tab' || e.keyCode === 9) {
-        // Play the sound (don't prevent default to preserve Tab navigation)
-        if (!tabSoundAudio) {
-          tabSoundAudio = new Audio('/assets/samples/voice/Strudesk4000_de.mp3');
-          tabSoundAudio.volume = 0.7;
+    // Add Shift+S key handler to play sound
+    let shiftSoundAudio = null;
+    const handleShiftS = (e) => {
+      if ((e.key === 's' || e.key === 'S') && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        if (!shiftSoundAudio) {
+          shiftSoundAudio = new Audio('/assets/samples/voice/Strudesk4000_de.mp3');
+          shiftSoundAudio.volume = 0.7;
         }
         // Reset and play
-        tabSoundAudio.currentTime = 0;
-        tabSoundAudio.play().catch(error => {
-          console.warn('⚠️ Could not play Tab sound:', error);
+        shiftSoundAudio.currentTime = 0;
+        shiftSoundAudio.play().catch(error => {
+          console.warn('⚠️ Could not play Shift+S sound:', error);
         });
       }
     };
     
-    document.addEventListener('keydown', handleTab, true);
-    window.addEventListener('keydown', handleTab, true);
-    console.log('✅ Tab key sound handler registered');
+    document.addEventListener('keydown', handleShiftS, true);
+    window.addEventListener('keydown', handleShiftS, true);
+    console.log('✅ Shift+S key sound handler registered');
 
     // Add keyboard piano handler
     const pressedKeys = new Set();
@@ -7090,15 +7090,17 @@ class InteractiveSoundApp {
       }
     }
     const isInMaster = soundManager.trackedPatterns && soundManager.trackedPatterns.has(elementId);
+    const isPlaying = soundManager.isPlaying(elementId);
     try {
       if (isInMaster) {
         await soundManager.updatePatternInPlace(elementId, finalPattern, true);
         this.updateMasterPatternDisplay();
+      } else if (isPlaying) {
+        // If playing, update in place to avoid stopping playback
+        await soundManager.updatePatternInPlace(elementId, finalPattern);
       } else {
-        const isPlaying = soundManager.isPlaying(elementId);
-        if (!isPlaying) {
-          await soundManager.preEvaluatePattern(elementId, finalPattern);
-    }
+        // If not playing, pre-evaluate the pattern
+        await soundManager.preEvaluatePattern(elementId, finalPattern);
       }
     } catch (error) {
       console.warn(`⚠️ Unable to apply MIDI settings to ${elementId}:`, error);
