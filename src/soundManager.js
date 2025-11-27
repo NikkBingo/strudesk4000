@@ -7394,58 +7394,27 @@ class SoundManager {
       
       // Popular verified sample packs from strudel-samples.alternet.site
       // Top packs by sample count
-      'github:tidalcycles/tidal-drum-machine',  // 683 samples - drum machine
-      'github:yaxu/vcsl',                      // 128 samples - VCSL instruments
       'github:tidalcycles/uzu-drumkit',         // 16 samples - Uzu drumkit
-      'github:tidalcycles/mridangam',          // 13 samples - Mridangam percussion
-      'github:tidalcycles/piano',              // 1 sample - Piano
       
       // Verified user repositories (based on known GitHub patterns)
-      'github:yaxu/picule',                    // 75 samples - Picule
-      'github:yaxu/clean-break',               // 32 samples - Clean break (alternative path)
       'github:yaxu/mrid',                      // 13 samples - Mrid
-      'github:yaxu/svg',                       // 1 sample - SVG
       
       // Dough sample packs (verified)
       'github:Bubobubobubobubo/Dough-Amiga',   // 116 samples - Dough Amiga
-      'github:Bubobubobubobubo/Dough-Waveform', // 65 samples - Dough Waveform
       'github:Bubobubobubobubo/Dough-Fox',     // 63 samples - Dough Fox
-      'github:Bubobubobubobubo/Dough-Bourge',  // 45 samples - Dough Bourge
-      'github:Bubobubobubobubo/Dough-Sample',  // 27 samples - Dough Sample
       'github:Bubobubobubobubo/Dough-Amen',   // 3 samples - Dough Amen
       'github:Bubobubobubobubo/Dough-Juj',    // 1 sample - Dough Juj
       
       // Other verified repositories
-      'github:felixroos/estuary-sample',       // 19 samples - Estuary sample
-      'github:felixroos/sample',               // 17 samples - Sample
-      'github:witchangel/break',              // 1 sample - Break
-      'github:witchangel/pad',                // 1 sample - Pad (already have switchangel/pad, but this is different)
-      'github:TodePond/sample',               // 4 samples - Sample (v4/v5 are subdirectories)
       'github:mot4i/garden',                   // 13 samples - Garden
       'github:mot4i/loom',                     // Various loom samples
-      'github:kyrlive/glorkglunk-wavetable',   // 9 samples - Glorkglunk wavetable
-      'github:kyrlive/gc-glitches',            // 1 sample - GC glitches
-      'github:kyrlive/gc-wavetable',           // 1 sample - GC wavetable
       
       // Additional verified packs
-      'github:proudly-music/break',            // 28 samples - Break
-      'github:byolim/break',                   // 10 samples - Break
-      'github:luvl4ne/break',                  // 1 sample - Break
-      'github:TorenUK/break',                  // 1 sample - Break
       'github:heavy-lifting/a-maze',           // 26 samples - A-maze
       'github:eddyflux/crate',                 // 18 samples - Crate
-      'github:algorave-dave/sample',           // 10 samples - Sample
-      'github:indiepaleale/strudel-sample',    // 12 samples - Strudel sample
-      'github:azhadyed/strudel-sample',        // 9 samples - Strudel sample
-      'github:gerzytet/strudel-sample',        // 1 sample - Strudel sample
-      'github:jessicaaaaaaaaaaaa/strudel-sample', // 2 samples - Strudel sample
-      'github:reema7667/strudel-sound',        // 1 sample - Strudel sound
-      'github:Samplebit/strudel_sample',       // 1 sample - Strudel sample
       'github:ibleedicare/strudel-bank',       // 2 samples - Strudel bank
-      'github:arefo/strudel',                  // 12 samples - Strudel
       'github:Prof12200/strudel_repo',         // 6 samples - Strudel repo
       'github:creativenucleus/strudel-m8-168-dnb-jungle', // 8 samples - Strudel M8 168 DNB Jungle
-      'github:maudd/joonie-dnb-collection-strudel', // 2 samples - Joonie DNB collection strudel
       
       // Note: Some packs from strudel-samples.alternet.site may use different URL formats
       // (e.g., trudel.cc/*, custom domains) and would need to be added with their specific URLs
@@ -8607,8 +8576,8 @@ class SoundManager {
       if (this.audioContext) {
         if (this.audioContext.state !== 'running') {
           console.log(`🔊 Audio context state: ${this.audioContext.state}, resuming...`);
-          try {
-            await this.audioContext.resume();
+        try {
+          await this.audioContext.resume();
             // Wait a bit for state to change (mobile needs time)
             let retries = 0;
             while (this.audioContext.state !== 'running' && retries < 10) {
@@ -8621,8 +8590,8 @@ class SoundManager {
               console.warn(`⚠️ Audio context not running after resume, state: ${this.audioContext.state}`);
               // Continue anyway - might still work
             }
-          } catch (resumeError) {
-            console.warn(`⚠️ Could not resume audio context:`, resumeError);
+        } catch (resumeError) {
+          console.warn(`⚠️ Could not resume audio context:`, resumeError);
             // Continue anyway - might still work
           }
         } else {
@@ -8785,9 +8754,9 @@ class SoundManager {
         // This must happen before evaluation so audio can start immediately
         if (window.strudel && window.strudel.scheduler) {
           if (!window.strudel.scheduler.started) {
-            console.log(`▶️ Starting Strudel scheduler BEFORE pattern evaluation...`);
+          console.log(`▶️ Starting Strudel scheduler BEFORE pattern evaluation...`);
             try {
-              await window.strudel.scheduler.start();
+          await window.strudel.scheduler.start();
               // Verify scheduler actually started
               if (window.strudel.scheduler.started) {
                 console.log(`✅ Strudel scheduler started successfully`);
