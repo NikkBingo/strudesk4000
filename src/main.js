@@ -8445,7 +8445,7 @@ class InteractiveSoundApp {
       }
 
       const baseUrl = `https://raw.githubusercontent.com/${currentSamplePackData.meta.owner}/${currentSamplePackData.meta.repo}/${currentSamplePackData.meta.branch}/`;
-      const relativeRepoPath = sample.path;
+      const relativeRepoPath = sample.relativePath || sample.path || sample.fileName || sample.name;
       const sampleName = sample.name;
 
       const sampleSnippet = [
@@ -8519,7 +8519,9 @@ class InteractiveSoundApp {
           name: node.name,
           relativePath: node.relativePath,
           rawUrl: node.rawUrl,
-          id: node.id
+          id: node.id,
+          path: node.path,
+          fileName: node.fileName
         }))
         .filter((sample, index, array) =>
           array.findIndex(other => other.relativePath === sample.relativePath) === index

@@ -63,6 +63,18 @@ const NOTE_MODE = {
   SEMITONE: 'semitone'
 };
 
+const MASTER_CHANNEL_STATUSES = new Set(['live', 'published']);
+
+const AUTHOR_COLOR_PALETTE = [
+  { bg: '#fff1f2', border: '#fda4af' },
+  { bg: '#fefce8', border: '#fcd34d' },
+  { bg: '#ecfccb', border: '#bef264' },
+  { bg: '#cffafe', border: '#67e8f9' },
+  { bg: '#e0e7ff', border: '#a5b4fc' },
+  { bg: '#fdf2f8', border: '#f9a8d4' },
+  { bg: '#fffbeb', border: '#fcd34d' }
+];
+
 const CODE_META_PREFIX = '// @meta';
 
 export class CollabPanel {
@@ -86,6 +98,8 @@ export class CollabPanel {
     this.channelLastChordLabel = null;
     this.lineNumberElement = null;
     this.modeToggleSwitch = null;
+    this.userColorAssignments = new Map();
+    this.userColorIndex = 0;
   }
 
   createDefaultEditorState() {
@@ -327,37 +341,9 @@ export class CollabPanel {
               </div>
               <div id="collab-theory-block"></div>
             </div>
-            <div class="collab-channel-editor-tools">
-              <div class="form-group collab-mode-toggle-group">
-                <label>Editor mode</label>
-                <div class="collab-mode-switch">
-                  <span class="collab-mode-label collab-mode-label--code">Code</span>
-                  <label class="toggle-switch collab-mode-toggle">
-                    <input type="checkbox" id="collab-editor-mode-toggle" aria-label="Toggle step editor" />
-                    <span class="toggle-slider"></span>
-                  </label>
-                  <span class="collab-mode-label collab-mode-label--step">Step</span>
-                </div>
-              </div>
-            </div>
             <div class="collab-step-editor" id="collab-step-editor" hidden>
               <div class="collab-step-grid" id="collab-step-grid"></div>
               <p class="collab-step-hint">Click steps to toggle hits. Multi-hits create stacked samples.</p>
-            </div>
-            <div class="collab-chord-tools">
-              <label for="collab-chord-select">Chords</label>
-              <div class="collab-chord-row">
-                <select id="collab-chord-select" class="control-select">
-                  <option value="">Add a chord progression…</option>
-                  <option value="i-iv-v">I · IV · V</option>
-                  <option value="ii-v-i">ii · V · I</option>
-                  <option value="lofi-walk">Lo-fi walk</option>
-                </select>
-                <label class="collab-note-mode-toggle">
-                  <input type="checkbox" id="collab-note-mode-toggle" />
-                  <span id="collab-note-mode-label">Note names</span>
-                </label>
-              </div>
             </div>
             <div class="collab-channel-editor">
               <div class="pattern-label-row">
@@ -382,7 +368,7 @@ export class CollabPanel {
               <div class="collab-list-header">
                 <strong>Published Master Pattern</strong>
               </div>
-              <textarea id="collab-master-pattern" rows="8" readonly class="collab-master-pattern-field" placeholder="Master pattern will appear here after publishing..."></textarea>
+              <div id="collab-master-pattern" class="collab-master-pattern-field" role="region" aria-live="polite"></div>
             </div>
           </div>
           <div class="collab-channels-list">
@@ -404,6 +390,7 @@ export class CollabPanel {
     this.renderInviteSearchResults();
     this.renderSelectedInvitees();
     this.initializeChannelFormControls();
+    this.renderMasterPattern(this.currentSnapshot);
   }
 
   initializeChannelFormControls() {
@@ -510,6 +497,14 @@ export class CollabPanel {
     const bankValue = this.channelEditorState?.bankValue || '';
     const isDrum = !!bankValue && DRUM_BANK_VALUES.has(bankValue);
     const isStepEditor = this.channelEditorState?.mode === 'step';
+    const modeToggleWrapper = this.root?.querySelector('.collab-mode-toggle-group');
+    if (modeToggleWrapper) {
+      modeToggleWrapper.style.display = isDrum ? '' : 'none';
+    }
+    const stepEditor = this.root?.querySelector('#collab-step-editor');
+    if (stepEditor) {
+      stepEditor.hidden = !isDrum || this.channelEditorState.mode !== 'step';
+    }
     updateTheoryControlsVisibility('collab', {
       showTimeSignature: isDrum && isStepEditor,
       showKeyScale: !!bankValue && !isDrum
@@ -1067,14 +1062,11 @@ export class CollabPanel {
     this.boundHandlers.push(this.socketClient.on('master:updated', (payload) => {
       if (payload?.masterCode) {
         this.setStatus('Master updated across collaborators', STATUS_VARIANTS.info, 2000);
-        // Update master pattern display
-        const masterPatternField = this.root?.querySelector('#collab-master-pattern');
-        if (masterPatternField) {
-          masterPatternField.value = payload.masterCode || '';
-        }
-        // Also update current snapshot if it exists
         if (this.currentSnapshot) {
           this.currentSnapshot.masterCode = payload.masterCode;
+          this.renderMasterPattern(this.currentSnapshot, payload.masterCode);
+        } else {
+          this.renderMasterPattern(null, payload.masterCode);
         }
       }
     }));
@@ -1282,11 +1274,7 @@ export class CollabPanel {
     if (samples.length) {
       this.updateCpuStats(samples[samples.length - 1]);
     }
-    // Update master pattern display
-    const masterPatternField = this.root?.querySelector('#collab-master-pattern');
-    if (masterPatternField) {
-      masterPatternField.value = snapshot.masterCode || '';
-    }
+    this.renderMasterPattern(snapshot);
   }
 
   renderParticipants(participants) {
@@ -1329,6 +1317,72 @@ export class CollabPanel {
         </div>
       `;
     }).join('');
+  }
+
+  renderMasterPattern(snapshot, fallbackCode = '') {
+    const container = this.root?.querySelector('#collab-master-pattern');
+    if (!container) return;
+
+    const channels = Array.isArray(snapshot?.channels)
+      ? snapshot.channels.filter((channel) => {
+          if (!channel || !MASTER_CHANNEL_STATUSES.has(channel.status)) return false;
+          return !!(channel.code && channel.code.trim().length);
+        })
+      : [];
+
+    if (!channels.length) {
+      const masterValue = (fallbackCode || snapshot?.masterCode || '').trim();
+      if (masterValue) {
+        container.innerHTML = `<pre>${this.escapeHtml(masterValue)}</pre>`;
+      } else {
+        container.innerHTML = '<div class="collab-master-empty">No published channels yet. Publish a channel to build the master.</div>';
+      }
+      return;
+    }
+
+    container.innerHTML = channels
+      .map((channel) => this.renderMasterChannelBlock(channel))
+      .join('');
+  }
+
+  renderMasterChannelBlock(channel) {
+    const label = channel.name || channel.elementId || 'Untitled channel';
+    const author = channel.user?.artistName || channel.user?.name || 'anonymous';
+    const code = (channel.code || '').trim();
+    const comment = `// ${label} — ${author}`;
+    const fullPayload = `${comment}\n${code}`.trim();
+    const colors = this.getUserColor(channel);
+    return `
+      <div class="collab-master-block" style="--author-bg:${colors.bg}; --author-border:${colors.border};">
+        <div class="collab-master-block__meta">
+          <span>${this.escapeHtml(label)}</span>
+          <span>${this.escapeHtml(author)}</span>
+        </div>
+        <pre>${this.escapeHtml(fullPayload)}</pre>
+      </div>
+    `;
+  }
+
+  getUserColor(channel) {
+    const key =
+      channel?.user?.id ||
+      channel?.user?.artistName ||
+      channel?.user?.name ||
+      channel?.id ||
+      channel?.elementId ||
+      `anonymous-${channel?.status || 'unknown'}`;
+    if (!this.userColorAssignments.has(key)) {
+      const palette = AUTHOR_COLOR_PALETTE[this.userColorIndex % AUTHOR_COLOR_PALETTE.length];
+      this.userColorAssignments.set(key, palette);
+      this.userColorIndex += 1;
+    }
+    return this.userColorAssignments.get(key);
+  }
+
+  escapeHtml(value = '') {
+    const div = document.createElement('div');
+    div.textContent = value ?? '';
+    return div.innerHTML;
   }
 
   updateCpuStats(sample) {
