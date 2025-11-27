@@ -7991,10 +7991,9 @@ class InteractiveSoundApp {
           // The callback will be triggered when sounds are ready
           
           // Remove event listeners after successful initialization
-          document.removeEventListener('click', initAudio);
-          document.removeEventListener('touchstart', initAudio);
-          document.removeEventListener('keydown', initAudio);
-          document.removeEventListener('mousedown', initAudio);
+          audioInitBindings.forEach(({ target, eventName, options }) => {
+            target.removeEventListener(eventName, initAudio, options);
+          });
         } else {
           console.error(`🎵 [AUDIO INIT] Failed to initialize audio`);
           uiController.updateStatus('Click to enable audio (required for sound playback)');
@@ -8014,11 +8013,20 @@ class InteractiveSoundApp {
     };
 
     // Initialize on any user interaction - use multiple event types for better compatibility
-    // Don't use capture:true to avoid interfering with form controls
-    document.addEventListener('click', initAudio, { once: false });
-    document.addEventListener('touchstart', initAudio, { once: false });
-    document.addEventListener('keydown', initAudio, { once: false });
-    document.addEventListener('mousedown', initAudio, { once: false });
+    // Include pointer/touch/focus events for stubborn mobile browsers
+    const audioInitBindings = [
+      { target: document, eventName: 'click', options: false },
+      { target: document, eventName: 'touchstart', options: { passive: true } },
+      { target: document, eventName: 'touchend', options: { passive: true } },
+      { target: document, eventName: 'pointerdown', options: { passive: true } },
+      { target: document, eventName: 'keydown', options: false },
+      { target: document, eventName: 'mousedown', options: false },
+      { target: window, eventName: 'focus', options: false }
+    ];
+
+    audioInitBindings.forEach(({ target, eventName, options }) => {
+      target.addEventListener(eventName, initAudio, options);
+    });
   }
 
 
