@@ -557,7 +557,7 @@
           <div class="form-group">
             <div class="pattern-label-row">
               <label for="modal-pattern">Pattern</label>
-            <div class="pattern-editor-mode-switch">
+            <div class="pattern-editor-mode-switch" id="modal-editor-mode-switch-wrapper">
               <span>Code</span>
               <label class="toggle-switch" aria-label="Toggle step editor">
                 <input type="checkbox" id="modal-editor-mode-switch">
@@ -565,10 +565,6 @@
               </label>
               <span>Step</span>
             </div>
-              <select id="modal-pattern-editor-select" class="control-select" style="display: none;" aria-label="Editor Type">
-                <option value="step">Step Editor</option>
-                <option value="code">Code Editor</option>
-              </select>
             </div>
             <div class="modal-presets">
               <button type="button" id="modal-presets-toggle" class="modal-presets-toggle pattern-snippet-group-heading" aria-expanded="false">
