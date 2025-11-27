@@ -43,16 +43,6 @@ const DRUM_ABBREVIATIONS = {
   'fx': 'Effects'
 };
 
-const DRUM_BANK_VALUES = new Set([
-  'RolandTR808',
-  'RolandTR909',
-  'RolandTR707',
-  'RhythmAce',
-  'AkaiLinn',
-  'ViscoSpaceDrum',
-  'CasioRZ1'
-]);
-
 const VCSL_SAMPLE_MANIFEST_URL = 'https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json';
 let cachedVcslInstrumentOptions = null;
 let vcslInstrumentFetchPromise = null;
