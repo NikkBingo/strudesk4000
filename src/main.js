@@ -22,6 +22,7 @@ import { collaborationClient } from './collaboration/socketClient.js';
 import { getTheoryControlsTemplate, updateTheoryControlsVisibility } from './components/TheoryControls.js';
 import { SYNTH_BANK_ALIASES, OSCILLATOR_SYNTHS, SAMPLE_SYNTHS, LEGACY_SAMPLE_SYNTHS, DRUM_BANK_VALUES, VCSL_OPTION_PREFIX, parseBankSelectionValue } from './constants/banks.js';
 import { initPianoSections } from './pianoKeyboard.js';
+import { resolveAssetUrl } from './utils/assetUrls.js';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -905,7 +906,7 @@ stack(
   }
 ];
 
-const INTRO_SAMPLE_PATH = new URL('./assets/samples/voice/Strudesk4000_de.mp3', document.baseURI).href;
+const INTRO_SAMPLE_PATH = resolveAssetUrl('assets/samples/voice/Strudesk4000_de.mp3');
 
 let interactiveSoundAppInstance = null;
 
@@ -3757,7 +3758,7 @@ class InteractiveSoundApp {
       if ((e.key === 's' || e.key === 'S') && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         if (!shiftSoundAudio) {
-          shiftSoundAudio = new Audio('/assets/samples/voice/Strudesk4000_de.mp3');
+          shiftSoundAudio = new Audio(INTRO_SAMPLE_PATH);
           shiftSoundAudio.volume = 0.7;
         }
         // Reset and play
