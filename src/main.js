@@ -9493,25 +9493,34 @@ class InteractiveSoundApp {
             snippetGroupOpenState.set(group.id, storedState);
           }
 
-          const headingButton = document.createElement('button');
-          headingButton.type = 'button';
-          headingButton.className = 'pattern-snippet-group-heading';
-          headingButton.textContent = group.heading;
-          headingButton.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      const headingButton = document.createElement('button');
+      headingButton.type = 'button';
+      headingButton.className = 'pattern-snippet-group-heading';
+      headingButton.textContent = group.heading;
+      const forceOpen = scaleChordSuggestionEls?.container?.dataset?.forceOpen === 'true';
+      const initialOpen = group.id === 'chord-progressions'
+        ? true
+        : shouldOpen;
+      headingButton.setAttribute('aria-expanded', initialOpen ? 'true' : 'false');
 
           const itemsContainer = document.createElement('div');
           itemsContainer.className = 'pattern-snippet-group-items';
 
-          if (!shouldOpen) {
+      if (!initialOpen) {
             groupWrapper.classList.add('collapsed');
           }
 
           headingButton.addEventListener('click', () => {
             hideSnippetTooltip();
-            const isCollapsed = groupWrapper.classList.toggle('collapsed');
-            const newState = !isCollapsed;
-            headingButton.setAttribute('aria-expanded', newState ? 'true' : 'false');
-            snippetGroupOpenState.set(group.id, newState);
+        const isChordGroup = group.id === 'chord-progressions';
+        const isCollapsed = isChordGroup && scaleChordSuggestionEls?.container?.dataset?.forceOpen === 'true'
+          ? false
+          : groupWrapper.classList.toggle('collapsed');
+        const newState = !isCollapsed;
+        headingButton.setAttribute('aria-expanded', newState ? 'true' : 'false');
+        if (!isChordGroup) {
+          snippetGroupOpenState.set(group.id, newState);
+        }
           });
 
           group.items.forEach((item) => {
@@ -11295,17 +11304,20 @@ class InteractiveSoundApp {
           '2-chord': [
             { label: 'I – IV', romans: ['I', 'IV'] },
             { label: 'I – V', romans: ['I', 'V'] },
-            { label: 'I – vi', romans: ['I', 'vi'] }
+            { label: 'I – vi', romans: ['I', 'vi'] },
+            { label: 'Imaj7 – IVmaj7', romans: ['Imaj7', 'IVmaj7'] }
           ],
           '3-chord': [
             { label: 'I – IV – V', romans: ['I', 'IV', 'V'] },
             { label: 'I – V – vi', romans: ['I', 'V', 'vi'] },
-            { label: 'I – iii – vi', romans: ['I', 'iii', 'vi'] }
+            { label: 'I – iii – vi', romans: ['I', 'iii', 'vi'] },
+            { label: 'Imaj7 – vi – ii', romans: ['Imaj7', 'vi', 'ii'] }
           ],
           '4-chord': [
             { label: 'I – IV – V – I', romans: ['I', 'IV', 'V', 'I'] },
             { label: 'I – vi – IV – V', romans: ['I', 'vi', 'IV', 'V'] },
-            { label: 'I – V – vi – IV (pop classic)', romans: ['I', 'V', 'vi', 'IV'] }
+            { label: 'I – V – vi – IV (pop classic)', romans: ['I', 'V', 'vi', 'IV'] },
+            { label: 'ii – V – I – vi (turnaround)', romans: ['ii', 'V', 'I', 'vi'] }
           ]
         }
       },
@@ -11315,17 +11327,20 @@ class InteractiveSoundApp {
         progressions: {
           '2-chord': [
             { label: 'i – IV', romans: ['i', 'IV'] },
-            { label: 'i – ii', romans: ['i', 'ii'] }
+            { label: 'i – ii', romans: ['i', 'ii'] },
+            { label: 'i – v', romans: ['i', 'v'] }
           ],
           '3-chord': [
             { label: 'i – IV – v', romans: ['i', 'IV', 'v'] },
             { label: 'i – ii – IV', romans: ['i', 'ii', 'IV'] },
-            { label: 'i – IV – VII', romans: ['i', 'IV', 'VII'] }
+            { label: 'i – IV – VII', romans: ['i', 'IV', 'VII'] },
+            { label: 'i – iv – ♭VII', romans: ['i', 'iv', 'bVII'] }
           ],
           '4-chord': [
             { label: 'i – IV – i – v', romans: ['i', 'IV', 'i', 'v'] },
             { label: 'i – ii – IV – i', romans: ['i', 'ii', 'IV', 'i'] },
-            { label: 'i – IV – vii° – i', romans: ['i', 'IV', 'vii°', 'i'] }
+            { label: 'i – IV – vii° – i', romans: ['i', 'IV', 'vii°', 'i'] },
+            { label: 'i – iv – i – ♭VII', romans: ['i', 'iv', 'i', 'bVII'] }
           ]
         }
       },
@@ -11389,15 +11404,18 @@ class InteractiveSoundApp {
         progressions: {
           '2-chord': [
             { label: 'i – ♭VI', romans: ['i', 'bVI'] },
-            { label: 'i – ♭VII', romans: ['i', 'bVII'] }
+            { label: 'i – ♭VII', romans: ['i', 'bVII'] },
+            { label: 'i – iv', romans: ['i', 'iv'] }
           ],
           '3-chord': [
             { label: 'i – ♭VII – ♭VI', romans: ['i', 'bVII', 'bVI'] },
-            { label: 'i – iv – ♭VI', romans: ['i', 'iv', 'bVI'] }
+            { label: 'i – iv – ♭VI', romans: ['i', 'iv', 'bVI'] },
+            { label: 'i – iv – v', romans: ['i', 'iv', 'v'] }
           ],
           '4-chord': [
             { label: 'i – ♭VII – ♭VI – v', romans: ['i', 'bVII', 'bVI', 'v'] },
-            { label: 'i – iv – ♭VII – ♭VI', romans: ['i', 'iv', 'bVII', 'bVI'] }
+            { label: 'i – iv – ♭VII – ♭VI', romans: ['i', 'iv', 'bVII', 'bVI'] },
+            { label: 'i – iv – V – i (minor cadence)', romans: ['i', 'iv', 'V', 'i'] }
           ]
         }
       },
@@ -11423,13 +11441,16 @@ class InteractiveSoundApp {
         colorTone: 'i−maj7',
         progressions: {
           '2-chord': [
-            { label: 'i−maj7 – IV7', romans: ['imMaj7', 'IV7'] }
+            { label: 'i−maj7 – IV7', romans: ['imMaj7', 'IV7'] },
+            { label: 'i−maj7 – V7', romans: ['imMaj7', 'V7'] }
           ],
           '3-chord': [
-            { label: 'i−maj7 – IV7 – v', romans: ['imMaj7', 'IV7', 'v'] }
+            { label: 'i−maj7 – IV7 – v', romans: ['imMaj7', 'IV7', 'v'] },
+            { label: 'i−maj7 – IV7 – ♭VIImaj7', romans: ['imMaj7', 'IV7', 'bVIImaj7'] }
           ],
           '4-chord': [
-            { label: 'i−maj7 – ii – IV7 – i−maj7', romans: ['imMaj7', 'ii', 'IV7', 'imMaj7'] }
+            { label: 'i−maj7 – ii – IV7 – i−maj7', romans: ['imMaj7', 'ii', 'IV7', 'imMaj7'] },
+            { label: 'imMaj7 – V7 – i – iv', romans: ['imMaj7', 'V7', 'i', 'iv'] }
           ]
         }
       },
@@ -11680,6 +11701,7 @@ class InteractiveSoundApp {
       if (!selectedKey || !selectedScale) {
         scaleChordSuggestionEls.container.style.display = 'none';
         scaleChordSuggestionEls.container.dataset.state = 'idle';
+      scaleChordSuggestionEls.container.dataset.forceOpen = 'false';
         if (scaleChordSuggestionEls.title) {
           scaleChordSuggestionEls.title.textContent = 'Select a key and scale to view chord progressions.';
         }
@@ -11694,6 +11716,7 @@ class InteractiveSoundApp {
       const friendlyScaleName = scaleData?.displayName || prettifyScaleLabel(selectedScale);
       
       scaleChordSuggestionEls.container.style.display = 'block';
+      scaleChordSuggestionEls.container.dataset.forceOpen = 'true';
       
       if (scaleChordSuggestionEls.title) {
         scaleChordSuggestionEls.title.textContent = `${selectedKey} ${friendlyScaleName} Chord Progressions`;
