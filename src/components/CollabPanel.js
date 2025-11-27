@@ -1,9 +1,10 @@
 import { collabAPI, usersAPI } from '../api.js';
-import { getStrudelEditorValue } from '../strudelReplEditor.js';
+import { getStrudelEditorValue, setStrudelEditorValue } from '../strudelReplEditor.js';
 import { collaborationClient } from '../collaboration/socketClient.js';
 import { lockScroll, unlockScroll } from '../scrollLock.js';
 import { DRUM_BANK_VALUES, SYNTH_BANK_ALIASES, parseBankSelectionValue } from '../constants/banks.js';
 import { getTheoryControlsTemplate, updateTheoryControlsVisibility } from './TheoryControls.js';
+import { soundManager } from '../soundManager.js';
 
 const STATUS_VARIANTS = {
   info: 'info',
@@ -100,6 +101,7 @@ export class CollabPanel {
     this.modeToggleSwitch = null;
     this.userColorAssignments = new Map();
     this.userColorIndex = 0;
+    this.masterPlaybackActive = false;
   }
 
   createDefaultEditorState() {
@@ -363,6 +365,7 @@ export class CollabPanel {
             <div class="collab-channel-actions">
               <button id="collab-push-draft-btn" class="btn-secondary" data-collab-requires-auth>Save draft</button>
               <button id="collab-publish-btn" class="btn-primary" data-collab-requires-auth>Publish to master</button>
+              <button id="collab-play-master-btn" class="btn-ghost" data-collab-requires-auth>Play Master</button>
             </div>
             <div class="collab-master-display">
               <div class="collab-list-header">
@@ -522,6 +525,51 @@ export class CollabPanel {
     this.lineNumberElement.innerHTML = markup;
     this.lineNumberElement.style.minWidth = `${digits * 8 + 16}px`;
     this.lineNumberElement.scrollTop = this.channelTextarea.scrollTop;
+  }
+
+  updateMasterPlayButton(isPlaying = soundManager?.masterActive) {
+    const playBtn = this.root?.querySelector('#collab-play-master-btn');
+    if (!playBtn) return;
+    if (isPlaying) {
+      playBtn.textContent = 'Stop Master';
+      playBtn.classList.add('active');
+      this.masterPlaybackActive = true;
+    } else {
+      playBtn.textContent = 'Play Master';
+      playBtn.classList.remove('active');
+      this.masterPlaybackActive = false;
+    }
+  }
+
+  async toggleMasterPlayback() {
+    if (!this.currentSnapshot) {
+      this.setStatus('Join a session before playing master.', STATUS_VARIANTS.error, 2500);
+      return;
+    }
+    try {
+      if (soundManager.masterActive) {
+        await soundManager.stopMasterPattern();
+        this.updateMasterPlayButton(false);
+        this.setStatus('Master playback stopped.', STATUS_VARIANTS.info, 2000);
+        return;
+      }
+      const playbackCode = this.currentSnapshot?.mergedStack?.trim() || this.currentSnapshot?.masterCode?.trim();
+      if (!playbackCode) {
+        this.setStatus('Nothing has been published yet.', STATUS_VARIANTS.error, 2500);
+        return;
+      }
+      await soundManager.setMasterPatternCode(playbackCode);
+      const result = await soundManager.playMasterPattern();
+      if (!result?.success) {
+        throw new Error(result?.error || 'Failed to start master playback');
+      }
+      this.updateMasterPlayButton(true);
+      this.setStatus('Master playback started.', STATUS_VARIANTS.success, 2000);
+    } catch (error) {
+      console.error('toggleMasterPlayback failed:', error);
+      this.updateMasterPlayButton(false);
+      this.setStatus(error.message || 'Unable to toggle master playback', STATUS_VARIANTS.error, 3000);
+    }
   }
 
   getSelectedBankInfo() {
@@ -938,6 +986,9 @@ export class CollabPanel {
     this.root?.querySelector('#collab-publish-btn')?.addEventListener('click', () => {
       this.handleChannelSubmit('live');
     });
+    this.root?.querySelector('#collab-play-master-btn')?.addEventListener('click', () => {
+      this.toggleMasterPlayback();
+    });
     this.root?.querySelector('#collab-refresh-session-btn')?.addEventListener('click', () => {
       if (this.currentSnapshot?.slug) {
         this.fetchSnapshot(this.currentSnapshot.slug);
@@ -975,6 +1026,12 @@ export class CollabPanel {
     });
     this.root?.querySelector('#collab-send-invite-btn')?.addEventListener('click', () => {
       this.handleSendInvite();
+    });
+    this.root?.querySelector('#collab-master-pattern')?.addEventListener('click', (event) => {
+      const target = event.target.closest('[data-remove-master-id]');
+      if (!target) return;
+      const channelId = target.getAttribute('data-remove-master-id');
+      this.handleRemoveChannelFromMaster(channelId);
     });
     this.root?.querySelector('#collab-my-invites')?.addEventListener('click', (event) => {
       const acceptTarget = event.target.closest('[data-accept-invite]');
@@ -1106,13 +1163,74 @@ export class CollabPanel {
     try {
       await collabAPI.leaveSession(this.currentSnapshot.id);
       await this.socketClient.leaveSession(this.currentSnapshot.id);
-      this.currentSnapshot = null;
-      this.renderEmptyState();
+      await this.clearCurrentSessionState({ notify: false, skipSocketLeave: true });
       this.setStatus('You left the session.', STATUS_VARIANTS.info, 2000);
       await this.refreshRecentSessions();
     } catch (error) {
       console.error('Leave session failed', error);
       this.setStatus(error.message || 'Failed to leave session', STATUS_VARIANTS.error);
+    }
+  }
+
+  async clearCurrentSessionState({ notify = true, skipSocketLeave = false } = {}) {
+    const activeSessionId = this.currentSnapshot?.id;
+    if (activeSessionId && !skipSocketLeave) {
+      try {
+        await this.socketClient.leaveSession(activeSessionId);
+      } catch (error) {
+        console.warn('⚠️ Unable to leave collaboration socket:', error);
+      }
+    }
+
+    this.currentSnapshot = null;
+    this.channelEditorState = this.createDefaultEditorState();
+    this.channelTitleAuto = true;
+
+    if (this.channelTitleInput) {
+      this.channelTitleInput.value = '';
+    }
+    if (this.channelTextarea) {
+      this.channelTextarea.value = '';
+      this.updatePatternLineNumbers();
+    }
+    if (this.bankSelect) {
+      this.bankSelect.value = '';
+    }
+    if (this.keySelect) {
+      this.keySelect.value = '';
+    }
+    if (this.scaleSelect) {
+      this.scaleSelect.value = 'chromatic';
+    }
+    if (this.noteToggle) {
+      this.noteToggle.checked = false;
+    }
+    if (this.noteModeLabel) {
+      this.noteModeLabel.textContent = 'Note names';
+    }
+
+    this.channelEditorState.gridSelections = this.createEmptyGridSelections(this.channelEditorState.stepsPerBar);
+    this.buildStepEditorGrid();
+    this.setChannelEditorMode('code');
+    this.updateTheoryBlockVisibility();
+
+    this.renderParticipants([]);
+    this.renderChannels([]);
+    this.renderMasterPattern(null);
+    this.renderEmptyState();
+    this.updateMasterPlayButton(false);
+
+    try {
+      if (soundManager?.stopAllSounds) {
+        await soundManager.stopAllSounds();
+      }
+      setStrudelEditorValue?.('master-pattern', '');
+    } catch (error) {
+      console.warn('⚠️ Unable to fully reset master playback:', error);
+    }
+
+    if (notify) {
+      this.setStatus('Session cleared. Start a new session to collaborate.', STATUS_VARIANTS.info, 2500);
     }
   }
 
@@ -1213,11 +1331,13 @@ export class CollabPanel {
     }
   }
 
-  async fetchSnapshot(identifier) {
+  async fetchSnapshot(identifier, { silent = false } = {}) {
     try {
       const snapshot = await collabAPI.getSession(identifier, { refresh: true });
       this.updateSnapshot(snapshot);
-      this.setStatus('Snapshot refreshed.', STATUS_VARIANTS.info, 2000);
+      if (!silent) {
+        this.setStatus('Snapshot refreshed.', STATUS_VARIANTS.info, 2000);
+      }
     } catch (error) {
       console.error('Fetch snapshot failed', error);
       this.setStatus(error.message || 'Failed to refresh snapshot', STATUS_VARIANTS.error);
@@ -1296,11 +1416,12 @@ export class CollabPanel {
   renderChannels(channels) {
     const container = this.root?.querySelector('#collab-channels-container');
     if (!container) return;
-    if (!channels.length) {
-      container.innerHTML = '<div class="empty">No submissions yet. Push your first channel!</div>';
+    const visibleChannels = (channels || []).filter((channel) => MASTER_CHANNEL_STATUSES.has(channel.status));
+    if (!visibleChannels.length) {
+      container.innerHTML = '<div class="empty">Publish a channel to see it here.</div>';
       return;
     }
-    container.innerHTML = channels.slice(0, 5).map((channel) => {
+    container.innerHTML = visibleChannels.slice(0, 5).map((channel) => {
       const updatedAt = channel.updatedAt ? new Date(channel.updatedAt).toLocaleString() : '';
       const author = channel.user?.artistName || channel.user?.name || 'anonymous';
       return `
@@ -1337,12 +1458,14 @@ export class CollabPanel {
       } else {
         container.innerHTML = '<div class="collab-master-empty">No published channels yet. Publish a channel to build the master.</div>';
       }
+      this.updateMasterPlayButton(false);
       return;
     }
 
     container.innerHTML = channels
       .map((channel) => this.renderMasterChannelBlock(channel))
       .join('');
+    this.updateMasterPlayButton(soundManager?.masterActive);
   }
 
   renderMasterChannelBlock(channel) {
@@ -1352,10 +1475,17 @@ export class CollabPanel {
     const comment = `// ${label} — ${author}`;
     const fullPayload = `${comment}\n${code}`.trim();
     const colors = this.getUserColor(channel);
+    const safeLabel = this.escapeHtml(label);
+    const canRemove = !!this.currentUser &&
+      (this.currentUser.id === channel.user?.id || this.currentUser.id === this.currentSnapshot?.owner?.id);
+    const removeButton = canRemove
+      ? `<button type="button" class="collab-master-block__remove" data-remove-master-id="${channel.id}" aria-label="Remove ${safeLabel}">&times;</button>`
+      : '';
     return `
-      <div class="collab-master-block" style="--author-bg:${colors.bg}; --author-border:${colors.border};">
+      <div class="collab-master-block" data-master-channel-id="${channel.id}" style="--author-bg:${colors.bg}; --author-border:${colors.border};">
+        ${removeButton}
         <div class="collab-master-block__meta">
-          <span>${this.escapeHtml(label)}</span>
+          <span>${safeLabel}</span>
           <span>${this.escapeHtml(author)}</span>
         </div>
         <pre>${this.escapeHtml(fullPayload)}</pre>
@@ -1560,6 +1690,7 @@ export class CollabPanel {
     }
     const session = this.recentSessions.find((item) => item.id === sessionId);
     const isOwner = session?.owner?.id === this.currentUser.id;
+    const isCurrentSession = this.currentSnapshot?.id === sessionId;
     try {
       this.setStatus(isOwner ? 'Deleting session…' : 'Leaving session…', STATUS_VARIANTS.info);
       if (isOwner) {
@@ -1567,11 +1698,35 @@ export class CollabPanel {
       } else {
         await collabAPI.leaveSession(sessionId);
       }
+      if (isCurrentSession) {
+        await this.clearCurrentSessionState({ notify: false });
+      }
       await this.refreshRecentSessions();
-      this.setStatus(isOwner ? 'Session deleted.' : 'Removed from session.', STATUS_VARIANTS.success, 2200);
+      const message = isCurrentSession
+        ? 'Session cleared. Start a new session to collaborate.'
+        : (isOwner ? 'Session deleted.' : 'Removed from session.');
+      this.setStatus(message, STATUS_VARIANTS.success, 2200);
     } catch (error) {
       console.error('Failed to update session membership:', error);
       this.setStatus(error.message || 'Failed to update recent session', STATUS_VARIANTS.error, 3000);
+    }
+  }
+
+  async handleRemoveChannelFromMaster(channelId) {
+    if (!channelId || !this.currentSnapshot?.id) {
+      return;
+    }
+    try {
+      this.setStatus('Removing channel from master…', STATUS_VARIANTS.info);
+      await collabAPI.publishChannel(this.currentSnapshot.id, channelId, 'draft');
+      const identifier = this.currentSnapshot.slug || this.currentSnapshot.id;
+      if (identifier) {
+        await this.fetchSnapshot(identifier, { silent: true });
+      }
+      this.setStatus('Channel removed from master.', STATUS_VARIANTS.success, 2200);
+    } catch (error) {
+      console.error('Failed to remove master channel:', error);
+      this.setStatus(error.message || 'Failed to remove channel from master', STATUS_VARIANTS.error, 3000);
     }
   }
 

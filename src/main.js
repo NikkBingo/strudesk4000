@@ -9081,6 +9081,7 @@ class InteractiveSoundApp {
       if (toggle && group && history.length && toggle.getAttribute('aria-expanded') !== 'true') {
         toggle.setAttribute('aria-expanded', 'true');
         container.classList.add('is-open');
+        container.classList.remove('collapsed');
         group.classList.remove('collapsed');
       }
     };

@@ -5511,7 +5511,11 @@ class SoundManager {
     if (!pattern || typeof pattern !== 'string') {
       return pattern;
     }
-    let result = this._repairBrokenSampleStrings(pattern);
+    let result = pattern;
+    const hasBrokenSampleStrings = /"[^"\r\n]*[\r\n]+[^"]*"/.test(result);
+    if (hasBrokenSampleStrings) {
+      result = this._repairBrokenSampleStrings(result);
+    }
     result = this._repairLeadingSampleStatements(result);
     result = this._repairStringPatternOperators(result);
     return result;
