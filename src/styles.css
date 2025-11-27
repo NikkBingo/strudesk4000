@@ -2399,6 +2399,13 @@ header h1 {
   cursor: not-allowed;
 }
 
+.theory-scale-notes-hint {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin-top: 4px;
+  font-style: italic;
+}
+
 .pattern-help {
   margin-top: 6px;
   color: #666;
@@ -5866,6 +5873,42 @@ header h1 {
   gap: 10px;
 }
 
+.profile-onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.75);
+  z-index: 1100;
+  padding: 24px;
+}
+
+.profile-onboarding-overlay[style*="flex"] {
+  display: flex !important;
+}
+
+.profile-onboarding-modal {
+  width: min(520px, 100%);
+  max-width: 520px;
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 28px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.profile-onboarding-header h2 {
+  margin: 0 0 8px;
+}
+
+.profile-onboarding-header p {
+  margin: 0 0 20px;
+  color: #475569;
+}
+
+
 .collab-channel-actions {
   display: flex;
   gap: 12px;
@@ -5882,21 +5925,62 @@ header h1 {
 
 .collab-master-pattern-field {
   width: 100%;
-  padding: 14px;
-  border-radius: 10px;
-  border: none;
-  background: #1f2937;
-  color: #e5e7eb;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
   font-family: 'Fira Code', 'Courier New', monospace;
   font-size: 0.92rem;
   line-height: 1.6;
-  resize: none;
-  cursor: not-allowed;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  min-height: 220px;
+  box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.collab-master-pattern-field:focus {
-  outline: none;
+.collab-master-pattern-field pre {
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: inherit;
+  background: transparent;
+}
+
+.collab-master-block {
+  border-radius: 12px;
+  border: 1px solid var(--author-border, #cbd5f5);
+  background: var(--author-bg, #f8fafc);
+  padding: 12px 14px;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
+}
+
+.collab-master-block__meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+
+.collab-master-block__meta span:last-child {
+  margin-left: auto;
+  font-weight: 500;
+  color: #475569;
+}
+
+.collab-master-empty {
+  border-radius: 10px;
+  padding: 16px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.9rem;
+  text-align: center;
 }
 
 .collab-channel-editor-tools {

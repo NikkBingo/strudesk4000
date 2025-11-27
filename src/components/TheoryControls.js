@@ -3,215 +3,253 @@ const CONTEXT_CONFIG = {
     mountId: 'modal-theory-block',
     timeGroupSelector: '#modal-time-signature-group',
     keyGroupSelector: '#modal-key-scale-group',
-    chordSelectors: ['#modal-scale-chord-suggestions']
+    chordSelectors: ['#modal-scale-chord-suggestions'],
+    timeGroupClass: 'form-group',
+    timeGroupId: 'modal-time-signature-group',
+    timeSelectId: 'modal-time-signature-select',
+    keyGridClass: 'form-group',
+    keyGridId: 'modal-key-scale-group',
+    keySelectId: 'modal-key-select',
+    scaleSelectId: 'modal-scale-select',
+    scaleNotesId: 'modal-scale-notes-display',
+    keyGridStyle: 'display: none;'
   },
   collab: {
     mountId: 'collab-theory-block',
     timeGroupSelector: '#collab-time-signature-group',
     keyGroupSelector: '.collab-key-scale-grid',
-    chordSelectors: ['.collab-chord-tools']
+    chordSelectors: ['.collab-chord-tools'],
+    timeGroupClass: 'form-group collab-time-signature',
+    timeGroupId: 'collab-time-signature-group',
+    timeSelectId: 'collab-channel-time-signature',
+    keyGridClass: 'collab-key-scale-grid',
+    keyGridId: 'collab-key-scale-group',
+    keySelectId: 'collab-key-select',
+    scaleSelectId: 'collab-scale-select',
+    scaleNotesId: 'collab-scale-notes-display',
+    keyGridStyle: ''
   }
 };
 
-export function getTheoryControlsTemplate(context) {
-  if (context === 'modal') {
-    return `
-      <div class="form-group" id="modal-time-signature-group">
-        <label for="modal-time-signature-select">Time Signature:</label>
-        <select id="modal-time-signature-select" class="control-select" aria-label="Time Signature">
-          <option value="4/4" selected>4/4 (Common Time)</option>
-          <option value="3/4">3/4 (Waltz)</option>
-          <option value="6/8">6/8</option>
-          <option value="2/4">2/4 (March)</option>
-          <option value="5/4">5/4</option>
-          <option value="7/8">7/8</option>
-          <option value="12/8">12/8</option>
-          <option value="2/2">2/2 (Cut Time)</option>
-          <option value="3/8">3/8</option>
-          <option value="9/8">9/8</option>
-          <option value="5/8">5/8</option>
-          <option value="7/4">7/4</option>
+const KEY_OPTIONS = ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B'];
+
+const TIME_SIGNATURE_OPTIONS = [
+  { value: '4/4', label: '4/4 (Common Time)', selected: true },
+  { value: '3/4', label: '3/4 (Waltz)' },
+  { value: '6/8', label: '6/8' },
+  { value: '2/4', label: '2/4 (March)' },
+  { value: '5/4', label: '5/4' },
+  { value: '7/8', label: '7/8' },
+  { value: '12/8', label: '12/8' },
+  { value: '2/2', label: '2/2 (Cut Time)' },
+  { value: '3/8', label: '3/8' },
+  { value: '9/8', label: '9/8' },
+  { value: '5/8', label: '5/8' },
+  { value: '7/4', label: '7/4' }
+];
+
+const SCALE_GROUPS = [
+  {
+    label: 'Diatonic (Major Scale) Modes',
+    options: [
+      { value: 'ionian', label: 'Ionian (Major)' },
+      { value: 'dorian', label: 'Dorian' },
+      { value: 'phrygian', label: 'Phrygian' },
+      { value: 'lydian', label: 'Lydian' },
+      { value: 'mixolydian', label: 'Mixolydian' },
+      { value: 'aeolian', label: 'Aeolian (Natural Minor)' },
+      { value: 'locrian', label: 'Locrian' }
+    ]
+  },
+  {
+    label: 'Melodic Minor Modes (Jazz Melodic Minor)',
+    options: [
+      { value: 'melodic minor', label: 'Melodic Minor (Jazz Minor)' },
+      { value: 'dorian b2', label: 'Dorian ♭2' },
+      { value: 'lydian augmented', label: 'Lydian Augmented' },
+      { value: 'lydian dominant', label: 'Lydian Dominant' },
+      { value: 'mixolydian b6', label: 'Mixolydian ♭6' },
+      { value: 'locrian #2', label: 'Locrian ♮2' },
+      { value: 'altered', label: 'Altered Scale (Super-Locrian)' }
+    ]
+  },
+  {
+    label: 'Harmonic Major Modes',
+    options: [
+      { value: 'harmonic major', label: 'Harmonic Major' },
+      { value: 'dorian b5', label: 'Dorian ♭5' },
+      { value: 'phrygian b4', label: 'Phrygian ♭4' },
+      { value: 'lydian b3', label: 'Lydian ♭3' },
+      { value: 'mixolydian b2', label: 'Mixolydian ♭2' },
+      { value: 'lydian augmented #2', label: 'Lydian Augmented ♯2' },
+      { value: 'locrian bb7', label: 'Locrian ♭♭7' }
+    ]
+  },
+  {
+    label: 'Harmonic Minor Modes',
+    options: [
+      { value: 'harmonic minor', label: 'Harmonic Minor' },
+      { value: 'locrian #6', label: 'Locrian ♮6' },
+      { value: 'ionian #5', label: 'Ionian ♯5' },
+      { value: 'dorian #4', label: 'Dorian ♯4' },
+      { value: 'phrygian dominant', label: 'Phrygian Dominant' },
+      { value: 'lydian #2', label: 'Lydian ♯2' },
+      { value: 'ultralocrian', label: 'Ultralocrian' }
+    ]
+  },
+  {
+    label: 'Pentatonic Modes (Major Pentatonic)',
+    options: [
+      { value: 'major pentatonic', label: 'Major Pentatonic' },
+      { value: 'suspended pentatonic', label: 'Suspended Pentatonic' },
+      { value: 'man gong', label: 'Man Gong' },
+      { value: 'ritusen', label: 'Ritusen' },
+      { value: 'minor pentatonic mode 5', label: 'Minor Pentatonic Mode 5' }
+    ]
+  },
+  {
+    label: 'Pentatonic Modes (Minor Pentatonic)',
+    options: [
+      { value: 'minor pentatonic', label: 'Minor Pentatonic' },
+      { value: 'blues minor pentatonic', label: 'Blues Minor (no ♭5)' },
+      { value: 'major pentatonic mode 3', label: 'Major Pentatonic Mode 3' },
+      { value: 'egyptian', label: 'Egyptian' },
+      { value: 'minor pentatonic mode 5', label: 'Minor Pentatonic Mode 5' }
+    ]
+  },
+  {
+    label: 'Other Scale Systems',
+    options: [
+      { value: 'whole tone', label: 'Whole Tone' },
+      { value: 'half-whole diminished', label: 'Half–Whole' },
+      { value: 'whole-half diminished', label: 'Whole–Half' },
+      { value: 'minor blues', label: 'Minor Blues' }
+    ]
+  }
+];
+
+const CHORD_PRESET_OPTIONS = [
+  { value: 'i-iv-v', label: 'I · IV · V' },
+  { value: 'ii-v-i', label: 'ii · V · I' },
+  { value: 'lofi-walk', label: 'Lo-fi walk' }
+];
+
+const keyOptionsHtml = `<option value="">Select Key</option>${KEY_OPTIONS.map((value) => `<option value="${value}">${value}</option>`).join('')}`;
+
+const timeSignatureOptionsHtml = TIME_SIGNATURE_OPTIONS.map((option) =>
+  `<option value="${option.value}"${option.selected ? ' selected' : ''}>${option.label}</option>`
+).join('');
+
+const scaleOptionsHtml = [
+  '<option value="chromatic" selected>Chromatic</option>',
+  SCALE_GROUPS.map((group) => {
+    const options = group.options.map((option) => `<option value="${option.value}">${option.label}</option>`).join('');
+    return `<optgroup label="${group.label}">${options}</optgroup>`;
+  }).join('')
+].join('');
+
+function renderTimeSignatureBlock(context) {
+  const config = CONTEXT_CONFIG[context];
+  if (!config) return '';
+  return `
+    <div class="${config.timeGroupClass}" id="${config.timeGroupId}">
+      <label for="${config.timeSelectId}">Time Signature:</label>
+      <select id="${config.timeSelectId}" class="control-select" aria-label="Time Signature">
+        ${timeSignatureOptionsHtml}
+      </select>
+    </div>
+  `;
+}
+
+function renderKeyScaleBlock(context) {
+  const config = CONTEXT_CONFIG[context];
+  if (!config) return '';
+  const style = config.keyGridStyle ? ` style="${config.keyGridStyle}"` : '';
+  return `
+    <div class="${config.keyGridClass}" id="${config.keyGridId || ''}"${style}>
+      <div class="form-group">
+        <label for="${config.keySelectId}">Key:</label>
+        <select id="${config.keySelectId}" class="control-select" aria-label="Key">
+          ${keyOptionsHtml}
         </select>
       </div>
-      <div class="form-group" id="modal-key-scale-group" style="display: none;">
-        <div style="display: flex; gap: 16px;">
-          <div style="flex: 1;">
-            <label for="modal-key-select">Key:</label>
-            <select id="modal-key-select" class="control-select" aria-label="Key">
-              <option value="">Select Key</option>
-              <option value="C">C</option>
-              <option value="C#">C#</option>
-              <option value="Db">Db</option>
-              <option value="D">D</option>
-              <option value="D#">D#</option>
-              <option value="Eb">Eb</option>
-              <option value="E">E</option>
-              <option value="F">F</option>
-              <option value="F#">F#</option>
-              <option value="Gb">Gb</option>
-              <option value="G">G</option>
-              <option value="G#">G#</option>
-              <option value="Ab">Ab</option>
-              <option value="A">A</option>
-              <option value="A#">A#</option>
-              <option value="Bb">Bb</option>
-              <option value="B">B</option>
-            </select>
-          </div>
-          <div style="flex: 1;">
-            <label for="modal-scale-select">Scale:</label>
-            <select id="modal-scale-select" class="control-select" aria-label="Scale">
-              <option value="chromatic" selected>Chromatic</option>
-              <optgroup label="Diatonic (Major Scale) Modes">
-                <option value="ionian">Ionian (Major)</option>
-                <option value="dorian">Dorian</option>
-                <option value="phrygian">Phrygian</option>
-                <option value="lydian">Lydian</option>
-                <option value="mixolydian">Mixolydian</option>
-                <option value="aeolian">Aeolian (Natural Minor)</option>
-                <option value="locrian">Locrian</option>
-              </optgroup>
-              <optgroup label="Melodic Minor Modes (Jazz Melodic Minor)">
-                <option value="melodic minor">Melodic Minor (Jazz Minor)</option>
-                <option value="dorian b2">Dorian ♭2</option>
-                <option value="lydian augmented">Lydian Augmented</option>
-                <option value="lydian dominant">Lydian Dominant</option>
-                <option value="mixolydian b6">Mixolydian ♭6</option>
-                <option value="locrian #2">Locrian ♮2</option>
-                <option value="altered">Altered Scale (Super-Locrian)</option>
-              </optgroup>
-              <optgroup label="Harmonic Major Modes">
-                <option value="harmonic major">Harmonic Major</option>
-                <option value="dorian b5">Dorian ♭5</option>
-                <option value="phrygian b4">Phrygian ♭4</option>
-                <option value="lydian b3">Lydian ♭3</option>
-                <option value="mixolydian b2">Mixolydian ♭2</option>
-                <option value="lydian augmented #2">Lydian Augmented ♯2</option>
-                <option value="locrian bb7">Locrian ♭♭7</option>
-              </optgroup>
-              <optgroup label="Harmonic Minor Modes">
-                <option value="harmonic minor">Harmonic Minor</option>
-                <option value="locrian #6">Locrian ♮6</option>
-                <option value="ionian #5">Ionian ♯5</option>
-                <option value="dorian #4">Dorian ♯4</option>
-                <option value="phrygian dominant">Phrygian Dominant</option>
-                <option value="lydian #2">Lydian ♯2</option>
-                <option value="ultralocrian">Ultralocrian</option>
-              </optgroup>
-              <optgroup label="Pentatonic Modes (Major Pentatonic)">
-                <option value="major pentatonic">Major Pentatonic</option>
-                <option value="suspended pentatonic">Suspended Pentatonic</option>
-                <option value="man gong">Man Gong</option>
-                <option value="ritusen">Ritusen</option>
-                <option value="minor pentatonic mode 5">Minor Pentatonic Mode 5</option>
-              </optgroup>
-              <optgroup label="Pentatonic Modes (Minor Pentatonic)">
-                <option value="minor pentatonic">Minor Pentatonic</option>
-                <option value="blues minor pentatonic">Blues Minor (no ♭5)</option>
-                <option value="major pentatonic mode 3">Major Pentatonic Mode 3</option>
-                <option value="egyptian">Egyptian</option>
-                <option value="minor pentatonic mode 5">Minor Pentatonic Mode 5</option>
-              </optgroup>
-              <optgroup label="Other Scale Systems">
-                <option value="whole tone">Whole Tone</option>
-                <option value="half-whole diminished">Half–Whole</option>
-                <option value="whole-half diminished">Whole–Half</option>
-                <option value="minor blues">Minor Blues</option>
-              </optgroup>
-            </select>
-            <div id="modal-scale-notes-display" style="font-size: 0.85em; color: #666; margin-top: 4px; font-style: italic;"></div>
-          </div>
-        </div>
-        <div class="scale-chord-suggestions" id="modal-scale-chord-suggestions" aria-live="polite">
-          <div class="scale-chord-suggestions__header">
-            <p id="modal-scale-chord-title">Select a key and scale to view chord progressions.</p>
-            <p id="modal-scale-characteristic" class="scale-chord-suggestions__characteristic"></p>
-          </div>
-          <div class="scale-chord-suggestions__dropdown-wrapper">
-            <label for="modal-chord-progression-select" class="scale-chord-suggestions__label">Chord Progressions:</label>
-            <select id="modal-chord-progression-select" class="scale-chord-suggestions__select">
-              <option value="">Select a progression...</option>
-            </select>
-          </div>
-        </div>
+      <div class="form-group">
+        <label for="${config.scaleSelectId}">Scale:</label>
+        <select id="${config.scaleSelectId}" class="control-select" aria-label="Scale">
+          ${scaleOptionsHtml}
+        </select>
+        <div id="${config.scaleNotesId}" class="theory-scale-notes-hint"></div>
       </div>
-    `;
+    </div>
+  `;
+}
+
+function renderModalChordSuggestions() {
+  return `
+    <div class="scale-chord-suggestions" id="modal-scale-chord-suggestions" aria-live="polite">
+      <div class="scale-chord-suggestions__header">
+        <p id="modal-scale-chord-title">Select a key and scale to view chord progressions.</p>
+        <p id="modal-scale-characteristic" class="scale-chord-suggestions__characteristic"></p>
+      </div>
+      <div class="scale-chord-suggestions__dropdown-wrapper">
+        <label for="modal-chord-progression-select" class="scale-chord-suggestions__label">Chord Progressions:</label>
+        <select id="modal-chord-progression-select" class="scale-chord-suggestions__select">
+          <option value="">Select a progression...</option>
+        </select>
+      </div>
+    </div>
+  `;
+}
+
+function renderCollabChordTools() {
+  const chordOptions = [
+    '<option value="">Add a chord progression…</option>',
+    CHORD_PRESET_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')
+  ].join('');
+  return `
+    <div class="collab-chord-tools">
+      <label for="collab-chord-select">Chords</label>
+      <div class="collab-chord-row">
+        <select id="collab-chord-select" class="control-select">
+          ${chordOptions}
+        </select>
+        <label class="collab-note-mode-toggle">
+          <input type="checkbox" id="collab-note-mode-toggle" />
+          <span id="collab-note-mode-label">Note names</span>
+        </label>
+      </div>
+    </div>
+  `;
+}
+
+export function getTheoryControlsTemplate(context) {
+  if (context === 'modal') {
+    return [
+      renderTimeSignatureBlock(context),
+      renderKeyScaleBlock(context),
+      renderModalChordSuggestions()
+    ].join('\n');
   }
 
   if (context === 'collab') {
     return `
       <div class="collab-theory-block">
-        <div class="form-group collab-time-signature" id="collab-time-signature-group">
-          <label for="collab-channel-time-signature">Time Signature:</label>
-          <select id="collab-channel-time-signature" class="control-select" aria-label="Time Signature">
-            <option value="4/4" selected>4/4 (Common Time)</option>
-            <option value="3/4">3/4 (Waltz)</option>
-            <option value="6/8">6/8</option>
-            <option value="2/4">2/4 (March)</option>
-            <option value="5/4">5/4</option>
-            <option value="7/8">7/8</option>
-            <option value="12/8">12/8</option>
-            <option value="2/2">2/2 (Cut Time)</option>
-            <option value="3/8">3/8</option>
-            <option value="9/8">9/8</option>
-            <option value="5/8">5/8</option>
-            <option value="7/4">7/4</option>
-          </select>
-        </div>
-        <div class="collab-key-scale-grid">
-          <div class="form-group">
-            <label for="collab-key-select">Key:</label>
-            <select id="collab-key-select" class="control-select" aria-label="Key">
-              <option value="">Select Key</option>
-              <option value="C">C</option>
-              <option value="C#">C#</option>
-              <option value="Db">Db</option>
-              <option value="D">D</option>
-              <option value="D#">D#</option>
-              <option value="Eb">Eb</option>
-              <option value="E">E</option>
-              <option value="F">F</option>
-              <option value="F#">F#</option>
-              <option value="Gb">Gb</option>
-              <option value="G">G</option>
-              <option value="G#">G#</option>
-              <option value="Ab">Ab</option>
-              <option value="A">A</option>
-              <option value="A#">A#</option>
-              <option value="Bb">Bb</option>
-              <option value="B">B</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="collab-scale-select">Scale:</label>
-            <select id="collab-scale-select" class="control-select" aria-label="Scale">
-              <option value="chromatic" selected>Chromatic</option>
-              <option value="ionian">Ionian (Major)</option>
-              <option value="dorian">Dorian</option>
-              <option value="phrygian">Phrygian</option>
-              <option value="lydian">Lydian</option>
-              <option value="mixolydian">Mixolydian</option>
-              <option value="aeolian">Aeolian (Natural Minor)</option>
-              <option value="locrian">Locrian</option>
-              <option value="melodic minor">Melodic Minor</option>
-            </select>
+        <div class="collab-channel-editor-tools">
+          <div class="form-group collab-mode-toggle-group">
+            <label>Editor mode</label>
+            <div class="collab-mode-switch">
+              <span class="collab-mode-label collab-mode-label--code">Code</span>
+              <label class="toggle-switch collab-mode-toggle">
+                <input type="checkbox" id="collab-editor-mode-toggle" aria-label="Toggle step editor" />
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="collab-mode-label collab-mode-label--step">Step</span>
+            </div>
           </div>
         </div>
-        <div class="collab-chord-tools">
-          <label for="collab-chord-select">Chords</label>
-          <div class="collab-chord-row">
-            <select id="collab-chord-select" class="control-select">
-              <option value="">Add a chord progression…</option>
-              <option value="i-iv-v">I · IV · V</option>
-              <option value="ii-v-i">ii · V · I</option>
-              <option value="lofi-walk">Lo-fi walk</option>
-            </select>
-            <label class="collab-note-mode-toggle">
-              <input type="checkbox" id="collab-note-mode-toggle" />
-              <span id="collab-note-mode-label">Note names</span>
-            </label>
-          </div>
-        </div>
+        ${renderTimeSignatureBlock(context)}
+        ${renderKeyScaleBlock(context)}
+        ${renderCollabChordTools()}
       </div>
     `;
   }
