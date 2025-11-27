@@ -517,6 +517,33 @@ class CollabSessionManager extends EventEmitter {
     return this.refreshSessionCache(sessionId);
   }
 
+  async deleteSession(sessionId, userId) {
+    sessionId = await this.requireSessionId(sessionId);
+    const session = await prisma.collabSession.findUnique({
+      where: { id: sessionId },
+      select: { ownerId: true, slug: true }
+    });
+    if (!session) {
+      throw new Error('Session not found');
+    }
+    if (session.ownerId !== userId) {
+      throw new Error('Only the session owner can delete this session');
+    }
+    await prisma.collabSession.delete({
+      where: { id: sessionId }
+    });
+    this.sessionCache.delete(sessionId);
+    if (session.slug) {
+      this.slugToId.delete(session.slug);
+    }
+    const timer = this.pendingMasterTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.pendingMasterTimers.delete(sessionId);
+    }
+    return true;
+  }
+
   async listUserInvites(userId) {
     const invites = await prisma.collabInvite.findMany({
       where: {

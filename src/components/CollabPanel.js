@@ -84,6 +84,7 @@ export class CollabPanel {
     this.channelEditorState = this.createDefaultEditorState();
     this.channelTitleAuto = true;
     this.channelLastChordLabel = null;
+    this.lineNumberElement = null;
   }
 
   createDefaultEditorState() {
@@ -357,7 +358,10 @@ export class CollabPanel {
               <div class="pattern-label-row">
                 <label for="collab-channel-code">Pattern</label>
               </div>
-              <textarea id="collab-channel-code" rows="6" placeholder="// Write the pattern you want to push"></textarea>
+              <div class="collab-pattern-wrapper">
+                <div class="collab-line-numbers" id="collab-line-numbers" aria-hidden="true"></div>
+                <textarea id="collab-channel-code" class="collab-pattern-input" rows="6" placeholder="// Write the pattern you want to push"></textarea>
+              </div>
               <div class="pattern-help">
                 <small>
                   Drum sounds: https://strudel.cc/workshop/first-sounds/#drum-sounds ·
@@ -403,6 +407,7 @@ export class CollabPanel {
       this.channelEditorState = this.createDefaultEditorState();
     }
     this.channelTextarea = this.root.querySelector('#collab-channel-code');
+    this.lineNumberElement = this.root.querySelector('#collab-line-numbers');
     this.channelTitleInput = this.root.querySelector('#collab-channel-title');
     this.bankSelect = this.root.querySelector('#collab-pattern-bank');
     this.timeSignatureSelect = this.root.querySelector('#collab-channel-time-signature');
@@ -420,6 +425,13 @@ export class CollabPanel {
     this.channelTextarea.addEventListener('input', () => {
       if (this.channelEditorState.mode === 'code') {
         this.channelEditorState.customCode = this.channelTextarea.value;
+      }
+      this.updatePatternLineNumbers();
+    });
+
+    this.channelTextarea.addEventListener('scroll', () => {
+      if (this.lineNumberElement) {
+        this.lineNumberElement.scrollTop = this.channelTextarea.scrollTop;
       }
     });
 
@@ -485,6 +497,7 @@ export class CollabPanel {
     }
     this.handleNoteModeToggle(this.channelEditorState.noteMode === NOTE_MODE.SEMITONE, { silent: true });
     this.updateTheoryBlockVisibility();
+    this.updatePatternLineNumbers();
   }
 
   updateTheoryBlockVisibility() {
@@ -495,6 +508,19 @@ export class CollabPanel {
       showTimeSignature: isDrum && isStepEditor,
       showKeyScale: !!bankValue && !isDrum
     });
+  }
+
+  updatePatternLineNumbers() {
+    if (!this.lineNumberElement || !this.channelTextarea) {
+      return;
+    }
+    const value = this.channelTextarea.value || '';
+    const lineCount = Math.max(value.split('\n').length, 1);
+    const digits = Math.max(String(lineCount).length, 2);
+    const markup = Array.from({ length: lineCount }, (_, index) => `<span>${index + 1}</span>`).join('');
+    this.lineNumberElement.innerHTML = markup;
+    this.lineNumberElement.style.minWidth = `${digits * 8 + 16}px`;
+    this.lineNumberElement.scrollTop = this.channelTextarea.scrollTop;
   }
 
   handleTitleInputChange() {
@@ -578,6 +604,7 @@ export class CollabPanel {
     if (!textarea || !snippet) return;
     const current = textarea.value.trimEnd();
     textarea.value = current ? `${current}\n${snippet}\n` : `${snippet}\n`;
+    this.updatePatternLineNumbers();
     textarea.focus();
   }
 
@@ -696,6 +723,7 @@ export class CollabPanel {
     const pattern = this.generatePatternFromGrid();
     const annotated = this.applyCodeAnnotations(pattern);
     textarea.value = annotated;
+    this.updatePatternLineNumbers();
   }
 
   syncCodeAnnotationsFromState() {
@@ -716,6 +744,7 @@ export class CollabPanel {
       body
     ].filter(Boolean).join('\n');
     textarea.value = assembled.trim();
+    this.updatePatternLineNumbers();
   }
 
   collectChannelAnnotations() {
@@ -910,6 +939,16 @@ export class CollabPanel {
       }
     });
     this.root?.querySelector('#collab-recents-list')?.addEventListener('click', (event) => {
+      const removeTarget = event.target.closest('[data-remove-session-id]');
+      if (removeTarget) {
+        event.preventDefault();
+        event.stopPropagation();
+        const removeId = removeTarget.getAttribute('data-remove-session-id');
+        if (removeId) {
+          this.handleRecentSessionRemoval(removeId);
+        }
+        return;
+      }
       const chip = event.target.closest('[data-collab-session-id]');
       if (!chip) return;
       const sessionId = chip.getAttribute('data-collab-session-id');
@@ -1091,6 +1130,7 @@ export class CollabPanel {
       const textarea = this.root?.querySelector('#collab-channel-code');
       if (textarea) {
         textarea.value = value.trim();
+        this.updatePatternLineNumbers();
         textarea.focus();
         if (this.channelEditorState?.mode === 'step') {
           this.populateGridFromCode(textarea.value);
@@ -1198,7 +1238,7 @@ export class CollabPanel {
       return;
     }
     container.innerHTML = channels.slice(0, 5).map((channel) => {
-      const updatedAt = channel.updatedAt ? new Date(channel.updatedAt).toLocaleTimeString() : '';
+      const updatedAt = channel.updatedAt ? new Date(channel.updatedAt).toLocaleString() : '';
       const author = channel.user?.artistName || channel.user?.name || 'anonymous';
       return `
         <div class="collab-channel-card">
@@ -1367,15 +1407,43 @@ export class CollabPanel {
     list.classList.remove('collab-empty-state');
     list.innerHTML = this.recentSessions
       .map((session) => {
-        const updated = session.updatedAt ? new Date(session.updatedAt).toLocaleDateString() : '';
+        const updated = session.updatedAt ? new Date(session.updatedAt).toLocaleString() : '—';
+        const ownerId = session.owner?.id || '';
+        const removeLabel = ownerId && ownerId === this.currentUser?.id
+          ? 'Delete session'
+          : 'Leave session';
         return `
-          <button class="collab-chip" data-collab-session-id="${session.id}">
-            <span>${session.title}</span>
-            <span class="collab-chip__meta">${updated}</span>
-          </button>
+          <div class="collab-chip" data-collab-session-id="${session.id}" role="button" tabindex="0">
+            <div class="collab-chip__content">
+              <span>${session.title}</span>
+              <span class="collab-chip__meta">${updated}</span>
+            </div>
+            <button type="button" class="collab-chip-remove" data-remove-session-id="${session.id}" aria-label="${removeLabel}">&times;</button>
+          </div>
         `;
       })
       .join('');
+  }
+
+  async handleRecentSessionRemoval(sessionId) {
+    if (!sessionId || !this.currentUser) {
+      return;
+    }
+    const session = this.recentSessions.find((item) => item.id === sessionId);
+    const isOwner = session?.owner?.id === this.currentUser.id;
+    try {
+      this.setStatus(isOwner ? 'Deleting session…' : 'Leaving session…', STATUS_VARIANTS.info);
+      if (isOwner) {
+        await collabAPI.deleteSession(sessionId);
+      } else {
+        await collabAPI.leaveSession(sessionId);
+      }
+      await this.refreshRecentSessions();
+      this.setStatus(isOwner ? 'Session deleted.' : 'Removed from session.', STATUS_VARIANTS.success, 2200);
+    } catch (error) {
+      console.error('Failed to update session membership:', error);
+      this.setStatus(error.message || 'Failed to update recent session', STATUS_VARIANTS.error, 3000);
+    }
   }
 
   scheduleInviteSearch(query) {
