@@ -64,60 +64,29 @@ const VCSL_FAMILY_ORDER = ['Chordophones', 'Aerophones', 'Membranophones', 'Elec
 // Format: { value: 'github:user/repo', label: 'Display Name', samples: count }
 const SAMPLE_PACKS = [
   // Top packs by sample count
-  { value: 'github:tidalcycles/tidal-drum-machine', label: 'Tidal Drum Machine (683)', samples: 683 },
-  { value: 'github:yaxu/vcsl', label: 'VCSL Instruments (128)', samples: 128 },
   { value: 'github:tidalcycles/uzu-drumkit', label: 'Uzu Drumkit (16)', samples: 16 },
-  { value: 'github:tidalcycles/mridangam', label: 'Mridangam (13)', samples: 13 },
-  { value: 'github:tidalcycles/piano', label: 'Piano (1)', samples: 1 },
   
   // Yaxu repositories
-  { value: 'github:yaxu/picule', label: 'Picule (75)', samples: 75 },
-  { value: 'github:yaxu/clean-break', label: 'Clean Break (32)', samples: 32 },
   { value: 'github:yaxu/clean-breaks/main', label: 'Clean Breaks Main (32)', samples: 32 },
   { value: 'github:yaxu/mrid', label: 'Mrid (13)', samples: 13 },
-  { value: 'github:yaxu/svg', label: 'SVG (1)', samples: 1 },
   
   // Dough sample packs
   { value: 'github:Bubobubobubobubo/Dough-Amiga', label: 'Dough Amiga (116)', samples: 116 },
-  { value: 'github:Bubobubobubobubo/Dough-Waveform', label: 'Dough Waveform (65)', samples: 65 },
   { value: 'github:Bubobubobubobubo/Dough-Fox', label: 'Dough Fox (63)', samples: 63 },
-  { value: 'github:Bubobubobubobubo/Dough-Bourge', label: 'Dough Bourge (45)', samples: 45 },
-  { value: 'github:Bubobubobubobubo/Dough-Sample', label: 'Dough Sample (27)', samples: 27 },
   { value: 'github:Bubobubobubobubo/Dough-Amen', label: 'Dough Amen (3)', samples: 3 },
   { value: 'github:Bubobubobubobubo/Dough-Juj', label: 'Dough Juj (1)', samples: 1 },
   
   // Other verified repositories
-  { value: 'github:felixroos/estuary-sample', label: 'Estuary Sample (19)', samples: 19 },
-  { value: 'github:felixroos/sample', label: 'Felixroos Sample (17)', samples: 17 },
-  { value: 'github:witchangel/break', label: 'Witchangel Break (1)', samples: 1 },
-  { value: 'github:witchangel/pad', label: 'Witchangel Pad (1)', samples: 1 },
   { value: 'github:switchangel/pad', label: 'Switchangel Pad', samples: 0 },
-  { value: 'github:TodePond/sample', label: 'TodePond Sample (4)', samples: 4 },
   { value: 'github:mot4i/garden', label: 'Garden (13)', samples: 13 },
   { value: 'github:mot4i/loom', label: 'Loom', samples: 0 },
-  { value: 'github:kyrlive/glorkglunk-wavetable', label: 'Glorkglunk Wavetable (9)', samples: 9 },
-  { value: 'github:kyrlive/gc-glitches', label: 'GC Glitches (1)', samples: 1 },
-  { value: 'github:kyrlive/gc-wavetable', label: 'GC Wavetable (1)', samples: 1 },
   
   // Additional verified packs
-  { value: 'github:proudly-music/break', label: 'Proudly Music Break (28)', samples: 28 },
-  { value: 'github:byolim/break', label: 'Byolim Break (10)', samples: 10 },
-  { value: 'github:luvl4ne/break', label: 'Luvl4ne Break (1)', samples: 1 },
-  { value: 'github:TorenUK/break', label: 'TorenUK Break (1)', samples: 1 },
   { value: 'github:heavy-lifting/a-maze', label: 'A-Maze (26)', samples: 26 },
   { value: 'github:eddyflux/crate', label: 'Eddyflux Crate (18)', samples: 18 },
-  { value: 'github:algorave-dave/sample', label: 'Algorave Dave Sample (10)', samples: 10 },
-  { value: 'github:indiepaleale/strudel-sample', label: 'Indiepaleale Strudel Sample (12)', samples: 12 },
-  { value: 'github:azhadyed/strudel-sample', label: 'Azhadyed Strudel Sample (9)', samples: 9 },
-  { value: 'github:gerzytet/strudel-sample', label: 'Gerzytet Strudel Sample (1)', samples: 1 },
-  { value: 'github:jessicaaaaaaaaaaaa/strudel-sample', label: 'Jessica Strudel Sample (2)', samples: 2 },
-  { value: 'github:reema7667/strudel-sound', label: 'Reema Strudel Sound (1)', samples: 1 },
-  { value: 'github:Samplebit/strudel_sample', label: 'Samplebit Strudel Sample (1)', samples: 1 },
   { value: 'github:ibleedicare/strudel-bank', label: 'Ibleedicare Strudel Bank (2)', samples: 2 },
-  { value: 'github:arefo/strudel', label: 'Arefo Strudel (12)', samples: 12 },
   { value: 'github:Prof12200/strudel_repo', label: 'Prof12200 Strudel Repo (6)', samples: 6 },
   { value: 'github:creativenucleus/strudel-m8-168-dnb-jungle', label: 'Strudel M8 168 DNB Jungle (8)', samples: 8 },
-  { value: 'github:maudd/joonie-dnb-collection-strudel', label: 'Joonie DNB Collection (2)', samples: 2 },
   { value: 'github:tidalcycles/dirt-samples', label: 'Dirt Samples', samples: 218 }
 ];
 
