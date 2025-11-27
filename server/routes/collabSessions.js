@@ -188,5 +188,21 @@ router.post('/:sessionId/delay', requireAuth, async (req, res) => {
   }
 });
 
+router.delete('/:sessionId', requireAuth, async (req, res) => {
+  try {
+    await collabSessionManager.deleteSession(req.params.sessionId, req.user.id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting collaboration session:', error);
+    const message = error.message || 'Failed to delete collaboration session';
+    const status = message.includes('owner')
+      ? 403
+      : message.includes('not found')
+        ? 404
+        : 500;
+    res.status(status).json({ error: message });
+  }
+});
+
 export default router;
 

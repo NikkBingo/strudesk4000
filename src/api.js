@@ -343,6 +343,12 @@ export const collabAPI = {
       method: 'POST',
       body: JSON.stringify({ applyDelayMs })
     });
+  },
+
+  async deleteSession(sessionId) {
+    return apiRequest(`/collab-sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE'
+    });
   }
 };
 
