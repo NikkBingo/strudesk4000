@@ -2,7 +2,7 @@ import { collabAPI, usersAPI } from '../api.js';
 import { getStrudelEditorValue } from '../strudelReplEditor.js';
 import { collaborationClient } from '../collaboration/socketClient.js';
 import { lockScroll, unlockScroll } from '../scrollLock.js';
-import { DRUM_BANK_VALUES } from '../constants/banks.js';
+import { DRUM_BANK_VALUES, SYNTH_BANK_ALIASES, parseBankSelectionValue } from '../constants/banks.js';
 import { getTheoryControlsTemplate, updateTheoryControlsVisibility } from './TheoryControls.js';
 
 const STATUS_VARIANTS = {
@@ -85,6 +85,7 @@ export class CollabPanel {
     this.channelTitleAuto = true;
     this.channelLastChordLabel = null;
     this.lineNumberElement = null;
+    this.modeToggleSwitch = null;
   }
 
   createDefaultEditorState() {
@@ -329,9 +330,13 @@ export class CollabPanel {
             <div class="collab-channel-editor-tools">
               <div class="form-group collab-mode-toggle-group">
                 <label>Editor mode</label>
-                <div class="collab-mode-toggle" role="group" aria-label="Editor mode">
-                  <button type="button" class="collab-mode-btn active" data-collab-editor-mode="code">Code</button>
-                  <button type="button" class="collab-mode-btn" data-collab-editor-mode="step">Step</button>
+                <div class="collab-mode-switch">
+                  <span class="collab-mode-label collab-mode-label--code">Code</span>
+                  <label class="toggle-switch collab-mode-toggle">
+                    <input type="checkbox" id="collab-editor-mode-toggle" aria-label="Toggle step editor" />
+                    <span class="toggle-slider"></span>
+                  </label>
+                  <span class="collab-mode-label collab-mode-label--step">Step</span>
                 </div>
               </div>
             </div>
@@ -477,13 +482,14 @@ export class CollabPanel {
       this.handleNoteModeToggle(event.target.checked);
     });
 
-    const modeButtons = this.root.querySelectorAll('[data-collab-editor-mode]');
-    modeButtons.forEach((button) => {
-      button.addEventListener('click', () => {
-        const mode = button.getAttribute('data-collab-editor-mode');
-        this.setChannelEditorMode(mode || 'code');
+    this.modeToggleSwitch = this.root.querySelector('#collab-editor-mode-toggle');
+    if (this.modeToggleSwitch && !this.modeToggleSwitch.dataset.listenerAttached) {
+      this.modeToggleSwitch.addEventListener('change', (event) => {
+        const nextMode = event.target.checked ? 'step' : 'code';
+        this.setChannelEditorMode(nextMode);
       });
-    });
+      this.modeToggleSwitch.dataset.listenerAttached = 'true';
+    }
 
     this.buildStepEditorGrid();
     this.autoFillTitleFromBank();
@@ -521,6 +527,52 @@ export class CollabPanel {
     this.lineNumberElement.innerHTML = markup;
     this.lineNumberElement.style.minWidth = `${digits * 8 + 16}px`;
     this.lineNumberElement.scrollTop = this.channelTextarea.scrollTop;
+  }
+
+  getSelectedBankInfo() {
+    const selectedValue = this.channelEditorState?.bankValue || '';
+    if (!selectedValue) {
+      return null;
+    }
+    const parsed = parseBankSelectionValue(selectedValue);
+    const bankValue = parsed.bankValue || '';
+    if (!bankValue) {
+      return null;
+    }
+    const normalized = bankValue.toLowerCase();
+    const synthName = SYNTH_BANK_ALIASES[normalized] || bankValue;
+    return {
+      bankValue,
+      synthName,
+      isDrum: DRUM_BANK_VALUES.has(bankValue)
+    };
+  }
+
+  applySelectedInstrumentToPattern() {
+    const textarea = this.getChannelTextarea();
+    if (!textarea) return;
+    let pattern = textarea.value || '';
+    if (!pattern.trim()) return;
+    const info = this.getSelectedBankInfo();
+    if (!info) return;
+
+    if (info.isDrum) {
+      if (pattern.includes('.bank(')) {
+        pattern = pattern.replace(/\.bank\s*\([^)]*\)/gi, `.bank("${info.bankValue}")`);
+      } else {
+        pattern = `${pattern}.bank("${info.bankValue}")`;
+      }
+    } else {
+      const soundRegex = /\.\s*(s|sound)\s*\(\s*["'][^"']*["']\s*\)/gi;
+      if (soundRegex.test(pattern)) {
+        pattern = pattern.replace(soundRegex, `.s("${info.synthName}")`);
+      } else {
+        pattern = `${pattern}.s("${info.synthName}")`;
+      }
+    }
+
+    textarea.value = pattern;
+    this.updatePatternLineNumbers();
   }
 
   handleTitleInputChange() {
@@ -562,11 +614,13 @@ export class CollabPanel {
   handleKeyChange(value) {
     this.channelEditorState.key = value || '';
     this.syncCodeAnnotationsFromState();
+    this.applySelectedInstrumentToPattern();
   }
 
   handleScaleChange(value) {
     this.channelEditorState.scale = value || '';
     this.syncCodeAnnotationsFromState();
+    this.applySelectedInstrumentToPattern();
   }
 
   handleChordSelection(presetId) {
@@ -584,6 +638,7 @@ export class CollabPanel {
     this.channelLastChordLabel = preset.label;
     this.chordSelect.value = '';
     this.syncCodeAnnotationsFromState();
+    this.applySelectedInstrumentToPattern();
   }
 
   handleNoteModeToggle(isSemitone, options = {}) {
@@ -636,12 +691,17 @@ export class CollabPanel {
   }
 
   updateEditorModeButtons() {
-    const buttons = this.root?.querySelectorAll('[data-collab-editor-mode]');
-    if (!buttons) return;
-    buttons.forEach((button) => {
-      const mode = button.getAttribute('data-collab-editor-mode') || 'code';
-      button.classList.toggle('active', mode === this.channelEditorState.mode);
-    });
+    if (this.modeToggleSwitch) {
+      this.modeToggleSwitch.checked = this.channelEditorState.mode === 'step';
+    }
+    const codeLabel = this.root?.querySelector('.collab-mode-label--code');
+    const stepLabel = this.root?.querySelector('.collab-mode-label--step');
+    if (codeLabel) {
+      codeLabel.classList.toggle('active', this.channelEditorState.mode === 'code');
+    }
+    if (stepLabel) {
+      stepLabel.classList.toggle('active', this.channelEditorState.mode === 'step');
+    }
   }
 
   updateEditorModeVisibility() {
@@ -938,24 +998,39 @@ export class CollabPanel {
         }
       }
     });
-    this.root?.querySelector('#collab-recents-list')?.addEventListener('click', (event) => {
-      const removeTarget = event.target.closest('[data-remove-session-id]');
-      if (removeTarget) {
-        event.preventDefault();
-        event.stopPropagation();
-        const removeId = removeTarget.getAttribute('data-remove-session-id');
-        if (removeId) {
-          this.handleRecentSessionRemoval(removeId);
+    const recentsList = this.root?.querySelector('#collab-recents-list');
+    if (recentsList) {
+      recentsList.addEventListener('click', (event) => {
+        const removeTarget = event.target.closest('[data-remove-session-id]');
+        if (removeTarget) {
+          event.preventDefault();
+          event.stopPropagation();
+          const removeId = removeTarget.getAttribute('data-remove-session-id');
+          if (removeId) {
+            this.handleRecentSessionRemoval(removeId);
+          }
+          return;
         }
-        return;
-      }
-      const chip = event.target.closest('[data-collab-session-id]');
-      if (!chip) return;
-      const sessionId = chip.getAttribute('data-collab-session-id');
-      if (sessionId) {
-        this.connectToSession(sessionId);
-      }
-    });
+        const chip = event.target.closest('[data-collab-session-id]');
+        if (!chip) return;
+        const sessionId = chip.getAttribute('data-collab-session-id');
+        if (sessionId) {
+          this.connectToSession(sessionId);
+        }
+      });
+
+      recentsList.addEventListener('keydown', (event) => {
+        const chip = event.target.closest('[data-collab-session-id]');
+        if (!chip) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          const sessionId = chip.getAttribute('data-collab-session-id');
+          if (sessionId) {
+            this.connectToSession(sessionId);
+          }
+        }
+      });
+    }
     this.root?.querySelector('#collab-delay-slider')?.addEventListener('input', (event) => {
       const value = Number(event.target.value);
       const valueEl = this.root.querySelector('#collab-delay-value');
