@@ -12,7 +12,8 @@ const CONTEXT_CONFIG = {
     keySelectId: 'modal-key-select',
     scaleSelectId: 'modal-scale-select',
     scaleNotesId: 'modal-scale-notes-display',
-    keyGridStyle: 'display: none;'
+    keyGridStyle: 'display: none;',
+    pianoElementId: 'modal-piano'
   },
   collab: {
     mountId: 'collab-theory-block',
@@ -27,7 +28,8 @@ const CONTEXT_CONFIG = {
     keySelectId: 'collab-key-select',
     scaleSelectId: 'collab-scale-select',
     scaleNotesId: 'collab-scale-notes-display',
-    keyGridStyle: ''
+    keyGridStyle: '',
+    pianoElementId: 'collab-piano'
   }
 };
 
@@ -222,12 +224,48 @@ function renderCollabChordTools() {
   `;
 }
 
+function renderPianoSection(context) {
+  const config = CONTEXT_CONFIG[context];
+  if (!config) return '';
+  const elementId = config.pianoElementId || `${context}-piano`;
+  return `
+    <div class="piano-section" data-piano-section data-piano-element-id="${elementId}">
+      <div class="piano-header">
+        <h3>Interactive Piano</h3>
+        <div class="piano-octave-controls">
+          <label>Octave:</label>
+          <button class="piano-octave-btn" data-piano-octave="1">1</button>
+          <button class="piano-octave-btn" data-piano-octave="2">2</button>
+          <button class="piano-octave-btn active" data-piano-octave="3">3</button>
+          <button class="piano-octave-btn" data-piano-octave="4">4</button>
+          <button class="piano-octave-btn" data-piano-octave="5">5</button>
+        </div>
+      </div>
+      <div class="piano-keyboard" data-piano-keys>
+        <button class="piano-key white" data-note="C">C</button>
+        <button class="piano-key black" data-note="C#">C#</button>
+        <button class="piano-key white" data-note="D">D</button>
+        <button class="piano-key black" data-note="D#">D#</button>
+        <button class="piano-key white" data-note="E">E</button>
+        <button class="piano-key white" data-note="F">F</button>
+        <button class="piano-key black" data-note="F#">F#</button>
+        <button class="piano-key white" data-note="G">G</button>
+        <button class="piano-key black" data-note="G#">G#</button>
+        <button class="piano-key white" data-note="A">A</button>
+        <button class="piano-key black" data-note="A#">A#</button>
+        <button class="piano-key white" data-note="B">B</button>
+      </div>
+    </div>
+  `;
+}
+
 export function getTheoryControlsTemplate(context) {
   if (context === 'modal') {
     return [
       renderTimeSignatureBlock(context),
       renderKeyScaleBlock(context),
-      renderModalChordSuggestions()
+      renderModalChordSuggestions(),
+      renderPianoSection(context)
     ].join('\n');
   }
 
@@ -250,6 +288,7 @@ export function getTheoryControlsTemplate(context) {
         ${renderTimeSignatureBlock(context)}
         ${renderKeyScaleBlock(context)}
         ${renderCollabChordTools()}
+        ${renderPianoSection(context)}
       </div>
     `;
   }
