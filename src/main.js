@@ -9076,6 +9076,13 @@ class InteractiveSoundApp {
           </button>
         `;
       }).join('');
+      const toggle = document.querySelector('[data-target="modal-my-channels"]');
+      const group = toggle?.closest('.modal-presets-group');
+      if (toggle && group && history.length && toggle.getAttribute('aria-expanded') !== 'true') {
+        toggle.setAttribute('aria-expanded', 'true');
+        container.classList.add('is-open');
+        group.classList.remove('collapsed');
+      }
     };
 
     const myChannelsPresetContainer = document.getElementById('modal-my-channels');
@@ -12710,6 +12717,86 @@ class InteractiveSoundApp {
       result = unwrapBalancedParens(result.trim());
       return result;
     };
+
+    const splitStackPatterns = (input) => {
+      if (!input || typeof input !== 'string') return [];
+      let text = input.trim();
+      if (!text) return [];
+      if (text.startsWith('[') && text.endsWith(']')) {
+        text = text.slice(1, -1).trim();
+      }
+      const parts = [];
+      let current = '';
+      let depth = 0;
+      let inString = false;
+      let stringChar = null;
+      let inLineComment = false;
+      let inBlockComment = false;
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const next = text[i + 1];
+        if (inLineComment) {
+          if (char === '\n') {
+            inLineComment = false;
+            current += char;
+          }
+          continue;
+        }
+        if (inBlockComment) {
+          if (char === '*' && next === '/') {
+            inBlockComment = false;
+            i++;
+          }
+          continue;
+        }
+        if (!inString && char === '/' && next === '/') {
+          inLineComment = true;
+          i++;
+          continue;
+        }
+        if (!inString && char === '/' && next === '*') {
+          inBlockComment = true;
+          i++;
+          continue;
+        }
+        if (inString) {
+          current += char;
+          if (char === stringChar && text[i - 1] !== '\\') {
+            inString = false;
+            stringChar = null;
+          }
+          continue;
+        }
+        if (char === '"' || char === "'") {
+          inString = true;
+          stringChar = char;
+          current += char;
+          continue;
+        }
+        if (char === '(' || char === '[' || char === '{') {
+          depth++;
+          current += char;
+          continue;
+        }
+        if (char === ')' || char === ']' || char === '}') {
+          if (depth > 0) depth--;
+          current += char;
+          continue;
+        }
+        if (char === ',' && depth === 0) {
+          if (current.trim()) {
+            parts.push(current.trim());
+          }
+          current = '';
+          continue;
+        }
+        current += char;
+      }
+      if (current.trim()) {
+        parts.push(current.trim());
+      }
+      return parts.filter(Boolean);
+    };
     
     this.syncElementsFromMasterPattern = (masterPattern) => {
       if (!masterPattern || typeof masterPattern !== 'string') {
@@ -12764,20 +12851,18 @@ class InteractiveSoundApp {
         const channelRegex = /\s*\/\*\s*Channel\s+(\d+)\s*\*\/([\s\S]*?)(?=(\s*\/\*\s*Channel\s+\d+\s*\*\/)|$)/g;
         let match;
         const updatedElements = [];
-
-        while ((match = channelRegex.exec(parseTarget)) !== null) {
-          const channelNumber = parseInt(match[1], 10);
+        
+        const processChannelPattern = (channelNumber, patternBodyRaw) => {
           if (!Number.isFinite(channelNumber) || channelNumber < 1) {
-            continue;
+            return;
           }
-          
-          let patternBody = match[2].trim();
-          if (!patternBody) continue;
-          
+          let patternBody = patternBodyRaw;
+          if (!patternBody) return;
+          patternBody = patternBody.trim();
+          if (!patternBody) return;
           patternBody = patternBody.replace(/^,+/, '').replace(/,+$/, '').trim();
-          if (!patternBody) continue;
-
-          const channelBlock = match[0]?.trim() || patternBody;
+          if (!patternBody) return;
+          const originalPatternBody = patternBody;
           
           const elementId = `element-${channelNumber}`;
           const existingTrackData = soundManager.trackedPatterns?.get(elementId);
@@ -12805,7 +12890,7 @@ class InteractiveSoundApp {
             const soloed = existingTrackData?.soloed ?? false;
             
             soundManager.trackedPatterns.set(elementId, {
-              rawPattern: channelBlock,
+              rawPattern: originalPatternBody,
               pattern: normalizedChannelPattern,
               gain,
               pan,
@@ -12836,8 +12921,20 @@ class InteractiveSoundApp {
           }
           
           updatedElements.push(elementId);
+        };
+
+        while ((match = channelRegex.exec(parseTarget)) !== null) {
+          const channelNumber = parseInt(match[1], 10);
+          processChannelPattern(channelNumber, match[2]);
         }
         
+        if (updatedElements.length === 0) {
+          const fallbackPatterns = splitStackPatterns(parseTarget);
+          fallbackPatterns.forEach((pattern, index) => {
+            processChannelPattern(index + 1, pattern);
+          });
+        }
+
         if (updatedElements.length > 0) {
           console.log(`🔄 Synced master pattern changes to elements: ${updatedElements.join(', ')}`);
         } else {
@@ -13943,13 +14040,15 @@ class InteractiveSoundApp {
     this.collabUnsubscribers = [];
 
     const snapshotHandler = (snapshot) => {
-      if (!snapshot?.masterCode) return;
-      this.queueCollaborativeMaster(snapshot.masterCode, 'snapshot');
+      const playbackCode = snapshot?.mergedStack?.trim() || snapshot?.masterCode?.trim();
+      if (!playbackCode) return;
+      this.queueCollaborativeMaster(playbackCode, 'snapshot');
     };
 
     const masterHandler = (payload) => {
-      if (!payload?.masterCode) return;
-      this.queueCollaborativeMaster(payload.masterCode, 'socket');
+      const playbackCode = payload?.mergedStack?.trim() || payload?.masterCode?.trim();
+      if (!playbackCode) return;
+      this.queueCollaborativeMaster(playbackCode, 'socket');
     };
 
     this.collabUnsubscribers.push(collaborationClient.on('session:snapshot', snapshotHandler));
