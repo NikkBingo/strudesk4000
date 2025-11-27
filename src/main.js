@@ -19,6 +19,8 @@ import { CollabPanel } from './components/CollabPanel.js';
 import { getCurrentUser, authAPI, patternsAPI } from './api.js';
 import { lockScroll, unlockScroll, forceUnlockScroll } from './scrollLock.js';
 import { collaborationClient } from './collaboration/socketClient.js';
+import { getTheoryControlsTemplate, updateTheoryControlsVisibility } from './components/TheoryControls.js';
+import { SYNTH_BANK_ALIASES, OSCILLATOR_SYNTHS, SAMPLE_SYNTHS, LEGACY_SAMPLE_SYNTHS, DRUM_BANK_VALUES } from './constants/banks.js';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -1440,14 +1442,6 @@ const DRUM_SAMPLE_TO_ROW = new Map([
   ['shaker', 'sh']
 ]);
 
-const SYNTH_BANK_ALIASES = {
-  superpiano: 'piano',
-  wood: 'jazz'  // Wood is now called Jazz
-};
-
-const OSCILLATOR_SYNTHS = ['sine', 'square', 'triangle', 'sawtooth', 'supersaw', 'pulse'];
-const SAMPLE_SYNTHS = ['piano', 'supersaw', 'gtr', 'casio', 'jazz', 'metal', 'folkharp']; // 'wood' aliased to 'jazz'
-const LEGACY_SAMPLE_SYNTHS = Object.keys(SYNTH_BANK_ALIASES);
 const SYNTH_NAME_MATCHERS = new Set([
   ...OSCILLATOR_SYNTHS,
   ...SAMPLE_SYNTHS,
@@ -8355,6 +8349,11 @@ class InteractiveSoundApp {
     
     // Capture 'this' for use in nested functions
     const appInstance = this;
+
+    const modalTheoryMount = modal.querySelector('#modal-theory-block');
+    if (modalTheoryMount) {
+      modalTheoryMount.innerHTML = getTheoryControlsTemplate('modal');
+    }
     
     const bankSelect = document.getElementById('modal-pattern-bank');
     const sampleUrlInput = document.getElementById('modal-sample-url');
@@ -10044,7 +10043,7 @@ class InteractiveSoundApp {
         updateScaleNotesDisplay();
         // Ensure UI reflects current state
         updatePreviewButtonState();
-        updateKeyScaleVisibility();
+        updateModalTheoryVisibility();
         refreshDrumGridForCurrentState();
         // Reset presets section state each time the modal opens
         resetPresetsSection();
@@ -10379,11 +10378,22 @@ class InteractiveSoundApp {
       } catch {
         // ignore storage errors
       }
+      updateModalTheoryVisibility();
     };
     
     const isDrumBankValue = (value) => {
       const parsed = parseBankSelectionValue(value);
       return parsed.bankValue && DRUM_BANK_VALUES.has(parsed.bankValue);
+    };
+
+    const updateModalTheoryVisibility = () => {
+      const selectedValue = bankSelect ? bankSelect.value : '';
+      const isDrum = isDrumBankValue(selectedValue);
+      const isStepEditorActive = drumGridState.active && !drumGridState.patternEditorEnabled;
+      updateTheoryControlsVisibility('modal', {
+        showTimeSignature: isDrum && isStepEditorActive,
+        showKeyScale: !isDrum
+      });
     };
     
     const setDrumGridSubtitle = (metrics) => {
@@ -12447,26 +12457,13 @@ class InteractiveSoundApp {
         }
         
         // Update key/scale visibility based on toggle state
-        updateKeyScaleVisibility();
+        updateModalTheoryVisibility();
         // Don't call applyKeyScaleToPattern() here to prevent feedback loop
         // The pattern conversion above handles the format change
       });
       keepNotesCheckbox.dataset.listenerAttached = 'true';
     }
     
-    // Function to update key/scale visibility based on toggle state
-    const updateKeyScaleVisibility = () => {
-      const keyScaleGroup = document.getElementById('modal-key-scale-group');
-      if (!keyScaleGroup) return;
-      
-      const keepNotesCheckbox = document.getElementById('modal-keep-notes-as-written');
-      const patternValue = getStrudelEditorValue('modal-pattern');
-      const hasNotePattern = patternValue && containsNoteCall(patternValue);
-      
-      // Always show Key/Scale when pattern has notes, regardless of Semitones/Note names toggle
-      keyScaleGroup.style.display = hasNotePattern ? 'block' : 'none';
-    };
-
     syncLastSemitonePattern(getStrudelEditorValue('modal-pattern'), true);
 
     const escapeRegexValue = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -12714,7 +12711,7 @@ class InteractiveSoundApp {
           // Time Signature visibility is handled by applyPatternEditorState()
           
           // Show/hide Key/Scale controls based on bank selection and toggle state
-          updateKeyScaleVisibility();
+          updateModalTheoryVisibility();
           
           // Set selected tag to 'bank' to show suggestions
           this.selectedTagKey = 'bank';
@@ -12726,7 +12723,7 @@ class InteractiveSoundApp {
           }
         } else {
           // Hide Key/Scale if no bank selected or toggle state requires it
-          updateKeyScaleVisibility();
+          updateModalTheoryVisibility();
           
           // Clear selected tag when no bank is selected
           this.selectedTagKey = null;
