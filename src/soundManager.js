@@ -6,6 +6,7 @@ import { soundConfig } from './config.js';
 import { Note, Scale, Interval } from '@tonaljs/tonal';
 import { WebMidi } from 'webmidi';
 import { startMasterHighlighting, stopMasterHighlighting } from './highlighting.js';
+import { resolveAssetUrl, mapAssetUrls } from './utils/assetUrls.js';
 
 // Import Strudel modules statically at top level to avoid duplicate bundling
 // Use dynamic imports but cache them to ensure single instance
@@ -6584,7 +6585,7 @@ class SoundManager {
     // When using .bank("RolandTR909"), Strudel expects samples named "RolandTR909_bd", "RolandTR909_sd", etc.
     const localDrumBanks = {
       'RolandTR909': {
-        'RolandTR909_bd': [
+        'RolandTR909_bd': mapAssetUrls([
           'assets/sounds/Kicks/ESWTR909 Kick 01.wav',
           'assets/sounds/Kicks/ESWTR909 Kick 02.wav',
           'assets/sounds/Kicks/ESWTR909 Kick 03.wav',
@@ -6595,8 +6596,8 @@ class SoundManager {
           'assets/sounds/Kicks/ESWTR909 Kick 08.wav',
           'assets/sounds/Kicks/ESWTR909 Kick 09.wav',
           'assets/sounds/Kicks/ESWTR909 Kick 10.wav'
-        ],
-        'RolandTR909_sd': [
+        ]),
+        'RolandTR909_sd': mapAssetUrls([
           'assets/sounds/Snares/ESWTR909 Snare 01.wav',
           'assets/sounds/Snares/ESWTR909 Snare 02.wav',
           'assets/sounds/Snares/ESWTR909 Snare 03.wav',
@@ -6609,8 +6610,8 @@ class SoundManager {
           'assets/sounds/Snares/ESWTR909 Snare 10.wav',
           'assets/sounds/Snares/ESWTR909 Snare 11.wav',
           'assets/sounds/Snares/ESWTR909 Snare 12.wav'
-        ],
-        'RolandTR909_hh': [
+        ]),
+        'RolandTR909_hh': mapAssetUrls([
           'assets/sounds/Hats/ESWTR909 HH Closed 01.wav',
           'assets/sounds/Hats/ESWTR909 HH Closed 02.wav',
           'assets/sounds/Hats/ESWTR909 HH Closed 03.wav',
@@ -6621,8 +6622,8 @@ class SoundManager {
           'assets/sounds/Hats/ESWTR909 HH Closed 08.wav',
           'assets/sounds/Hats/ESWTR909 HH Closed 09.wav',
           'assets/sounds/Hats/ESWTR909 HH Closed 10.wav'
-        ],
-        'RolandTR909_oh': [
+        ]),
+        'RolandTR909_oh': mapAssetUrls([
           'assets/sounds/Hats/ESWTR909 HH Open 01.wav',
           'assets/sounds/Hats/ESWTR909 HH Open 02.wav',
           'assets/sounds/Hats/ESWTR909 HH Open 03.wav',
@@ -6631,65 +6632,65 @@ class SoundManager {
           'assets/sounds/Hats/ESWTR909 HH Open 06.wav',
           'assets/sounds/Hats/ESWTR909 HH Open 07.wav',
           'assets/sounds/Hats/ESWTR909 HH Open 08.wav'
-        ],
-        'RolandTR909_cp': [
+        ]),
+        'RolandTR909_cp': mapAssetUrls([
           'assets/sounds/Claps/ESWTR909 Clap 01.wav',
           'assets/sounds/Claps/ESWTR909 Clap 02.wav',
           'assets/sounds/Claps/ESWTR909 Clap 03.wav',
           'assets/sounds/Claps/ESWTR909 Clap 04.wav',
           'assets/sounds/Claps/ESWTR909 Clap 05.wav'
-        ],
-        'RolandTR909_cr': [
+        ]),
+        'RolandTR909_cr': mapAssetUrls([
           'assets/sounds/Hats/ESWTR909 HH Crash 01.wav',
           'assets/sounds/Hats/ESWTR909 HH Crash 02.wav',
           'assets/sounds/Hats/ESWTR909 HH Crash 03.wav',
           'assets/sounds/Hats/ESWTR909 HH Crash 04.wav',
           'assets/sounds/Hats/ESWTR909 HH Crash 05.wav'
-        ],
-        'RolandTR909_lt': [
+        ]),
+        'RolandTR909_lt': mapAssetUrls([
           'assets/sounds/Toms/ESWTR909 Tom 01.wav',
           'assets/sounds/Toms/ESWTR909 Tom 02.wav',
           'assets/sounds/Toms/ESWTR909 Tom 03.wav',
           'assets/sounds/Toms/ESWTR909 Tom 04.wav',
           'assets/sounds/Toms/ESWTR909 Tom 05.wav'
-        ],
-        'RolandTR909_mt': [
+        ]),
+        'RolandTR909_mt': mapAssetUrls([
           'assets/sounds/Toms/ESWTR909 Tom 06.wav',
           'assets/sounds/Toms/ESWTR909 Tom 07.wav',
           'assets/sounds/Toms/ESWTR909 Tom 08.wav',
           'assets/sounds/Toms/ESWTR909 Tom 09.wav',
           'assets/sounds/Toms/ESWTR909 Tom 10.wav'
-        ],
-        'RolandTR909_ht': [
+        ]),
+        'RolandTR909_ht': mapAssetUrls([
           'assets/sounds/Toms/ESWTR909 Tom 11.wav',
           'assets/sounds/Toms/ESWTR909 Tom 12.wav',
           'assets/sounds/Toms/ESWTR909 Tom 13.wav',
           'assets/sounds/Toms/ESWTR909 Tom 14.wav',
           'assets/sounds/Toms/ESWTR909 Tom 15.wav'
-        ]
+        ])
       },
       'RolandTR808': {
-        'RolandTR808_bd': [
+        'RolandTR808_bd': mapAssetUrls([
           'assets/sounds/Kicks/ESW909X Kick 01.wav',
           'assets/sounds/Kicks/ESW909X Kick 02.wav',
           'assets/sounds/Kicks/ESW909X Kick 03.wav',
           'assets/sounds/Kicks/ESW909X Kick 04.wav',
           'assets/sounds/Kicks/ESW909X Kick 05.wav'
-        ],
-        'RolandTR808_sd': [
+        ]),
+        'RolandTR808_sd': mapAssetUrls([
           'assets/sounds/Snares/ESW909X Snare 01.wav',
           'assets/sounds/Snares/ESW909X Snare 02.wav',
           'assets/sounds/Snares/ESW909X Snare 03.wav',
           'assets/sounds/Snares/ESW909X Snare 04.wav',
           'assets/sounds/Snares/ESW909X Snare 05.wav'
-        ],
-        'RolandTR808_cp': [
+        ]),
+        'RolandTR808_cp': mapAssetUrls([
           'assets/sounds/Claps/ESW909X Clap 01.wav',
           'assets/sounds/Claps/ESW909X Clap 02.wav',
           'assets/sounds/Claps/ESW909X Clap 03.wav',
           'assets/sounds/Claps/ESW909X Clap 04.wav',
           'assets/sounds/Claps/ESW909X Clap 05.wav'
-        ]
+        ])
       }
     };
     
