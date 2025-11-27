@@ -538,7 +538,9 @@ class SoundManager {
     this.loadedBanks = new Set(); // Set of bank names that are successfully loaded
     
     // Current tempo (BPM) - defaults to 120
-    this.currentTempo = 120;
+    this.defaultTempo = 120;
+    this.currentTempo = this.defaultTempo;
+    this.tempoUserAdjusted = false;
     
     // Current key/scale - no default (user must select)
     this.currentKey = 'C';
@@ -4830,6 +4832,7 @@ class SoundManager {
     // Store current tempo
     this.currentTempo = bpm;
     this.masterPlaybackTempo = bpm;
+    this.tempoUserAdjusted = true;
     const newSpeed = Number.isFinite(bpm) && bpm > 0 ? bpm / 120 : 1;
     if (this.masterActive && this.masterPlaybackStartTime != null) {
       const audioContext = this.audioContext;
@@ -7802,7 +7805,7 @@ class SoundManager {
       return pattern;
     }
 
-    const tempo = this.currentTempo || 120;
+    const tempo = this.currentTempo || this.defaultTempo || 120;
     const tempoPrefix = '// Controls Selected Tempo:';
     const filteredLines = pattern
       .split('\n')
@@ -7811,6 +7814,10 @@ class SoundManager {
     const sanitizedPattern = this._sanitizePatternExpression(cleanedPattern);
     if (sanitizedPattern !== cleanedPattern) {
       console.log('🧼 Sanitized master pattern when formatting tempo comment');
+    }
+
+    if (!this.tempoUserAdjusted && tempo === (this.defaultTempo || 120)) {
+      return sanitizedPattern;
     }
 
     return `${sanitizedPattern}\n\n${tempoPrefix} ${tempo} BPM`;
