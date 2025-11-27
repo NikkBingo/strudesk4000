@@ -105,17 +105,17 @@ export class UserProfile {
                     <label>Email</label>
                     <div class="user-profile-email" id="profile-email-display">—</div>
                   </div>
-                  <div class="form-group">
+                  <div class="form-group user-profile-birthdate-field">
+                    <label for="profile-birth-date">Birth date</label>
+                    <input type="date" id="profile-birth-date" />
+                  </div>
+                  <div class="form-group user-profile-first-name">
                     <label for="profile-first-name">First name</label>
                     <input type="text" id="profile-first-name" placeholder="First name" />
                   </div>
-                  <div class="form-group">
+                  <div class="form-group user-profile-last-name">
                     <label for="profile-last-name">Last name</label>
                     <input type="text" id="profile-last-name" placeholder="Last name" />
-                  </div>
-                  <div class="form-group">
-                    <label for="profile-birth-date">Birth date</label>
-                    <input type="date" id="profile-birth-date" />
                   </div>
                   <div class="form-group">
                     <label for="profile-city">City</label>
