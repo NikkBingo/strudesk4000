@@ -7687,8 +7687,8 @@ class InteractiveSoundApp {
             const noteIndex = ((scaleDegree % stepsPerOctave) + stepsPerOctave) % stepsPerOctave;
             const noteName = scaleNotes[noteIndex];
             
-            // Add octave (default to octave 4, adjust based on offset)
-            const baseOctave = 4;
+            // Add octave (default to octave 3, adjust based on offset)
+            const baseOctave = 3;
             const finalOctave = baseOctave + octaveOffset;
             
             const resolvedNote = normalizeSpelling(`${noteName}${finalOctave}`, preferFlats);
