@@ -21,6 +21,7 @@ import { lockScroll, unlockScroll, forceUnlockScroll } from './scrollLock.js';
 import { collaborationClient } from './collaboration/socketClient.js';
 import { getTheoryControlsTemplate, updateTheoryControlsVisibility } from './components/TheoryControls.js';
 import { SYNTH_BANK_ALIASES, OSCILLATOR_SYNTHS, SAMPLE_SYNTHS, LEGACY_SAMPLE_SYNTHS, DRUM_BANK_VALUES, VCSL_OPTION_PREFIX, parseBankSelectionValue } from './constants/banks.js';
+import { initPianoSections } from './pianoKeyboard.js';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -3902,85 +3903,6 @@ class InteractiveSoundApp {
     window.addEventListener('keydown', handleKeyboardPiano, true);
     window.addEventListener('keyup', handleKeyboardPianoKeyUp, true);
     console.log('✅ Keyboard piano handler registered');
-
-    // Add mobile piano keyboard handler
-    let currentOctave = 3;
-    const mobilePianoSection = document.getElementById('mobile-piano-section');
-    const mobilePianoKeyboard = document.getElementById('mobile-piano-keyboard');
-    
-    if (mobilePianoSection && mobilePianoKeyboard) {
-      // Octave controls
-      const octaveButtons = mobilePianoSection.querySelectorAll('.piano-octave-btn');
-      octaveButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-          octaveButtons.forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          currentOctave = parseInt(btn.dataset.octave, 10);
-        });
-      });
-      
-      // Piano key handlers
-      const pianoKeys = mobilePianoKeyboard.querySelectorAll('.piano-key');
-      pianoKeys.forEach(key => {
-        const playNote = async (note) => {
-          // Ensure audio is initialized first
-          if (!soundManager.isAudioReady()) {
-            console.log('🎵 Initializing audio from piano key press...');
-            const success = await soundManager.initialize();
-            if (!success) {
-              console.warn('⚠️ Could not initialize audio');
-              return;
-            }
-          }
-          
-          // Resume audio context if suspended (mobile browsers often suspend it)
-          if (soundManager.audioContext && soundManager.audioContext.state === 'suspended') {
-            try {
-              await soundManager.audioContext.resume();
-              // Brief wait for state change
-              await new Promise(resolve => setTimeout(resolve, 50));
-              if (soundManager.audioContext.state !== 'running') {
-                console.warn('⚠️ Audio context not running after resume - state:', soundManager.audioContext.state);
-                // Continue anyway - might still work
-              } else {
-                console.log('✅ Audio context resumed successfully');
-              }
-            } catch (error) {
-              console.warn('⚠️ Could not resume audio context:', error);
-              // Continue anyway - might still work
-            }
-          }
-          
-          // playStrudelPattern will handle Strudel initialization and scheduler startup
-          // Now play the note
-          if (soundManager.isAudioReady()) {
-            const fullNote = `${note}${currentOctave}`;
-            const pattern = `note("${fullNote}").s("piano")`;
-            soundManager.playStrudelPattern('mobile-piano', pattern).catch(error => {
-              console.warn('⚠️ Could not play mobile piano note:', error);
-            });
-            key.classList.add('active');
-            setTimeout(() => key.classList.remove('active'), 150);
-          } else {
-            console.warn('⚠️ Audio not ready after initialization attempt');
-          }
-        };
-        
-        // Touch events for mobile
-        key.addEventListener('touchstart', (e) => {
-          e.preventDefault();
-          playNote(key.dataset.note);
-        });
-        
-        // Mouse events for desktop (if someone uses mouse on mobile view)
-        key.addEventListener('mousedown', (e) => {
-          e.preventDefault();
-          playNote(key.dataset.note);
-        });
-      });
-      
-      console.log('✅ Mobile piano keyboard handler registered');
-    }
 
     // Add stop all button handler
     const stopAllBtn = document.getElementById('stop-all-btn');
@@ -8333,6 +8255,7 @@ class InteractiveSoundApp {
     const modalTheoryMount = modal.querySelector('#modal-theory-block');
     if (modalTheoryMount) {
       modalTheoryMount.innerHTML = getTheoryControlsTemplate('modal');
+      initPianoSections(modalTheoryMount);
     }
     
     const bankSelect = document.getElementById('modal-pattern-bank');

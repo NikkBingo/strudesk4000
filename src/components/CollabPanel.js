@@ -5,6 +5,7 @@ import { lockScroll, unlockScroll } from '../scrollLock.js';
 import { DRUM_BANK_VALUES, SYNTH_BANK_ALIASES, parseBankSelectionValue } from '../constants/banks.js';
 import { getTheoryControlsTemplate, updateTheoryControlsVisibility } from './TheoryControls.js';
 import { soundManager } from '../soundManager.js';
+import { initPianoSections } from '../pianoKeyboard.js';
 
 const STATUS_VARIANTS = {
   info: 'info',
@@ -387,6 +388,7 @@ export class CollabPanel {
     const collabTheoryMount = this.root.querySelector('#collab-theory-block');
     if (collabTheoryMount) {
       collabTheoryMount.innerHTML = getTheoryControlsTemplate('collab');
+      initPianoSections(collabTheoryMount);
     }
     this.renderPendingInvites();
     this.renderRecentSessions();
