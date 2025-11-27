@@ -9012,8 +9012,8 @@ class InteractiveSoundApp {
       barTokens: []
     };
 
-    const patternEditorSelect = document.getElementById('modal-pattern-editor-select');
     const editorModeSwitch = document.getElementById('modal-editor-mode-switch');
+    const editorModeSwitchWrapper = document.getElementById('modal-editor-mode-switch-wrapper');
     const patternLabelRow = modal.querySelector('.pattern-label-row');
     let patternSnippetContainer = modal.querySelector('#modal-pattern-snippets-toggle')?.closest('.modal-presets') || null;
     let patternSnippetListEl = patternSnippetContainer ? patternSnippetContainer.querySelector('.pattern-snippet-list') : null;
@@ -10113,8 +10113,8 @@ class InteractiveSoundApp {
         this.currentEditingElementId = elementId;
         // Always default to code editor when opening the modal
         setPatternEditorEnabled(true);
-        if (patternEditorSelect) {
-          patternEditorSelect.value = 'code';
+        if (editorModeSwitch) {
+          editorModeSwitch.checked = false;
         }
         // Update header title
         const headerEl = document.getElementById('modal-element-id');
@@ -10338,8 +10338,8 @@ class InteractiveSoundApp {
     };
 
     const applyPatternEditorState = () => {
-      if (patternEditorSelect) {
-        patternEditorSelect.value = drumGridState.patternEditorEnabled ? 'code' : 'step';
+      if (editorModeSwitch) {
+        editorModeSwitch.checked = !drumGridState.patternEditorEnabled;
       }
       updatePatternFieldEditable(drumGridState.patternEditorEnabled);
       
@@ -10877,8 +10877,8 @@ class InteractiveSoundApp {
       const isDrum = isDrumBankValue(bankValue);
       console.log('🔄 refreshDrumGridForCurrentState: bankValue=', bankValue, 'isDrum=', isDrum, 'patternEditorEnabled=', drumGridState.patternEditorEnabled);
 
-      if (patternEditorSelect) {
-        patternEditorSelect.style.display = isDrum ? 'block' : 'none';
+      if (editorModeSwitchWrapper) {
+        editorModeSwitchWrapper.style.display = isDrum ? 'inline-flex' : 'none';
       }
 
       if (!isDrum) {
@@ -11115,23 +11115,11 @@ class InteractiveSoundApp {
     renderPresetButtons(samplerPresetsContainer, SAMPLER_EFFECT_PRESETS);
     initializePresetSubtoggles();
 
-    if (patternEditorSelect) {
-      patternEditorSelect.addEventListener('change', (event) => {
-        const isCodeEditor = event.target.value === 'code';
-        setPatternEditorEnabled(isCodeEditor);
-        refreshDrumGridForCurrentState();
-      });
-    }
     if (editorModeSwitch && !editorModeSwitch.dataset.listenerAttached) {
       editorModeSwitch.addEventListener('change', (event) => {
         const nextMode = event.target.checked ? 'step' : 'code';
-        if (patternEditorSelect) {
-          patternEditorSelect.value = nextMode;
-          patternEditorSelect.dispatchEvent(new Event('change', { bubbles: true }));
-        } else {
-          setPatternEditorEnabled(nextMode === 'code');
-          refreshDrumGridForCurrentState();
-        }
+        setPatternEditorEnabled(nextMode === 'code');
+        refreshDrumGridForCurrentState();
       });
       editorModeSwitch.dataset.listenerAttached = 'true';
     }
