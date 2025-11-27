@@ -3515,6 +3515,7 @@ class InteractiveSoundApp {
       || track.user?.name
       || 'Unknown Artist';
     const genre = track.genre?.trim() || 'Uncategorized';
+    const loadCount = track.analytics?.masterLoadCount ?? 0;
     const imageUrl = track.metadata?.imageUrl?.trim() || track.user?.avatarUrl || '';
     const initial = title.charAt(0).toUpperCase();
     const hasImage = Boolean(imageUrl);
@@ -3522,8 +3523,9 @@ class InteractiveSoundApp {
     const safeArtist = this.escapeHtml(artistName);
     const safeGenre = this.escapeHtml(genre);
     const safeImageUrl = this.escapeHtml(imageUrl);
+    const countLabel = `${loadCount} ${loadCount === 1 ? 'load' : 'loads'}`;
     return `
-      <button type="button" class="top-track-card" data-track-index="${index}">
+      <button type="button" class="top-track-card" data-track-index="${index}" data-track-id="${track.id || ''}">
         <div class="top-track-image ${hasImage ? '' : 'fallback'}">
           ${hasImage ? `<img src="${safeImageUrl}" alt="${safeTitle} cover art" loading="lazy" onerror="this.parentElement.classList.add('fallback'); this.remove();">` : ''}
           <span class="top-track-placeholder">${this.escapeHtml(initial)}</span>
@@ -3532,6 +3534,7 @@ class InteractiveSoundApp {
           <h4>${safeTitle}</h4>
           <p class="top-track-artist">${safeArtist}</p>
           <span class="top-track-genre">${safeGenre}</span>
+          <span class="top-track-count">${countLabel}</span>
         </div>
       </button>
     `;
@@ -3547,6 +3550,41 @@ class InteractiveSoundApp {
     this.updateMasterPatternDisplay();
     const title = track.title || 'Untitled Track';
     uiController.updateStatus(`Loaded “${title}” into master`);
+
+    if (track.id) {
+      patternsAPI.recordMasterLoad(track.id).then((result) => {
+        const count = result?.masterLoadCount ?? null;
+        if (count !== null) {
+          this.updateTopTrackLoadCount(track.id, count);
+        }
+      }).catch((error) => {
+        console.warn('⚠️ Failed to record master load:', error?.message || error);
+      });
+    }
+  }
+
+  updateTopTrackLoadCount(patternId, count) {
+    if (!patternId || count === undefined || count === null) {
+      return;
+    }
+    if (Array.isArray(this.topTracks)) {
+      this.topTracks = this.topTracks.map((track) => {
+        if (track.id === patternId) {
+          return {
+            ...track,
+            analytics: {
+              ...(track.analytics || {}),
+              masterLoadCount: count
+            }
+          };
+        }
+        return track;
+      });
+    }
+    const countEl = document.querySelector(`.top-track-card[data-track-id="${patternId}"] .top-track-count`);
+    if (countEl) {
+      countEl.textContent = `${count} ${count === 1 ? 'load' : 'loads'}`;
+    }
   }
 
   escapeHtml(value = '') {
@@ -10437,11 +10475,13 @@ class InteractiveSoundApp {
 
     const updateModalTheoryVisibility = () => {
       const selectedValue = bankSelect ? bankSelect.value : '';
+      const hasInstrumentSelected = !!selectedValue;
       const isDrum = isDrumBankValue(selectedValue);
       const isStepEditorActive = drumGridState.active && !drumGridState.patternEditorEnabled;
       updateTheoryControlsVisibility('modal', {
         showTimeSignature: isDrum && isStepEditorActive,
-        showKeyScale: !isDrum
+        showKeyScale: hasInstrumentSelected && !isDrum,
+        showPiano: hasInstrumentSelected && !isDrum
       });
     };
     

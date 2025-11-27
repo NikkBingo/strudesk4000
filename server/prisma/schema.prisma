@@ -14,6 +14,11 @@ model User {
   id            String   @id @default(uuid())
   email         String   @unique
   name          String   @unique
+  firstName     String?  @map("first_name")
+  lastName      String?  @map("last_name")
+  birthDate     DateTime? @map("birth_date")
+  city          String?
+  country       String?
   oauthProvider String   @map("oauth_provider") // 'google' | 'github' | 'test' | 'local'
   oauthId       String   @map("oauth_id")
   passwordHash  String?  @map("password_hash")
@@ -65,12 +70,24 @@ model Pattern {
 
   user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   shares PatternShare[]
+  analytics PatternAnalytics?
 
   @@index([userId])
   @@index([isPublic])
   @@index([type])
   @@index([genre])
   @@map("patterns")
+}
+
+model PatternAnalytics {
+  patternId        String   @id @map("pattern_id")
+  masterLoadCount  Int      @default(0) @map("master_load_count")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  pattern Pattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
+
+  @@map("pattern_analytics")
 }
 
 model PatternShare {

@@ -255,6 +255,15 @@ export const patternsAPI = {
     const params = new URLSearchParams();
     params.append('limit', limit);
     return apiRequest(`/patterns/top?${params.toString()}`);
+  },
+
+  async recordMasterLoad(patternId) {
+    if (!patternId) {
+      throw new Error('patternId is required');
+    }
+    return apiRequest(`/patterns/${encodeURIComponent(patternId)}/master-load`, {
+      method: 'POST'
+    });
   }
 };
 
