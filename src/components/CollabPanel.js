@@ -366,7 +366,14 @@ export class CollabPanel {
             <div class="collab-channel-actions">
               <button id="collab-push-draft-btn" class="btn-secondary" data-collab-requires-auth>Save draft</button>
               <button id="collab-publish-btn" class="btn-primary" data-collab-requires-auth>Publish to master</button>
-              <button id="collab-play-master-btn" class="btn-ghost" data-collab-requires-auth>Play Master</button>
+              <button
+                id="collab-play-master-btn"
+                class="play-master-button collab-play-master-button"
+                type="button"
+                title="Play master pattern"
+                aria-label="Play master pattern"
+                data-collab-requires-auth
+              >▶</button>
             </div>
             <div class="collab-master-display">
               <div class="collab-list-header">
@@ -512,7 +519,8 @@ export class CollabPanel {
     }
     updateTheoryControlsVisibility('collab', {
       showTimeSignature: isDrum && isStepEditor,
-      showKeyScale: !!bankValue && !isDrum
+      showKeyScale: !!bankValue && !isDrum,
+      showPiano: !!bankValue && !isDrum
     });
   }
 
@@ -533,11 +541,15 @@ export class CollabPanel {
     const playBtn = this.root?.querySelector('#collab-play-master-btn');
     if (!playBtn) return;
     if (isPlaying) {
-      playBtn.textContent = 'Stop Master';
+      playBtn.textContent = '■';
+      playBtn.setAttribute('aria-label', 'Stop master playback');
+      playBtn.setAttribute('title', 'Stop Master');
       playBtn.classList.add('active');
       this.masterPlaybackActive = true;
     } else {
-      playBtn.textContent = 'Play Master';
+      playBtn.textContent = '▶';
+      playBtn.setAttribute('aria-label', 'Play master pattern');
+      playBtn.setAttribute('title', 'Play Master');
       playBtn.classList.remove('active');
       this.masterPlaybackActive = false;
     }
