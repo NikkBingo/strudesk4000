@@ -469,6 +469,12 @@ export class CollabPanel {
               <button id="collab-push-draft-btn" class="btn-secondary" data-collab-requires-auth>Save draft</button>
               <button id="collab-publish-btn" class="btn-primary" data-collab-requires-auth>Publish to master</button>
             </div>
+            <div class="collab-master-display">
+              <div class="collab-list-header">
+                <strong>Published Master Pattern</strong>
+              </div>
+              <textarea id="collab-master-pattern" rows="8" readonly class="collab-master-pattern-field" placeholder="Master pattern will appear here after publishing..."></textarea>
+            </div>
           </div>
           <div class="collab-channels-list">
             <div class="collab-list-header">
@@ -1030,6 +1036,15 @@ export class CollabPanel {
     this.boundHandlers.push(this.socketClient.on('master:updated', (payload) => {
       if (payload?.masterCode) {
         this.setStatus('Master updated across collaborators', STATUS_VARIANTS.info, 2000);
+        // Update master pattern display
+        const masterPatternField = this.root?.querySelector('#collab-master-pattern');
+        if (masterPatternField) {
+          masterPatternField.value = payload.masterCode || '';
+        }
+        // Also update current snapshot if it exists
+        if (this.currentSnapshot) {
+          this.currentSnapshot.masterCode = payload.masterCode;
+        }
       }
     }));
   }
@@ -1234,6 +1249,11 @@ export class CollabPanel {
     const samples = snapshot.cpuStats?.recentServerSamples || [];
     if (samples.length) {
       this.updateCpuStats(samples[samples.length - 1]);
+    }
+    // Update master pattern display
+    const masterPatternField = this.root?.querySelector('#collab-master-pattern');
+    if (masterPatternField) {
+      masterPatternField.value = snapshot.masterCode || '';
     }
   }
 

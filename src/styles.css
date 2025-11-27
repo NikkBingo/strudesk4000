@@ -5745,6 +5745,32 @@ header h1 {
   flex-wrap: wrap;
 }
 
+.collab-master-display {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(99, 102, 241, 0.15);
+}
+
+.collab-master-pattern-field {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.8);
+  color: #1f2937;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+  cursor: not-allowed;
+  opacity: 0.9;
+}
+
+.collab-master-pattern-field:focus {
+  outline: 2px solid rgba(99, 102, 241, 0.3);
+  outline-offset: 2px;
+}
+
 .collab-channel-editor-tools {
   display: flex;
   flex-wrap: wrap;
