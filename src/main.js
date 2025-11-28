@@ -4587,6 +4587,11 @@ class InteractiveSoundApp {
           console.log('🎛️ Chaospad: Enabled - activating master filter with defaults');
           soundManager.enableMasterFilter(true);
           this.resetChaospadToDefaults(true);
+          
+          // Show mobile notification
+          if (this.isMobileView) {
+            this.showChaospadMobileNotification();
+          }
         }
         await this.updateChaospadInputMode();
       });
@@ -5879,6 +5884,24 @@ class InteractiveSoundApp {
     this.applyChaospadInputFromPercentages(horizontalPercentage, verticalPercentage, 'orientation');
   }
 
+
+  /**
+   * Show mobile notification when Chaospad is enabled
+   */
+  showChaospadMobileNotification() {
+    const notification = document.getElementById('chaospad-mobile-notification');
+    if (!notification) return;
+    
+    // Show notification
+    notification.hidden = false;
+    notification.setAttribute('aria-hidden', 'false');
+    
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+      notification.hidden = true;
+      notification.setAttribute('aria-hidden', 'true');
+    }, 3000);
+  }
 
   /**
    * Reset Chaospad-controlled modifiers back to defaults
