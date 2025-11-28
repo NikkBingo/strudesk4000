@@ -1,9 +1,11 @@
 import express from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../db.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { formatPatternWithMetadata } from '../utils/patternFormatter.js';
 
 const router = express.Router();
+const getUtcDayKey = (date = new Date()) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 
 // Create pattern
 router.post('/', requireAuth, async (req, res) => {
@@ -205,11 +207,51 @@ router.post('/:id/master-load', optionalAuth, async (req, res) => {
     const patternId = req.params.id;
     const pattern = await prisma.pattern.findUnique({
       where: { id: patternId },
-      select: { id: true }
+      select: {
+        id: true,
+        userId: true,
+        analytics: {
+          select: {
+            masterLoadCount: true
+          }
+        }
+      }
     });
 
     if (!pattern) {
       return res.status(404).json({ error: 'Pattern not found' });
+    }
+
+    const currentUserId = req.isAuthenticated && req.isAuthenticated() ? req.user?.id : null;
+    const existingCount = pattern.analytics?.masterLoadCount ?? 0;
+    if (currentUserId && pattern.userId === currentUserId) {
+      // Do not increment adds when the current user is the creator of the track
+      return res.json({
+        patternId,
+        masterLoadCount: existingCount
+      });
+    }
+
+    if (currentUserId) {
+      const dateKey = getUtcDayKey();
+      try {
+        await prisma.patternLoadEvent.create({
+          data: {
+            patternId,
+            userId: currentUserId,
+            dateKey
+          }
+        });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          // Already recorded an add for this track today
+          return res.json({
+            patternId,
+            masterLoadCount: existingCount
+          });
+        }
+        throw error;
+      }
     }
 
     const analytics = await prisma.patternAnalytics.upsert({
