@@ -220,7 +220,7 @@ body.gdpr-locked {
 .gdpr-consent-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.02);
+  background: rgba(0, 0, 0, 0.92);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -258,6 +258,24 @@ body.gdpr-locked {
   text-shadow: 0 20px 60px rgba(8, 145, 178, 0.35);
   background: transparent;
   padding: clamp(12px, 3vw, 24px);
+}
+
+.gdpr-visualizer-preview .gdpr-logo-image {
+  display: none;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+@media (max-width: 768px) {
+  .gdpr-visualizer-preview .punchcard-text {
+    display: none;
+  }
+  
+  .gdpr-visualizer-preview .gdpr-logo-image {
+    display: block;
+    max-width: min(80%, 400px);
+  }
 }
 
 .gdpr-consent-card {
