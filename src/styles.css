@@ -1072,15 +1072,76 @@ header h1 {
 }
 
 @media (max-width: 640px) {
+  .chaospad-control {
+    display: flex;
+    justify-content: center;
+  }
+  
+  .chaospad-inline-controls {
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+  }
+  
+  .chaospad-checkbox-label {
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    gap: 8px;
+  }
+  
   .chaospad-label-row {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     gap: 6px;
+    width: 100%;
   }
+  
   .chaospad-values {
     display: flex;
     gap: 10px;
     font-size: 0.9rem;
+    justify-content: center;
+    margin-left: 0;
+  }
+}
+
+.chaospad-mobile-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+}
+
+.chaospad-mobile-notification:not([hidden]) {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.chaospad-notification-content {
+  background: rgba(5, 6, 10, 0.95);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 12px;
+  padding: 12px 20px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 20px rgba(56, 189, 248, 0.2);
+  backdrop-filter: blur(8px);
+}
+
+.chaospad-notification-text {
+  color: #38bdf8;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: center;
+  display: block;
+}
+
+@media (min-width: 641px) {
+  .chaospad-mobile-notification {
+    display: none !important;
   }
 }
 
