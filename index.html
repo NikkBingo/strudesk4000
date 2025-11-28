@@ -380,6 +380,19 @@
               <option value="spectrum">Spectrum</option>
               <option value="pianoroll">Pianoroll</option>
             </select>
+            <div class="camera-controls" id="camera-controls" style="display: none;">
+              <label class="camera-toggle-label">
+                <input type="checkbox" id="camera-toggle" class="camera-toggle">
+                <span>Camera</span>
+              </label>
+              <div class="camera-blend-control" id="camera-blend-control" style="display: none;">
+                <label for="camera-blend-slider" class="camera-blend-label">
+                  <span>Blend</span>
+                  <span class="camera-blend-value" id="camera-blend-value">50%</span>
+                </label>
+                <input type="range" id="camera-blend-slider" class="camera-blend-slider" min="0" max="100" value="50" step="1">
+              </div>
+            </div>
             <button id="visualizer-fullscreen-btn" class="visualizer-fullscreen-btn" type="button" aria-label="Enter visualizer fullscreen">
               <span class="fullscreen-icon fullscreen-icon--enter" aria-hidden="true">⤢</span>
               <span class="fullscreen-icon fullscreen-icon--exit" aria-hidden="true">⤡</span>
