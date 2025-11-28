@@ -3403,8 +3403,8 @@ class InteractiveSoundApp {
     this.cameraVideo = null;
     this.cameraBlendValue = 0.5; // Default 50% blend
     this.cameraAvailable = false;
-    this.cameraCheckbox = null;
     this.cameraBlendSlider = null;
+    this.cameraBlendSliderMobile = null;
 
     if (this.isMobileView) {
       this.limitInitialElementsForMobile();
@@ -4549,6 +4549,17 @@ class InteractiveSoundApp {
         this.selectedVisualizer = e.target.value;
         console.log(`🎨 Visualizer changed to: ${this.selectedVisualizer}`);
         
+        // Automatically enable camera when visualizer is selected (not "off")
+        if (this.selectedVisualizer !== 'off' && !this.cameraEnabled) {
+          const success = await this.requestCameraAccess();
+          if (success) {
+            this.cameraEnabled = true;
+          }
+        } else if (this.selectedVisualizer === 'off' && this.cameraEnabled) {
+          // Stop camera when visualizer is turned off
+          this.stopCamera();
+        }
+        
         // Update camera controls visibility
         this.updateCameraControlsVisibility();
         
@@ -4578,10 +4589,14 @@ class InteractiveSoundApp {
     }
     
     // Setup camera controls
-    this.cameraCheckbox = document.getElementById('camera-toggle');
     this.cameraBlendSlider = document.getElementById('camera-blend-slider');
     const cameraBlendValue = document.getElementById('camera-blend-value');
     const cameraBlendControl = document.getElementById('camera-blend-control');
+    
+    // Mobile blend controls
+    this.cameraBlendSliderMobile = document.getElementById('camera-blend-slider-mobile');
+    const cameraBlendValueMobile = document.getElementById('camera-blend-value-mobile');
+    const cameraBlendControlMobile = document.getElementById('camera-blend-control-mobile');
     
     // Check camera availability
     this.checkCameraAvailability();
@@ -4589,39 +4604,40 @@ class InteractiveSoundApp {
     // Update camera controls visibility based on visualizer selection
     this.updateCameraControlsVisibility();
     
-    if (this.cameraCheckbox) {
-      this.cameraCheckbox.addEventListener('change', async (e) => {
-        if (e.target.checked) {
-          const success = await this.requestCameraAccess();
-          if (success) {
-            this.cameraEnabled = true;
-            this.updateCameraControlsVisibility();
-            // Start camera blend loop for external visualizers (spectrum, pianoroll) or when visualizer is off
-            if (this.selectedVisualizer === 'spectrum' || 
-                this.selectedVisualizer === 'pianoroll' || 
-                this.selectedVisualizer === 'off') {
-              this.startCameraBlendLoop();
-            }
-          } else {
-            this.cameraEnabled = false;
-            e.target.checked = false;
-            this.updateCameraControlsVisibility();
-          }
-        } else {
-          this.stopCamera();
-          this.updateCameraControlsVisibility();
-        }
-      });
-    }
-    
+    // Desktop blend slider
     if (this.cameraBlendSlider && cameraBlendValue) {
       this.cameraBlendSlider.addEventListener('input', (e) => {
         const value = parseInt(e.target.value, 10);
         this.cameraBlendValue = value / 100;
         cameraBlendValue.textContent = `${value}%`;
+        // Sync mobile slider
+        if (this.cameraBlendSliderMobile) {
+          this.cameraBlendSliderMobile.value = value;
+        }
+        if (cameraBlendValueMobile) {
+          cameraBlendValueMobile.textContent = `${value}%`;
+        }
       });
       // Set initial value
       cameraBlendValue.textContent = `${parseInt(this.cameraBlendSlider.value, 10)}%`;
+    }
+    
+    // Mobile blend slider
+    if (this.cameraBlendSliderMobile && cameraBlendValueMobile) {
+      this.cameraBlendSliderMobile.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value, 10);
+        this.cameraBlendValue = value / 100;
+        cameraBlendValueMobile.textContent = `${value}%`;
+        // Sync desktop slider
+        if (this.cameraBlendSlider) {
+          this.cameraBlendSlider.value = value;
+        }
+        if (cameraBlendValue) {
+          cameraBlendValue.textContent = `${value}%`;
+        }
+      });
+      // Set initial value
+      cameraBlendValueMobile.textContent = `${parseInt(this.cameraBlendSliderMobile.value, 10)}%`;
     }
     
     // Handle tab visibility changes to pause/resume camera
@@ -5094,8 +5110,16 @@ class InteractiveSoundApp {
       }
     } else if (this.selectedVisualizer === 'scope') {
       this.startScopeVisualizerLoop();
+      // Start camera blend loop if camera is enabled
+      if (this.cameraEnabled) {
+        // Camera blending is handled in scope loop itself
+      }
     } else if (this.selectedVisualizer === 'barchart') {
       this.startBarchartVisualizerLoop();
+      // Start camera blend loop if camera is enabled
+      if (this.cameraEnabled) {
+        // Camera blending is handled in barchart loop itself
+      }
     } else if (this.selectedVisualizer === 'pianoroll') {
       if (this.masterPunchcardCanvas) {
         this.masterPunchcardCanvas.style.display = 'block';
@@ -5501,9 +5525,6 @@ class InteractiveSoundApp {
       console.warn('⚠️ Camera access denied or unavailable:', error);
       this.cameraAvailable = false;
       this.cameraEnabled = false;
-      if (this.cameraCheckbox) {
-        this.cameraCheckbox.checked = false;
-      }
       return false;
     }
   }
@@ -5540,20 +5561,24 @@ class InteractiveSoundApp {
   }
 
   updateCameraControlsVisibility() {
-    const cameraToggleLabel = document.getElementById('camera-toggle-label');
     const cameraBlendControl = document.getElementById('camera-blend-control');
+    const cameraBlendControlMobile = document.getElementById('camera-blend-control-mobile');
     
-    if (cameraToggleLabel) {
-      // Always show camera toggle (available even when visualizer is off)
-      cameraToggleLabel.style.display = 'flex';
-    }
-    
-    // Show blend control when camera is enabled (works even when visualizer is off)
+    // Show blend control when visualizer is selected (not "off")
     if (cameraBlendControl) {
-      if (this.cameraEnabled) {
+      if (this.selectedVisualizer !== 'off') {
         cameraBlendControl.style.display = 'flex';
       } else {
         cameraBlendControl.style.display = 'none';
+      }
+    }
+    
+    // Show mobile blend control when visualizer is selected (not "off")
+    if (cameraBlendControlMobile) {
+      if (this.selectedVisualizer !== 'off') {
+        cameraBlendControlMobile.style.display = 'block';
+      } else {
+        cameraBlendControlMobile.style.display = 'none';
       }
     }
   }
@@ -5820,8 +5845,7 @@ class InteractiveSoundApp {
     }
 
     const canvas = this.masterPunchcardCanvas;
-    const ctx = this.getMasterPunchcardContext();
-    if (!canvas || !ctx) {
+    if (!canvas) {
       return;
     }
 
@@ -5846,9 +5870,23 @@ class InteractiveSoundApp {
         return;
       }
 
+      // Get native 2D context (needed for setTransform)
+      let context = this.masterPunchcardCtx;
+      if (!context || typeof context.setTransform !== 'function') {
+        // Fallback to native 2D context
+        context = canvas.getContext('2d');
+        if (!context || typeof context.setTransform !== 'function') {
+          console.warn('⚠️ Camera blend loop: Cannot get valid 2D context');
+          this.cameraBlendAnimationFrame = requestAnimationFrame(draw);
+          return;
+        }
+        // Cache the native context
+        this.masterPunchcardCtx = context;
+      }
+
       try {
         // Ensure canvas is sized properly
-        this.sizeCanvasToContainer(canvas, ctx);
+        this.sizeCanvasToContainer(canvas, context);
         
         const pixelRatio = window.devicePixelRatio || 1;
         const width = canvas.width / pixelRatio;
@@ -5860,16 +5898,16 @@ class InteractiveSoundApp {
         
         // Clear canvas when visualizer is off
         if (this.selectedVisualizer === 'off') {
-          ctx.fillStyle = 'rgba(5, 6, 10, 0.92)';
-          ctx.fillRect(0, 0, width, height);
+          context.fillStyle = 'rgba(5, 6, 10, 0.92)';
+          context.fillRect(0, 0, width, height);
         }
         
         // Check if video has valid dimensions
         if (this.cameraVideo.videoWidth > 0 && this.cameraVideo.videoHeight > 0) {
-          const savedAlpha = ctx.globalAlpha;
-          ctx.globalAlpha = alpha;
-          ctx.drawImage(this.cameraVideo, 0, 0, width, height);
-          ctx.globalAlpha = savedAlpha;
+          const savedAlpha = context.globalAlpha;
+          context.globalAlpha = alpha;
+          context.drawImage(this.cameraVideo, 0, 0, width, height);
+          context.globalAlpha = savedAlpha;
         }
       } catch (e) {
         // Ignore errors if video is not ready

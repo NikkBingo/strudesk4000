@@ -373,17 +373,6 @@
         <div class="master-visualizer-header">
           <h3>Visualizer</h3>
           <div class="visualizer-header-controls">
-            <label class="camera-toggle-label" id="camera-toggle-label" style="display: none;">
-              <input type="checkbox" id="camera-toggle" class="camera-toggle">
-              <span>Camera</span>
-            </label>
-            <div class="camera-blend-control" id="camera-blend-control" style="display: none;">
-              <label for="camera-blend-slider" class="camera-blend-label">
-                <span>Blend</span>
-                <span class="camera-blend-value" id="camera-blend-value">50%</span>
-              </label>
-              <input type="range" id="camera-blend-slider" class="camera-blend-slider" min="0" max="100" value="50" step="1">
-            </div>
             <select id="visualizer-select" class="visualizer-select">
               <option value="off">Off</option>
               <option value="scope">Scope</option>
@@ -391,10 +380,24 @@
               <option value="spectrum">Spectrum</option>
               <option value="pianoroll">Pianoroll</option>
             </select>
+            <div class="camera-blend-control" id="camera-blend-control" style="display: none;">
+              <label for="camera-blend-slider" class="camera-blend-label">
+                <span>Blend</span>
+                <span class="camera-blend-value" id="camera-blend-value">50%</span>
+              </label>
+              <input type="range" id="camera-blend-slider" class="camera-blend-slider" min="0" max="100" value="50" step="1">
+            </div>
             <button id="visualizer-fullscreen-btn" class="visualizer-fullscreen-btn" type="button" aria-label="Enter visualizer fullscreen">
               <span class="fullscreen-icon fullscreen-icon--enter" aria-hidden="true">⤢</span>
               <span class="fullscreen-icon fullscreen-icon--exit" aria-hidden="true">⤡</span>
             </button>
+          </div>
+          <div class="camera-blend-control-mobile" id="camera-blend-control-mobile" style="display: none;">
+            <label for="camera-blend-slider-mobile" class="camera-blend-label-mobile">
+              <span>Camera Blend</span>
+              <span class="camera-blend-value-mobile" id="camera-blend-value-mobile">50%</span>
+            </label>
+            <input type="range" id="camera-blend-slider-mobile" class="camera-blend-slider-mobile" min="0" max="100" value="50" step="1">
           </div>
         </div>
         <div id="master-punchcard" class="punchcard-grid">
