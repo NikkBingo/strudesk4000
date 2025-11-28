@@ -990,11 +990,14 @@ header h1 {
 }
 
 .master-visualizer-header {
+  margin-bottom: 16px;
+}
+
+.visualizer-header-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
-  margin-bottom: 16px;
 }
 
 .visualizer-header-controls {
@@ -1116,12 +1119,22 @@ header h1 {
 
 /* Hide desktop blend control on mobile, show mobile version */
 @media (max-width: 768px) {
+  .visualizer-header-row {
+    flex-wrap: wrap;
+  }
+  
+  .visualizer-header-controls {
+    flex: 1;
+    justify-content: flex-end;
+  }
+  
   .camera-blend-control {
     display: none !important;
   }
   
   .camera-blend-control-mobile {
     display: block !important;
+    margin-top: 12px;
   }
 }
 
