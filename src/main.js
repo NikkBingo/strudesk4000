@@ -5526,15 +5526,15 @@ class InteractiveSoundApp {
   }
 
   updateCameraControlsVisibility() {
-    const cameraControls = document.getElementById('camera-controls');
+    const cameraToggleLabel = document.getElementById('camera-toggle-label');
     const cameraBlendControl = document.getElementById('camera-blend-control');
     
-    if (cameraControls) {
-      // Show camera controls only when visualizer is not "off" and camera is available
+    if (cameraToggleLabel) {
+      // Show camera toggle only when visualizer is not "off" and camera is available
       if (this.selectedVisualizer !== 'off' && this.cameraAvailable) {
-        cameraControls.style.display = 'flex';
+        cameraToggleLabel.style.display = 'flex';
       } else {
-        cameraControls.style.display = 'none';
+        cameraToggleLabel.style.display = 'none';
         // Stop camera if visualizer is turned off
         if (this.selectedVisualizer === 'off' && this.cameraEnabled) {
           this.stopCamera();
