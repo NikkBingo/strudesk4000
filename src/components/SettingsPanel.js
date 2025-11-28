@@ -104,25 +104,31 @@ export class SettingsPanel {
     }
 
     const userMenu = document.getElementById('user-menu-dropdown');
-    if (userMenu && !userMenu.querySelector('#user-settings-link')) {
-      const divider = document.createElement('div');
-      divider.className = 'user-menu-divider';
-      const settingsLink = document.createElement('button');
-      settingsLink.id = 'user-settings-link';
-      settingsLink.type = 'button';
-      settingsLink.className = 'user-menu-item';
-      settingsLink.textContent = 'Settings';
-      settingsLink.addEventListener('click', () => {
-        this.show();
-        userMenu.classList.remove('active');
-      });
-      const logoutButton = userMenu.querySelector('#user-logout-btn');
-      if (divider && logoutButton) {
-        userMenu.insertBefore(divider, logoutButton);
-        userMenu.insertBefore(settingsLink, logoutButton);
-      } else {
-        userMenu.appendChild(divider);
-        userMenu.appendChild(settingsLink);
+    if (userMenu) {
+      let settingsLink = userMenu.querySelector('#user-settings-link');
+      if (!settingsLink) {
+        const divider = document.createElement('div');
+        divider.className = 'user-menu-divider';
+        settingsLink = document.createElement('button');
+        settingsLink.id = 'user-settings-link';
+        settingsLink.type = 'button';
+        settingsLink.className = 'user-menu-item';
+        settingsLink.textContent = 'Settings';
+        const logoutButton = userMenu.querySelector('#user-logout-btn');
+        if (divider && logoutButton) {
+          userMenu.insertBefore(divider, logoutButton);
+          userMenu.insertBefore(settingsLink, logoutButton);
+        } else {
+          userMenu.appendChild(divider);
+          userMenu.appendChild(settingsLink);
+        }
+      }
+      if (settingsLink && !settingsLink.dataset.listenerAttached) {
+        settingsLink.addEventListener('click', () => {
+          this.show();
+          userMenu.classList.remove('active');
+        });
+        settingsLink.dataset.listenerAttached = 'true';
       }
     }
   }
