@@ -220,7 +220,7 @@ body.gdpr-locked {
 .gdpr-consent-overlay {
   position: fixed;
   inset: 0;
-  background: radial-gradient(circle at top, rgba(56, 189, 248, 0.2), rgba(15, 23, 42, 0.95));
+  background: radial-gradient(circle at top, rgba(15, 23, 42, 0.85), rgba(5, 6, 10, 0.98));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -247,6 +247,7 @@ body.gdpr-locked {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0 clamp(12px, 4vw, 36px);
 }
 
 .gdpr-visualizer-preview .punchcard-text {
@@ -261,22 +262,23 @@ body.gdpr-locked {
 
 .gdpr-consent-card {
   width: min(520px, 100%);
-  background: rgba(255, 255, 255, 0.96);
-  border-radius: 18px;
+  background: rgba(5, 6, 10, 0.85);
+  border-radius: 20px;
   padding: clamp(20px, 4vw, 32px);
-  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.35);
+  box-shadow: 0 30px 80px rgba(8, 14, 35, 0.8);
+  border: 1px solid rgba(56, 189, 248, 0.25);
 }
 
 .gdpr-consent-card h2 {
   margin-top: 0;
   margin-bottom: 12px;
   font-size: 1.5rem;
-  color: #0f172a;
+  color: #e0f2fe;
 }
 
 .gdpr-consent-card p {
   margin: 0;
-  color: #475569;
+  color: rgba(226, 232, 240, 0.9);
   line-height: 1.5;
 }
 
@@ -284,12 +286,22 @@ body.gdpr-locked {
   width: 100%;
   margin-top: 20px;
   font-size: 1rem;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.9), rgba(14, 165, 233, 0.9));
+  border: none;
+  color: #020617;
+  font-weight: 700;
+  box-shadow: 0 20px 40px rgba(14, 165, 233, 0.45);
+}
+
+.gdpr-accept-btn:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
 }
 
 .gdpr-consent-card small {
   display: block;
   margin-top: 10px;
-  color: #94a3b8;
+  color: rgba(148, 163, 184, 0.85);
 }
 
 body.page-style-solid {
