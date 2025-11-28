@@ -1073,36 +1073,36 @@ header h1 {
 
 @media (max-width: 640px) {
   .chaospad-control {
-    display: flex;
-    justify-content: center;
+    display: block;
   }
   
   .chaospad-inline-controls {
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
     width: 100%;
+    gap: 12px;
   }
   
   .chaospad-checkbox-label {
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    width: 100%;
-    gap: 8px;
+    width: auto;
+    gap: 10px;
   }
   
   .chaospad-label-row {
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: 6px;
-    width: 100%;
+    gap: 8px;
+    width: auto;
   }
   
   .chaospad-values {
     display: flex;
     gap: 10px;
     font-size: 0.9rem;
-    justify-content: center;
-    margin-left: 0;
+    justify-content: flex-end;
+    margin-left: auto;
   }
 }
 
