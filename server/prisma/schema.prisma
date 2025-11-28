@@ -44,6 +44,7 @@ model User {
   sessionChannelRevisions SessionChannelRevision[] @relation("UserSessionChannelRevisions")
   invitesSent CollabInvite[] @relation("UserInvitesSent")
   invitesReceived CollabInvite[] @relation("UserInvitesReceived")
+  patternLoadEvents PatternLoadEvent[] @relation("UserPatternLoadEvents")
 
   @@unique([oauthProvider, oauthId])
   @@index([verificationToken])
@@ -71,6 +72,7 @@ model Pattern {
   user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   shares PatternShare[]
   analytics PatternAnalytics?
+  loadEvents PatternLoadEvent[]
 
   @@index([userId])
   @@index([isPublic])
@@ -97,7 +99,7 @@ model PatternLoadEvent {
   createdAt DateTime @default(now()) @map("created_at")
 
   pattern Pattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User    @relation("UserPatternLoadEvents", fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([patternId, userId, dateKey])
   @@map("pattern_load_events")
