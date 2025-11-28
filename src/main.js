@@ -3523,7 +3523,7 @@ class InteractiveSoundApp {
     const safeArtist = this.escapeHtml(artistName);
     const safeGenre = this.escapeHtml(genre);
     const safeImageUrl = this.escapeHtml(imageUrl);
-    const countLabel = `${loadCount} ${loadCount === 1 ? 'load' : 'loads'}`;
+    const countLabel = `${loadCount} ${loadCount === 1 ? 'add' : 'adds'}`;
     return `
       <button type="button" class="top-track-card" data-track-index="${index}" data-track-id="${track.id || ''}">
         <div class="top-track-image ${hasImage ? '' : 'fallback'}">
@@ -3583,7 +3583,7 @@ class InteractiveSoundApp {
     }
     const countEl = document.querySelector(`.top-track-card[data-track-id="${patternId}"] .top-track-count`);
     if (countEl) {
-      countEl.textContent = `${count} ${count === 1 ? 'load' : 'loads'}`;
+    countEl.textContent = `${count} ${count === 1 ? 'add' : 'adds'}`;
     }
   }
 
