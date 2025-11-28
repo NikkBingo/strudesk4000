@@ -1132,8 +1132,8 @@ header h1 {
     display: none !important;
   }
   
+  /* Mobile blend control visibility is controlled by JavaScript */
   .camera-blend-control-mobile {
-    display: block !important;
     margin-top: 12px;
   }
 }
