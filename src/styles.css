@@ -1088,6 +1088,16 @@ header h1 {
   user-select: none;
 }
 
+.punchcard-logo--latin {
+  letter-spacing: 0.12em;
+}
+
+.punchcard-logo--korean {
+  font-family: 'Noto Sans KR', 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Nanum Gothic', sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
 @media (max-width: 640px) {
   .punchcard-logo-placeholder .punchcard-text {
     display: none;

@@ -3387,6 +3387,7 @@ class InteractiveSoundApp {
     this.masterUpdateQueue = [];
     this.masterUpdateTimer = null;
     this.topTracks = [];
+    this.visualizerTextInterval = null;
 
     if (this.isMobileView) {
       this.limitInitialElementsForMobile();
@@ -3587,6 +3588,38 @@ class InteractiveSoundApp {
     }
   }
 
+  startVisualizerTitleLoop() {
+    if (this.visualizerTextInterval) {
+      return;
+    }
+    const labelEl = document.getElementById('master-visualizer-label');
+    if (!labelEl) {
+      return;
+    }
+    const states = [
+      { text: 'STRUDESK 4000', className: 'punchcard-logo--latin', lang: 'en' },
+      { text: '스트루데스크 4000', className: 'punchcard-logo--korean', lang: 'ko' }
+    ];
+    const stateClasses = states.map(state => state.className).filter(Boolean);
+    let index = 0;
+    const applyState = () => {
+      const state = states[index];
+      stateClasses.forEach(cls => labelEl.classList.remove(cls));
+      if (state.className) {
+        labelEl.classList.add(state.className);
+      }
+      if (state.lang) {
+        labelEl.setAttribute('lang', state.lang);
+      } else {
+        labelEl.removeAttribute('lang');
+      }
+      labelEl.textContent = state.text;
+      index = (index + 1) % states.length;
+    };
+    applyState();
+    this.visualizerTextInterval = window.setInterval(applyState, 5000);
+  }
+
   escapeHtml(value = '') {
     const div = document.createElement('div');
     div.textContent = value ?? '';
@@ -3599,6 +3632,7 @@ class InteractiveSoundApp {
   async init() {
     // Set app instance reference in soundManager for effects access
     soundManager.appInstance = this;
+    this.startVisualizerTitleLoop();
     
     // Register UI control callbacks
     // Volume removed - use master volume instead
