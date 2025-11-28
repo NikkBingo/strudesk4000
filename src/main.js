@@ -89,6 +89,8 @@ const SAMPLE_PACK_FETCH_HEADERS = { Accept: 'application/vnd.github+json' };
 const samplePackSamplesCache = new Map();
 const samplePackFetchPromises = new Map();
 
+const GDPR_CONSENT_KEY = 'strudesk_gdpr_consent_v1';
+
 const normalizeSamplePackPath = (path = '') => path.replace(/^\/+|\/+$/g, '');
 
 const isAudioFilePath = (path = '') => {
@@ -3389,6 +3391,10 @@ class InteractiveSoundApp {
     this.masterUpdateTimer = null;
     this.topTracks = [];
     this.visualizerTextInterval = null;
+    this.hasGdprConsent = this.getStoredGdprConsent();
+    this.postConsentReady = false;
+    this.gdprOverlay = null;
+    this.gdprAcceptButton = null;
 
     if (this.isMobileView) {
       this.limitInitialElementsForMobile();
@@ -3593,28 +3599,30 @@ class InteractiveSoundApp {
     if (this.visualizerTextInterval) {
       return;
     }
-    const labelEl = document.getElementById('master-visualizer-label');
-    if (!labelEl) {
+    const labelEls = document.querySelectorAll('[data-visualizer-label]');
+    if (!labelEls.length) {
       return;
     }
     const states = [
       { text: 'STRUDESK 4000', className: 'punchcard-logo--latin', lang: 'en' },
       { text: '스트루데스크 4000', className: 'punchcard-logo--korean', lang: 'ko' }
     ];
-    const stateClasses = states.map(state => state.className).filter(Boolean);
+    const stateClasses = Array.from(new Set(states.map(state => state.className).filter(Boolean)));
     let index = 0;
     const applyState = () => {
       const state = states[index];
-      stateClasses.forEach(cls => labelEl.classList.remove(cls));
-      if (state.className) {
-        labelEl.classList.add(state.className);
-      }
-      if (state.lang) {
-        labelEl.setAttribute('lang', state.lang);
-      } else {
-        labelEl.removeAttribute('lang');
-      }
-      labelEl.textContent = state.text;
+      labelEls.forEach((labelEl) => {
+        stateClasses.forEach(cls => labelEl.classList.remove(cls));
+        if (state.className) {
+          labelEl.classList.add(state.className);
+        }
+        if (state.lang) {
+          labelEl.setAttribute('lang', state.lang);
+        } else {
+          labelEl.removeAttribute('lang');
+        }
+        labelEl.textContent = state.text;
+      });
       index = (index + 1) % states.length;
     };
     applyState();
@@ -3634,6 +3642,7 @@ class InteractiveSoundApp {
     // Set app instance reference in soundManager for effects access
     soundManager.appInstance = this;
     this.startVisualizerTitleLoop();
+    this.setupGdprConsentFlow();
     
     // Register UI control callbacks
     // Volume removed - use master volume instead
@@ -3792,9 +3801,6 @@ class InteractiveSoundApp {
         }
       }
     });
-
-    // Initialize audio on first user interaction
-    this.setupAudioInitialization();
 
     // Initialize master channel
     this.setupMasterChannel();
@@ -8003,6 +8009,81 @@ class InteractiveSoundApp {
       this.updateStatusDots(config.id, hasPattern, false);
     });
     console.log('✅ Element status dots updated based on configured patterns');
+  }
+
+  getStoredGdprConsent() {
+    if (typeof localStorage === 'undefined') {
+      return false;
+    }
+    try {
+      return localStorage.getItem(GDPR_CONSENT_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  setupGdprConsentFlow() {
+    this.gdprOverlay = document.getElementById('gdpr-consent-overlay');
+    this.gdprAcceptButton = document.getElementById('gdpr-accept-btn');
+    if (!this.gdprOverlay || !this.gdprAcceptButton) {
+      this.enablePostConsentFeatures();
+      return;
+    }
+
+    if (this.hasGdprConsent) {
+      this.hideGdprOverlay();
+      this.enablePostConsentFeatures();
+      return;
+    }
+
+    document.body?.classList.add('gdpr-locked');
+    this.gdprOverlay.removeAttribute('hidden');
+    this.gdprOverlay.setAttribute('aria-hidden', 'false');
+    this.gdprAcceptButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      this.handleGdprAccept();
+    }, { once: true });
+  }
+
+  hideGdprOverlay() {
+    if (this.gdprOverlay) {
+      this.gdprOverlay.setAttribute('hidden', 'hidden');
+      this.gdprOverlay.setAttribute('aria-hidden', 'true');
+    }
+    document.body?.classList.remove('gdpr-locked');
+  }
+
+  async handleGdprAccept() {
+    if (this.hasGdprConsent) {
+      this.hideGdprOverlay();
+      this.enablePostConsentFeatures();
+      return;
+    }
+    this.hasGdprConsent = true;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(GDPR_CONSENT_KEY, 'true');
+      }
+    } catch (error) {
+      console.warn('⚠️ Unable to persist GDPR consent:', error);
+    }
+    this.hideGdprOverlay();
+    this.enablePostConsentFeatures();
+    try {
+      if (!soundManager.isAudioReady()) {
+        await soundManager.initialize();
+      }
+    } catch (error) {
+      console.warn('⚠️ Audio initialization after consent failed:', error);
+    }
+  }
+
+  enablePostConsentFeatures() {
+    if (this.postConsentReady) {
+      return;
+    }
+    this.postConsentReady = true;
+    this.setupAudioInitialization();
   }
 
   /**
