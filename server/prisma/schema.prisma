@@ -90,6 +90,19 @@ model PatternAnalytics {
   @@map("pattern_analytics")
 }
 
+model PatternLoadEvent {
+  patternId String   @map("pattern_id")
+  userId    String   @map("user_id")
+  dateKey   DateTime @map("date_key")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  pattern Pattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([patternId, userId, dateKey])
+  @@map("pattern_load_events")
+}
+
 model PatternShare {
   id               String   @id @default(uuid())
   patternId        String   @map("pattern_id")
