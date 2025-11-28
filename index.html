@@ -23,6 +23,35 @@
   <!-- Strudel is loaded via Vite from local packages to avoid version conflicts -->
 </head>
 <body>
+  <div
+    class="gdpr-consent-overlay"
+    id="gdpr-consent-overlay"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="gdpr-consent-title"
+    hidden
+  >
+    <div class="gdpr-consent-content">
+      <div class="gdpr-visualizer-preview">
+        <div
+          class="punchcard-text brand-font brand-logo punchcard-logo"
+          id="gdpr-visualizer-label"
+          data-visualizer-label="true"
+          aria-live="polite"
+        >STRUDESK 4000</div>
+      </div>
+      <div class="gdpr-consent-card">
+        <h2 id="gdpr-consent-title">Enable Audio & Samples</h2>
+        <p>
+          Strudesk 4000 loads local samples and activates Web Audio so you can hear every channel.
+          We only process audio in your browser. Please accept to continue.
+        </p>
+        <button type="button" id="gdpr-accept-btn" class="btn-primary gdpr-accept-btn">
+          Accept & Continue
+        </button>
+      </div>
+    </div>
+  </div>
   <div class="bubble-background" aria-hidden="true"></div>
   <div class="container">
     <header>
@@ -356,6 +385,7 @@
               id="master-visualizer-label"
               class="punchcard-text brand-font brand-logo punchcard-logo punchcard-logo--latin"
               aria-live="polite"
+              data-visualizer-label="true"
             >STRUDESK 4000</div>
           </div>
           </div>
