@@ -1,7 +1,20 @@
-import { DRUM_BANKS, WAVEFORM_BANKS, SAMPLE_BANKS, BUILTIN_BANK_OPTIONS } from '../constants/banks.js';
+import { BUILTIN_BANK_OPTIONS } from '../constants/banks.js';
 import { CHAOSPAD_EFFECT_OPTIONS, CHAOSPAD_EFFECTS } from '../constants/chaospad.js';
-import { getSettings, updateSettings, subscribeToSettings, toggleBankVisibility } from '../utils/settingsStore.js';
+import {
+  getSettings,
+  updateSettings,
+  subscribeToSettings,
+  toggleBankVisibility,
+  resetSettings,
+  getDefaultSettings
+} from '../utils/settingsStore.js';
 import { lockScroll, unlockScroll } from '../scrollLock.js';
+
+const BACKGROUND_MODE_OPTIONS = [
+  { value: 'animated', label: 'Animated bubbles' },
+  { value: 'solid', label: 'Solid color' },
+  { value: 'image', label: 'Background image' }
+];
 
 export class SettingsPanel {
   constructor() {
@@ -13,76 +26,120 @@ export class SettingsPanel {
   init() {
     this.render();
     this.attachEventListeners();
-    this.unsubscribe = subscribeToSettings((settings) => this.syncUI(settings));
     this.syncUI(getSettings());
+    this.unsubscribe = subscribeToSettings((settings) => this.syncUI(settings));
   }
 
   render() {
-    if (this.overlay) return;
-    const modalHtml = `
-      <div class="settings-panel-overlay" id="settings-panel-overlay" style="display: none;">
-        <div class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-panel-title">
-          <div class="settings-panel-header">
-            <h2 id="settings-panel-title">Settings</h2>
-            <button type="button" class="settings-panel-close" id="settings-panel-close" aria-label="Close settings">&times;</button>
-          </div>
-          <div class="settings-panel-body">
-            <section class="settings-section" id="settings-sample-banks">
-              <div class="settings-section-header">
-                <h3>Sample Bank Visibility</h3>
-                <p>Select which built-in banks should appear in dropdowns.</p>
+    if (!this.overlay) {
+      const modalHtml = `
+        <div class="settings-panel-overlay" id="settings-panel-overlay" style="display: none;">
+          <div class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-panel-title">
+            <div class="settings-panel-header">
+              <div>
+                <h2 id="settings-panel-title">Settings</h2>
+                <p>Customize how Strudesk 4000 behaves for you.</p>
               </div>
-              ${this.renderSampleBankControls()}
-            </section>
+              <div class="settings-panel-actions">
+                <button type="button" class="settings-link" id="settings-reset-btn" aria-label="Reset settings to defaults">Reset</button>
+                <button type="button" class="settings-panel-close" id="settings-panel-close" aria-label="Close settings">&times;</button>
+              </div>
+            </div>
+            <div class="settings-panel-body">
+              <section class="settings-section" id="settings-sample-banks">
+                <div class="settings-section-header">
+                  <div>
+                    <h3>Sample Bank Visibility</h3>
+                    <p>Hide the banks you never use to keep dropdowns tidy.</p>
+                  </div>
+                </div>
+                ${this.renderSampleBankControls()}
+              </section>
 
-            <section class="settings-section" id="settings-chaospad">
-              <div class="settings-section-header">
-                <h3>Chaospad Controls</h3>
-                <p>Pick the effect type and range for each axis.</p>
-              </div>
-              <div class="settings-chaospad-grid">
-                ${this.renderChaospadAxisControls('x', 'X Axis')}
-                ${this.renderChaospadAxisControls('y', 'Y Axis')}
-              </div>
-            </section>
+              <section class="settings-section" id="settings-chaospad">
+                <div class="settings-section-header">
+                  <div>
+                    <h3>Chaospad Controls</h3>
+                    <p>Pick an effect for each axis and fine-tune its response.</p>
+                  </div>
+                </div>
+                <div class="settings-chaospad-grid">
+                  ${this.renderChaospadAxisControls('x', 'Horizontal Axis (X)')}
+                  ${this.renderChaospadAxisControls('y', 'Vertical Axis (Y)')}
+                </div>
+              </section>
 
-            <section class="settings-section" id="settings-styling">
-              <div class="settings-section-header">
-                <h3>Page Styling</h3>
-                <p>Your preferences for the background treatment.</p>
-              </div>
-              <div class="settings-field">
-                <label class="settings-checkbox">
-                  <input type="checkbox" id="settings-disable-bubbles">
-                  <span>Disable animated background</span>
-                </label>
-              </div>
-              <div class="settings-field">
-                <label for="settings-bg-color">Background color</label>
-                <input type="color" id="settings-bg-color" value="#05060a">
-              </div>
-              <div class="settings-field">
-                <label for="settings-bg-image">Background image URL</label>
-                <input type="url" id="settings-bg-image" placeholder="https://example.com/background.jpg">
-                <small>Leave empty to use only the color above.</small>
-              </div>
-            </section>
+              <section class="settings-section" id="settings-styling">
+                <div class="settings-section-header">
+                  <div>
+                    <h3>Page Styling</h3>
+                    <p>Switch off the animated background or bring your own visuals.</p>
+                  </div>
+                </div>
+                <div class="settings-field settings-radio-group" role="radiogroup" aria-label="Page background mode">
+                  ${BACKGROUND_MODE_OPTIONS.map(({ value, label }) => `
+                    <label class="settings-radio">
+                      <input type="radio" name="settings-bg-mode" value="${value}">
+                      <span>${label}</span>
+                    </label>
+                  `).join('')}
+                </div>
+                <div class="settings-field">
+                  <label for="settings-bg-color">Solid color</label>
+                  <input type="color" id="settings-bg-color" value="#05060a">
+                  <small>Applied for Solid or Image modes.</small>
+                </div>
+                <div class="settings-field">
+                  <label for="settings-bg-image">Background image URL</label>
+                  <input type="url" id="settings-bg-image" placeholder="https://example.com/texture.jpg" disabled>
+                  <small>Used only when “Background image” mode is active.</small>
+                </div>
+              </section>
+            </div>
           </div>
         </div>
-      </div>
-    `;
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    this.overlay = document.getElementById('settings-panel-overlay');
+      `;
+      document.body.insertAdjacentHTML('beforeend', modalHtml);
+      this.overlay = document.getElementById('settings-panel-overlay');
+    }
+
+    const userMenu = document.getElementById('user-menu-dropdown');
+    if (userMenu && !userMenu.querySelector('#user-settings-link')) {
+      const divider = document.createElement('div');
+      divider.className = 'user-menu-divider';
+      const settingsLink = document.createElement('button');
+      settingsLink.id = 'user-settings-link';
+      settingsLink.type = 'button';
+      settingsLink.className = 'user-menu-item';
+      settingsLink.textContent = 'Settings';
+      settingsLink.addEventListener('click', () => {
+        this.show();
+        userMenu.classList.remove('active');
+      });
+      const logoutButton = userMenu.querySelector('#user-logout-btn');
+      if (divider && logoutButton) {
+        userMenu.insertBefore(divider, logoutButton);
+        userMenu.insertBefore(settingsLink, logoutButton);
+      } else {
+        userMenu.appendChild(divider);
+        userMenu.appendChild(settingsLink);
+      }
+    }
   }
 
   renderSampleBankControls() {
     return BUILTIN_BANK_OPTIONS.map(({ group, options }) => `
       <div class="settings-fieldset">
-        <div class="settings-fieldset-title">${group}</div>
+        <div class="settings-fieldset-heading">
+          <div>
+            <h4>${group}</h4>
+            <p>${options.length} banks</p>
+          </div>
+        </div>
         <div class="settings-checkbox-grid">
-          ${options.map(option => `
+          ${options.map((option) => `
             <label class="settings-checkbox">
-              <input type="checkbox" data-bank-value="${option.value}" class="settings-bank-toggle">
+              <input type="checkbox" class="settings-bank-toggle" data-bank-value="${option.value}">
               <span>${option.label}</span>
             </label>
           `).join('')}
@@ -92,26 +149,31 @@ export class SettingsPanel {
   }
 
   renderChaospadAxisControls(axis, title) {
-    const effectOptions = CHAOSPAD_EFFECT_OPTIONS.map(effect => `
-      <option value="${effect.id}">${effect.label}</option>
-    `).join('');
+    const effectOptions = CHAOSPAD_EFFECT_OPTIONS.map(
+      (effect) => `<option value="${effect.id}">${effect.label}</option>`
+    ).join('');
+
     return `
       <div class="settings-chaospad-card" data-axis="${axis}">
-        <div class="settings-field">
-          <label for="settings-chaospad-${axis}-effect">${title} Effect</label>
-          <select id="settings-chaospad-${axis}-effect" data-chaospad-effect="${axis}">
+        <header>
+          <h4>${title}</h4>
+          <p>Drag ${axis === 'x' ? 'left ↔ right' : 'up ↕ down'} on Chaospad to control this.</p>
+        </header>
+        <label class="settings-input-label">
+          Effect
+          <select data-chaospad-effect="${axis}" id="settings-chaospad-${axis}-effect">
             ${effectOptions}
           </select>
-        </div>
-        <div class="settings-field settings-range-field">
-          <div>
-            <label for="settings-chaospad-${axis}-min">Min</label>
-            <input type="number" step="0.01" id="settings-chaospad-${axis}-min" data-chaospad-min="${axis}">
-          </div>
-          <div>
-            <label for="settings-chaospad-${axis}-max">Max</label>
-            <input type="number" step="0.01" id="settings-chaospad-${axis}-max" data-chaospad-max="${axis}">
-          </div>
+        </label>
+        <div class="settings-range-field">
+          <label>
+            Min
+            <input type="number" data-chaospad-min="${axis}" step="0.01">
+          </label>
+          <label>
+            Max
+            <input type="number" data-chaospad-max="${axis}" step="0.01">
+          </label>
         </div>
       </div>
     `;
@@ -119,12 +181,17 @@ export class SettingsPanel {
 
   attachEventListeners() {
     if (!this.overlay) return;
-    const closeBtn = document.getElementById('settings-panel-close');
-    if (closeBtn) {
-      closeBtn.addEventListener('click', () => this.hide());
-    }
+    const closeBtn = this.overlay.querySelector('#settings-panel-close');
+    closeBtn?.addEventListener('click', () => this.hide());
+
     this.overlay.addEventListener('click', (event) => {
       if (event.target === this.overlay) {
+        this.hide();
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (this.isOpen && event.key === 'Escape') {
         this.hide();
       }
     });
@@ -141,60 +208,61 @@ export class SettingsPanel {
         const axis = event.target.dataset.chaospadEffect;
         const effectId = event.target.value;
         const effect = CHAOSPAD_EFFECTS[effectId];
-        const payload = {
+        updateSettings({
           chaospad: {
             axes: {
               [axis]: {
                 effect: effectId,
-                min: effect ? effect.defaultMin : 0,
-                max: effect ? effect.defaultMax : 1
+                min: effect?.defaultMin ?? 0,
+                max: effect?.defaultMax ?? 1
               }
             }
           }
-        };
-        updateSettings(payload);
+        });
       });
     });
 
     this.overlay.querySelectorAll('[data-chaospad-min]').forEach((input) => {
       input.addEventListener('change', (event) => this.handleChaospadRangeChange(event, 'min'));
     });
+
     this.overlay.querySelectorAll('[data-chaospad-max]').forEach((input) => {
       input.addEventListener('change', (event) => this.handleChaospadRangeChange(event, 'max'));
     });
 
-    const disableBubblesCheckbox = document.getElementById('settings-disable-bubbles');
-    if (disableBubblesCheckbox) {
-      disableBubblesCheckbox.addEventListener('change', (event) => {
+    this.overlay.querySelectorAll('input[name="settings-bg-mode"]').forEach((input) => {
+      input.addEventListener('change', (event) => {
+        if (!event.target.checked) return;
         updateSettings({
           styling: {
-            disableBubbles: !!event.target.checked
+            backgroundType: event.target.value
           }
         });
       });
-    }
+    });
 
-    const bgColorInput = document.getElementById('settings-bg-color');
-    if (bgColorInput) {
-      bgColorInput.addEventListener('input', (event) => {
-        updateSettings({
-          styling: {
-            backgroundColor: event.target.value || DEFAULT_SETTINGS.styling.backgroundColor
-          }
-        });
+    const bgColorInput = this.overlay.querySelector('#settings-bg-color');
+    bgColorInput?.addEventListener('input', (event) => {
+      updateSettings({
+        styling: {
+          backgroundColor: event.target.value || getDefaultSettings().styling.backgroundColor
+        }
       });
-    }
+    });
 
-    const bgImageInput = document.getElementById('settings-bg-image');
-    if (bgImageInput) {
-      bgImageInput.addEventListener('change', (event) => {
-        updateSettings({
-          styling: {
-            backgroundImage: (event.target.value || '').trim()
-          }
-        });
+    const bgImageInput = this.overlay.querySelector('#settings-bg-image');
+    bgImageInput?.addEventListener('change', (event) => {
+      updateSettings({
+        styling: {
+          backgroundImage: (event.target.value || '').trim()
+        }
       });
-    }
+    });
+
+    const resetButton = this.overlay.querySelector('#settings-reset-btn');
+    resetButton?.addEventListener('click', () => {
+      resetSettings();
+    });
   }
 
   handleChaospadRangeChange(event, type) {
@@ -204,9 +272,9 @@ export class SettingsPanel {
       return;
     }
     const settings = getSettings();
-    const axisConfig = settings?.chaospad?.axes?.[axis] || {};
+    const currentAxis = settings?.chaospad?.axes?.[axis] || {};
     const nextConfig = {
-      ...axisConfig,
+      ...currentAxis,
       [type]: numeric
     };
     if (type === 'min' && nextConfig.max !== undefined && numeric > nextConfig.max) {
@@ -234,31 +302,50 @@ export class SettingsPanel {
 
     ['x', 'y'].forEach((axis) => {
       const axisConfig = settings?.chaospad?.axes?.[axis];
+      if (!axisConfig) return;
       const effectSelect = this.overlay.querySelector(`[data-chaospad-effect="${axis}"]`);
-      if (effectSelect && axisConfig?.effect) {
-        effectSelect.value = axisConfig.effect;
-      }
       const minInput = this.overlay.querySelector(`[data-chaospad-min="${axis}"]`);
       const maxInput = this.overlay.querySelector(`[data-chaospad-max="${axis}"]`);
-      if (minInput && axisConfig?.min !== undefined) {
+      if (effectSelect) {
+        effectSelect.value = axisConfig.effect;
+      }
+      if (minInput) {
         minInput.value = axisConfig.min;
       }
-      if (maxInput && axisConfig?.max !== undefined) {
+      if (maxInput) {
         maxInput.value = axisConfig.max;
       }
+      this.updateChaospadAxisInputs(axis, axisConfig);
     });
 
-    const disableBubblesCheckbox = document.getElementById('settings-disable-bubbles');
-    if (disableBubblesCheckbox) {
-      disableBubblesCheckbox.checked = !!settings?.styling?.disableBubbles;
+    const styling = settings?.styling || getDefaultSettings().styling;
+    const modeInput = this.overlay.querySelector(`input[name="settings-bg-mode"][value="${styling.backgroundType}"]`);
+    if (modeInput && !modeInput.checked) {
+      modeInput.checked = true;
     }
-    const bgColorInput = document.getElementById('settings-bg-color');
-    if (bgColorInput && settings?.styling?.backgroundColor) {
-      bgColorInput.value = settings.styling.backgroundColor;
+    const bgColorInput = this.overlay.querySelector('#settings-bg-color');
+    if (bgColorInput) {
+      bgColorInput.value = styling.backgroundColor || getDefaultSettings().styling.backgroundColor;
     }
-    const bgImageInput = document.getElementById('settings-bg-image');
+    const bgImageInput = this.overlay.querySelector('#settings-bg-image');
     if (bgImageInput) {
-      bgImageInput.value = settings?.styling?.backgroundImage || '';
+      bgImageInput.value = styling.backgroundImage || '';
+      bgImageInput.disabled = styling.backgroundType !== 'image';
+    }
+    bgColorInput.disabled = styling.backgroundType === 'animated';
+  }
+
+  updateChaospadAxisInputs(axis, axisConfig) {
+    const effect = CHAOSPAD_EFFECTS[axisConfig.effect];
+    const minInput = this.overlay?.querySelector(`[data-chaospad-min="${axis}"]`);
+    const maxInput = this.overlay?.querySelector(`[data-chaospad-max="${axis}"]`);
+    if (minInput && effect) {
+      minInput.step = effect.step ?? minInput.step;
+      minInput.placeholder = effect.defaultMin;
+    }
+    if (maxInput && effect) {
+      maxInput.step = effect.step ?? maxInput.step;
+      maxInput.placeholder = effect.defaultMax;
     }
   }
 
@@ -287,4 +374,3 @@ export class SettingsPanel {
     }
   }
 }
-
