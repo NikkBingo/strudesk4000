@@ -13,6 +13,7 @@ import { LoginModal } from './components/LoginModal.js';
 import { UserProfile } from './components/UserProfile.js';
 import { UserProfilesListing } from './components/UserProfilesListing.js';
 import { SavePatternDialog } from './components/SavePatternDialog.js';
+import { SettingsPanel } from './components/SettingsPanel.js';
 import { ProfileOnboardingModal } from './components/ProfileOnboardingModal.js';
 import { AdminUserManager } from './components/AdminUserManager.js';
 import { CollabPanel } from './components/CollabPanel.js';
@@ -14137,6 +14138,7 @@ let savePatternDialog = null;
 let profileOnboardingModal = null;
 let adminUserManager = null;
 let collabPanel = null;
+let settingsPanel = null;
 
 function initCollaborationUI() {
   if (collabPanel) {
@@ -14309,6 +14311,13 @@ async function initUserAuth() {
   savePatternDialog = new SavePatternDialog();
   savePatternDialog.init();
   window.savePatternDialog = savePatternDialog; // Make globally accessible
+
+  // Initialize settings panel
+  if (!settingsPanel) {
+    settingsPanel = new SettingsPanel();
+    settingsPanel.init();
+    window.settingsPanel = settingsPanel;
+  }
 }
 
 function updateLoadSaveButtonsVisibility(isLoggedIn) {
