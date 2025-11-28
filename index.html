@@ -363,6 +363,7 @@
         <div class="chaospad-control">
           <div class="chaospad-inline-controls">
             <label class="chaospad-checkbox-label" for="chaospad-checkbox">
+              <input type="checkbox" id="chaospad-checkbox" class="chaospad-checkbox">
               <div class="chaospad-label-row">
                 <span>Chaospad</span>
                 <div class="chaospad-values" aria-live="polite">
@@ -370,9 +371,8 @@
                   <span class="chaospad-value">Y: <span class="tilt-value" id="chaospad-tilt-y-value">0°</span></span>
                 </div>
               </div>
-              <input type="checkbox" id="chaospad-checkbox" class="chaospad-checkbox">
             </label>
-            <div class="chaospad-tilt-inline" id="chaospad-tilt-inline">
+            <div class="chaospad-tilt-inline" id="chaospad-tilt-inline" hidden aria-hidden="true">
               <div class="tilt-slider">
                 <label for="chaospad-tilt-x">X tilt</label>
                 <input type="range" id="chaospad-tilt-x" min="-45" max="45" value="0" step="1">
