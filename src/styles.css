@@ -1086,6 +1086,9 @@ header h1 {
   text-align: center;
   letter-spacing: 0.1em;
   user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .punchcard-logo--latin {
