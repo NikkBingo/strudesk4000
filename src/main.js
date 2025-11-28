@@ -9136,6 +9136,7 @@ class InteractiveSoundApp {
       if (!patternSnippetContainer) {
         patternSnippetContainer = document.createElement('div');
         patternSnippetContainer.className = 'modal-presets';
+        patternSnippetContainer.classList.add('modal-presets--beta');
         patternSnippetContainer.setAttribute('aria-disabled', 'false');
 
         const snippetToggle = document.createElement('button');
@@ -9144,7 +9145,7 @@ class InteractiveSoundApp {
         snippetToggle.className = 'modal-presets-toggle pattern-snippet-group-heading';
         snippetToggle.setAttribute('aria-expanded', 'false');
         const toggleSpan = document.createElement('span');
-        toggleSpan.textContent = 'Add to pattern';
+        toggleSpan.textContent = 'Add to pattern (Advanced (beta))';
         snippetToggle.appendChild(toggleSpan);
         patternSnippetContainer.appendChild(snippetToggle);
 
@@ -9190,19 +9191,28 @@ class InteractiveSoundApp {
           snippetToggle.dataset.listenerAttached = 'true';
         }
 
-        if (patternLabelRow) {
-          // Insert after presets if they exist, otherwise after patternLabelRow
-          const presetsContainer = modal.querySelector('#modal-presets-toggle')?.closest('.modal-presets');
-          if (presetsContainer && presetsContainer.parentElement === patternLabelRow.parentElement) {
-            presetsContainer.insertAdjacentElement('afterend', patternSnippetContainer);
-          } else {
-            patternLabelRow.insertAdjacentElement('afterend', patternSnippetContainer);
+        const insertSnippetContainerAtEnd = () => {
+          const dropdownParent = patternLabelRow?.parentElement || modal.querySelector('.modal-body') || modal;
+          if (!dropdownParent) {
+            modal.appendChild(patternSnippetContainer);
+            return;
           }
-        } else {
-          modal.querySelector('.form-group')?.insertAdjacentElement('afterbegin', patternSnippetContainer);
-        }
+          const dropdownSiblings = Array.from(dropdownParent.children).filter(
+            (child) => child !== patternSnippetContainer && child.classList?.contains('modal-presets')
+          );
+          const lastDropdown = dropdownSiblings[dropdownSiblings.length - 1];
+          if (lastDropdown) {
+            lastDropdown.insertAdjacentElement('afterend', patternSnippetContainer);
+          } else if (patternLabelRow) {
+            patternLabelRow.insertAdjacentElement('afterend', patternSnippetContainer);
+          } else {
+            dropdownParent.appendChild(patternSnippetContainer);
+          }
+        };
 
-        // Move or create Add samples section after Add to pattern
+        insertSnippetContainerAtEnd();
+
+        // Move or create Add samples section before Add to pattern so this dropdown stays last
         let samplesContainer = modal.querySelector('#modal-samples-toggle')?.closest('.modal-presets');
         if (!samplesContainer) {
           // Create the samples section if it doesn't exist
@@ -9283,8 +9293,12 @@ class InteractiveSoundApp {
           samplesContainer.appendChild(samplesContent);
           formGroup.appendChild(samplesContainer);
           
-          // Insert after pattern snippet container
-          patternSnippetContainer.insertAdjacentElement('afterend', formGroup);
+          const parentForSamples = patternSnippetContainer.parentElement || patternLabelRow?.parentElement || modal;
+          if (parentForSamples) {
+            parentForSamples.insertBefore(formGroup, patternSnippetContainer);
+          } else {
+            modal.appendChild(formGroup);
+          }
           
           // Setup toggle handler for the newly created samples section
           const updateSamplesSectionState = (expanded) => {
@@ -9310,17 +9324,19 @@ class InteractiveSoundApp {
             samplesToggle.dataset.listenerAttached = 'true';
           }
         } else {
-          // Move existing samples container to after pattern snippet container
+          // Move existing samples container to before pattern snippet container
           const samplesFormGroup = samplesContainer.closest('.form-group');
-          if (samplesFormGroup && samplesFormGroup !== patternSnippetContainer.parentElement) {
-            patternSnippetContainer.insertAdjacentElement('afterend', samplesFormGroup);
+          const targetParent = patternSnippetContainer.parentElement || samplesFormGroup?.parentElement;
+          if (samplesFormGroup && targetParent) {
+            targetParent.insertBefore(samplesFormGroup, patternSnippetContainer);
           } else if (!samplesFormGroup) {
             // If no form-group wrapper, create one and move
             const formGroup = document.createElement('div');
             formGroup.className = 'form-group';
             samplesContainer.parentElement.insertBefore(formGroup, samplesContainer);
             formGroup.appendChild(samplesContainer);
-            patternSnippetContainer.insertAdjacentElement('afterend', formGroup);
+            const newParent = patternSnippetContainer.parentElement || modal;
+            newParent.insertBefore(formGroup, patternSnippetContainer);
           }
         }
       }
@@ -14107,6 +14123,7 @@ async function initUserAuth() {
     handleAuthenticatedUser(user);
   });
   loginModal.init();
+  setElementsSectionVisibility(false);
 
   // Check if user is already logged in
   try {
@@ -14275,6 +14292,22 @@ function updateLoadSaveButtonsVisibility(isLoggedIn) {
   });
 }
 
+function setElementsSectionVisibility(isLoggedIn) {
+  const elementsContainer = document.querySelector('.elements-container');
+  const addElementBtn = document.getElementById('add-element-btn');
+  const shouldHide = !isLoggedIn;
+  if (elementsContainer) {
+    elementsContainer.hidden = shouldHide;
+    elementsContainer.style.display = shouldHide ? 'none' : '';
+    elementsContainer.setAttribute('aria-hidden', shouldHide ? 'true' : 'false');
+  }
+  if (addElementBtn) {
+    addElementBtn.hidden = shouldHide;
+    addElementBtn.style.display = shouldHide ? 'none' : '';
+    addElementBtn.setAttribute('aria-hidden', shouldHide ? 'true' : 'false');
+  }
+}
+
 function updateUserUI(user) {
   const loginBtn = document.getElementById('header-login-btn');
   const userMenu = document.getElementById('user-menu');
@@ -14302,6 +14335,7 @@ function updateUserUI(user) {
   
   // Show load/save buttons when logged in
   updateLoadSaveButtonsVisibility(true);
+  setElementsSectionVisibility(true);
 
   if (statusText && statusText.textContent === 'Login to unlock more features') {
     statusText.textContent = 'Ready';
@@ -14323,6 +14357,7 @@ function showLoginButton() {
   
   // Hide load/save buttons when not logged in
   updateLoadSaveButtonsVisibility(false);
+  setElementsSectionVisibility(false);
 
   if (statusText) {
     statusText.textContent = 'Login to unlock more features';
