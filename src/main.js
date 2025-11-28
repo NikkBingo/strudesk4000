@@ -4549,16 +4549,8 @@ class InteractiveSoundApp {
         this.selectedVisualizer = e.target.value;
         console.log(`🎨 Visualizer changed to: ${this.selectedVisualizer}`);
         
-        // Show/hide camera controls based on visualizer selection
+        // Update camera controls visibility
         this.updateCameraControlsVisibility();
-        
-        // Stop camera if visualizer is turned off
-        if (this.selectedVisualizer === 'off' && this.cameraEnabled) {
-          this.stopCamera();
-          if (this.cameraCheckbox) {
-            this.cameraCheckbox.checked = false;
-          }
-        }
         
         if (this.selectedVisualizer === 'off') {
           // When "Off" is selected, always show placeholder
@@ -4604,8 +4596,10 @@ class InteractiveSoundApp {
           if (success) {
             this.cameraEnabled = true;
             this.updateCameraControlsVisibility();
-            // Start camera blend loop for external visualizers (spectrum, pianoroll)
-            if (this.selectedVisualizer === 'spectrum' || this.selectedVisualizer === 'pianoroll') {
+            // Start camera blend loop for external visualizers (spectrum, pianoroll) or when visualizer is off
+            if (this.selectedVisualizer === 'spectrum' || 
+                this.selectedVisualizer === 'pianoroll' || 
+                this.selectedVisualizer === 'off') {
               this.startCameraBlendLoop();
             }
           } else {
@@ -5088,7 +5082,16 @@ class InteractiveSoundApp {
     await this.ensureMasterPlaybackAfterVisualizerChange(masterWasPlaying);
     
     if (this.selectedVisualizer === 'off') {
-      this.showMasterPunchcardPlaceholder();
+      // Show camera if enabled, otherwise show placeholder
+      if (this.cameraEnabled) {
+        this.hideMasterPunchcardPlaceholder();
+        if (this.masterPunchcardCanvas) {
+          this.masterPunchcardCanvas.style.display = 'block';
+        }
+        this.startCameraBlendLoop();
+      } else {
+        this.showMasterPunchcardPlaceholder();
+      }
     } else if (this.selectedVisualizer === 'scope') {
       this.startScopeVisualizerLoop();
     } else if (this.selectedVisualizer === 'barchart') {
@@ -5186,17 +5189,28 @@ class InteractiveSoundApp {
   async refreshMasterPunchcard(reason = 'auto') {
     if (!this.masterPunchcardContainer) return;
     
-    // If visualizer is "off", just show placeholder and stop any visualizer animations
+    // If visualizer is "off", show camera if enabled, otherwise show placeholder
     if (this.selectedVisualizer === 'off') {
       this.stopVisualizerAnimation();
       this.teardownExternalVisualizerCanvas(); // Ensure external visualizers are removed
-      this.showMasterPunchcardPlaceholder();
-      // Clear canvas and ensure it's visible
-      if (this.masterPunchcardCanvas) {
-        this.masterPunchcardCanvas.style.display = 'block';
-        if (this.masterPunchcardCtx) {
-          this.masterPunchcardCtx.setTransform(1, 0, 0, 1, 0, 0);
-          this.masterPunchcardCtx.clearRect(0, 0, this.masterPunchcardCanvas.width, this.masterPunchcardCanvas.height);
+      
+      if (this.cameraEnabled) {
+        // Show camera when visualizer is off
+        this.hideMasterPunchcardPlaceholder();
+        if (this.masterPunchcardCanvas) {
+          this.masterPunchcardCanvas.style.display = 'block';
+        }
+        this.startCameraBlendLoop();
+      } else {
+        // Show placeholder when camera is not enabled
+        this.showMasterPunchcardPlaceholder();
+        // Clear canvas and ensure it's visible
+        if (this.masterPunchcardCanvas) {
+          this.masterPunchcardCanvas.style.display = 'block';
+          if (this.masterPunchcardCtx) {
+            this.masterPunchcardCtx.setTransform(1, 0, 0, 1, 0, 0);
+            this.masterPunchcardCtx.clearRect(0, 0, this.masterPunchcardCanvas.width, this.masterPunchcardCanvas.height);
+          }
         }
       }
       return;
@@ -5530,24 +5544,13 @@ class InteractiveSoundApp {
     const cameraBlendControl = document.getElementById('camera-blend-control');
     
     if (cameraToggleLabel) {
-      // Show camera toggle only when visualizer is not "off" and camera is available
-      if (this.selectedVisualizer !== 'off' && this.cameraAvailable) {
-        cameraToggleLabel.style.display = 'flex';
-      } else {
-        cameraToggleLabel.style.display = 'none';
-        // Stop camera if visualizer is turned off
-        if (this.selectedVisualizer === 'off' && this.cameraEnabled) {
-          this.stopCamera();
-          if (this.cameraCheckbox) {
-            this.cameraCheckbox.checked = false;
-          }
-        }
-      }
+      // Always show camera toggle (available even when visualizer is off)
+      cameraToggleLabel.style.display = 'flex';
     }
     
-    // Hide blend control if camera is not enabled
+    // Show blend control when camera is enabled (works even when visualizer is off)
     if (cameraBlendControl) {
-      if (this.cameraEnabled && this.selectedVisualizer !== 'off') {
+      if (this.cameraEnabled) {
         cameraBlendControl.style.display = 'flex';
       } else {
         cameraBlendControl.style.display = 'none';
@@ -5823,9 +5826,17 @@ class InteractiveSoundApp {
     }
 
     const draw = () => {
-      // Only continue if camera is enabled and visualizer is spectrum or pianoroll
-      if (!this.cameraEnabled || 
-          (this.selectedVisualizer !== 'spectrum' && this.selectedVisualizer !== 'pianoroll')) {
+      // Continue if camera is enabled and visualizer is off, spectrum, or pianoroll
+      if (!this.cameraEnabled) {
+        this.cameraBlendAnimationFrame = null;
+        return;
+      }
+
+      const isExternalVisualizer = this.selectedVisualizer === 'spectrum' || 
+                                   this.selectedVisualizer === 'pianoroll' ||
+                                   this.selectedVisualizer === 'off';
+      
+      if (!isExternalVisualizer) {
         this.cameraBlendAnimationFrame = null;
         return;
       }
@@ -5836,14 +5847,30 @@ class InteractiveSoundApp {
       }
 
       try {
+        // Ensure canvas is sized properly
+        this.sizeCanvasToContainer(canvas, ctx);
+        
         const pixelRatio = window.devicePixelRatio || 1;
         const width = canvas.width / pixelRatio;
         const height = canvas.height / pixelRatio;
         
-        const savedAlpha = ctx.globalAlpha;
-        ctx.globalAlpha = this.cameraBlendValue;
-        ctx.drawImage(this.cameraVideo, 0, 0, width, height);
-        ctx.globalAlpha = savedAlpha;
+        // When visualizer is off, draw camera at full opacity
+        // When blending with visualizers, use blend value
+        const alpha = this.selectedVisualizer === 'off' ? 1.0 : this.cameraBlendValue;
+        
+        // Clear canvas when visualizer is off
+        if (this.selectedVisualizer === 'off') {
+          ctx.fillStyle = 'rgba(5, 6, 10, 0.92)';
+          ctx.fillRect(0, 0, width, height);
+        }
+        
+        // Check if video has valid dimensions
+        if (this.cameraVideo.videoWidth > 0 && this.cameraVideo.videoHeight > 0) {
+          const savedAlpha = ctx.globalAlpha;
+          ctx.globalAlpha = alpha;
+          ctx.drawImage(this.cameraVideo, 0, 0, width, height);
+          ctx.globalAlpha = savedAlpha;
+        }
       } catch (e) {
         // Ignore errors if video is not ready
         console.warn('⚠️ Error drawing camera frame in blend loop:', e);
