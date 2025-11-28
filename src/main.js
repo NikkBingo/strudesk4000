@@ -3338,6 +3338,7 @@ class InteractiveSoundApp {
     this.externalVisualizerType = null;
     this.scopeAnimationFrame = null;
     this.barchartAnimationFrame = null;
+    this.cameraBlendAnimationFrame = null;
     this.scopeDataArray = null;
     this.spectrumDataArray = null;
     this.activeVisualizerLoop = null;
@@ -3395,6 +3396,15 @@ class InteractiveSoundApp {
     this.postConsentReady = false;
     this.gdprOverlay = null;
     this.gdprAcceptButton = null;
+
+    // Camera state
+    this.cameraEnabled = false;
+    this.cameraStream = null;
+    this.cameraVideo = null;
+    this.cameraBlendValue = 0.5; // Default 50% blend
+    this.cameraAvailable = false;
+    this.cameraCheckbox = null;
+    this.cameraBlendSlider = null;
 
     if (this.isMobileView) {
       this.limitInitialElementsForMobile();
@@ -4539,6 +4549,17 @@ class InteractiveSoundApp {
         this.selectedVisualizer = e.target.value;
         console.log(`🎨 Visualizer changed to: ${this.selectedVisualizer}`);
         
+        // Show/hide camera controls based on visualizer selection
+        this.updateCameraControlsVisibility();
+        
+        // Stop camera if visualizer is turned off
+        if (this.selectedVisualizer === 'off' && this.cameraEnabled) {
+          this.stopCamera();
+          if (this.cameraCheckbox) {
+            this.cameraCheckbox.checked = false;
+          }
+        }
+        
         if (this.selectedVisualizer === 'off') {
           // When "Off" is selected, always show placeholder
           this.showMasterPunchcardPlaceholder();
@@ -4563,6 +4584,66 @@ class InteractiveSoundApp {
       });
       this.updateVisualizerFullscreenButton(false);
     }
+    
+    // Setup camera controls
+    this.cameraCheckbox = document.getElementById('camera-toggle');
+    this.cameraBlendSlider = document.getElementById('camera-blend-slider');
+    const cameraBlendValue = document.getElementById('camera-blend-value');
+    const cameraBlendControl = document.getElementById('camera-blend-control');
+    
+    // Check camera availability
+    this.checkCameraAvailability();
+    
+    // Update camera controls visibility based on visualizer selection
+    this.updateCameraControlsVisibility();
+    
+    if (this.cameraCheckbox) {
+      this.cameraCheckbox.addEventListener('change', async (e) => {
+        if (e.target.checked) {
+          const success = await this.requestCameraAccess();
+          if (success) {
+            this.cameraEnabled = true;
+            this.updateCameraControlsVisibility();
+            // Start camera blend loop for external visualizers (spectrum, pianoroll)
+            if (this.selectedVisualizer === 'spectrum' || this.selectedVisualizer === 'pianoroll') {
+              this.startCameraBlendLoop();
+            }
+          } else {
+            this.cameraEnabled = false;
+            e.target.checked = false;
+            this.updateCameraControlsVisibility();
+          }
+        } else {
+          this.stopCamera();
+          this.updateCameraControlsVisibility();
+        }
+      });
+    }
+    
+    if (this.cameraBlendSlider && cameraBlendValue) {
+      this.cameraBlendSlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value, 10);
+        this.cameraBlendValue = value / 100;
+        cameraBlendValue.textContent = `${value}%`;
+      });
+      // Set initial value
+      cameraBlendValue.textContent = `${parseInt(this.cameraBlendSlider.value, 10)}%`;
+    }
+    
+    // Handle tab visibility changes to pause/resume camera
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && this.cameraEnabled && this.cameraStream) {
+        // Pause camera when tab is hidden (browsers may do this automatically, but we ensure it)
+        this.cameraStream.getTracks().forEach(track => {
+          track.enabled = false;
+        });
+      } else if (!document.hidden && this.cameraEnabled && this.cameraStream) {
+        // Resume camera when tab is visible
+        this.cameraStream.getTracks().forEach(track => {
+          track.enabled = true;
+        });
+      }
+    });
     
     // Setup Chaospad checkbox
     const chaospadCheckbox = document.getElementById('chaospad-checkbox');
@@ -5017,6 +5098,15 @@ class InteractiveSoundApp {
         this.masterPunchcardCanvas.style.display = 'block';
       }
       this.hideMasterPunchcardPlaceholder();
+      // Start camera blend loop if camera is enabled
+      if (this.cameraEnabled) {
+        this.startCameraBlendLoop();
+      }
+    } else if (this.selectedVisualizer === 'spectrum') {
+      // Start camera blend loop if camera is enabled
+      if (this.cameraEnabled) {
+        this.startCameraBlendLoop();
+      }
     }
     
     this.refreshMasterPunchcard(this.selectedVisualizer === 'off' ? 'visualizer-off' : 'visualizer-applied').catch(err => {
@@ -5339,7 +5429,130 @@ class InteractiveSoundApp {
       cancelAnimationFrame(this.barchartAnimationFrame);
       this.barchartAnimationFrame = null;
     }
+    if (this.cameraBlendAnimationFrame) {
+      cancelAnimationFrame(this.cameraBlendAnimationFrame);
+      this.cameraBlendAnimationFrame = null;
+    }
     this.activeVisualizerLoop = null;
+  }
+
+  async requestCameraAccess() {
+    // Check if mediaDevices is available
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      console.warn('⚠️ Camera API not available in this browser');
+      this.cameraAvailable = false;
+      return false;
+    }
+
+    try {
+      // Request camera access
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        } 
+      });
+
+      // Create video element if it doesn't exist
+      if (!this.cameraVideo) {
+        this.cameraVideo = document.createElement('video');
+        this.cameraVideo.autoplay = true;
+        this.cameraVideo.playsInline = true;
+        this.cameraVideo.muted = true;
+        this.cameraVideo.style.display = 'none';
+        this.cameraVideo.style.position = 'absolute';
+        this.cameraVideo.style.visibility = 'hidden';
+        document.body.appendChild(this.cameraVideo);
+      }
+
+      // Set stream to video element
+      this.cameraVideo.srcObject = stream;
+      this.cameraStream = stream;
+      this.cameraAvailable = true;
+      this.cameraEnabled = true;
+
+      // Wait for video to be ready
+      await new Promise((resolve) => {
+        if (this.cameraVideo.readyState >= 2) {
+          resolve();
+        } else {
+          this.cameraVideo.addEventListener('loadedmetadata', resolve, { once: true });
+        }
+      });
+
+      console.log('✅ Camera access granted');
+      return true;
+    } catch (error) {
+      console.warn('⚠️ Camera access denied or unavailable:', error);
+      this.cameraAvailable = false;
+      this.cameraEnabled = false;
+      if (this.cameraCheckbox) {
+        this.cameraCheckbox.checked = false;
+      }
+      return false;
+    }
+  }
+
+  stopCamera() {
+    if (this.cameraStream) {
+      // Stop all tracks in the stream
+      this.cameraStream.getTracks().forEach(track => {
+        track.stop();
+      });
+      this.cameraStream = null;
+    }
+
+    if (this.cameraVideo) {
+      this.cameraVideo.srcObject = null;
+      // Remove video element from DOM
+      if (this.cameraVideo.parentNode) {
+        this.cameraVideo.parentNode.removeChild(this.cameraVideo);
+      }
+      this.cameraVideo = null;
+    }
+
+    this.cameraEnabled = false;
+    console.log('📷 Camera stopped');
+  }
+
+  checkCameraAvailability() {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      this.cameraAvailable = true;
+    } else {
+      this.cameraAvailable = false;
+      console.warn('⚠️ Camera API not supported in this browser');
+    }
+  }
+
+  updateCameraControlsVisibility() {
+    const cameraControls = document.getElementById('camera-controls');
+    const cameraBlendControl = document.getElementById('camera-blend-control');
+    
+    if (cameraControls) {
+      // Show camera controls only when visualizer is not "off" and camera is available
+      if (this.selectedVisualizer !== 'off' && this.cameraAvailable) {
+        cameraControls.style.display = 'flex';
+      } else {
+        cameraControls.style.display = 'none';
+        // Stop camera if visualizer is turned off
+        if (this.selectedVisualizer === 'off' && this.cameraEnabled) {
+          this.stopCamera();
+          if (this.cameraCheckbox) {
+            this.cameraCheckbox.checked = false;
+          }
+        }
+      }
+    }
+    
+    // Hide blend control if camera is not enabled
+    if (cameraBlendControl) {
+      if (this.cameraEnabled && this.selectedVisualizer !== 'off') {
+        cameraBlendControl.style.display = 'flex';
+      } else {
+        cameraBlendControl.style.display = 'none';
+      }
+    }
   }
 
   drawVisualizerMessage(message) {
@@ -5437,6 +5650,21 @@ class InteractiveSoundApp {
       context.moveTo(0, mid);
       context.lineTo(width, mid);
       context.stroke();
+      
+      // Blend camera if enabled
+      if (this.cameraEnabled && this.cameraVideo && this.cameraVideo.readyState >= 2) {
+        const savedAlpha = context.globalAlpha;
+        context.globalAlpha = this.cameraBlendValue;
+        try {
+          // Draw camera video to fill canvas
+          context.drawImage(this.cameraVideo, 0, 0, width, height);
+        } catch (e) {
+          // Ignore errors if video is not ready
+          console.warn('⚠️ Error drawing camera frame:', e);
+        }
+        context.globalAlpha = savedAlpha;
+      }
+      
       this.scopeAnimationFrame = requestAnimationFrame(draw);
     };
     draw();
@@ -5561,8 +5789,69 @@ class InteractiveSoundApp {
         // Fill entire segment to eliminate blank space between bars
         context.fillRect(x, y, barWidth + 1, barHeight);
       }
+      
+      // Blend camera if enabled
+      if (this.cameraEnabled && this.cameraVideo && this.cameraVideo.readyState >= 2) {
+        const savedAlpha = context.globalAlpha;
+        context.globalAlpha = this.cameraBlendValue;
+        try {
+          // Draw camera video to fill canvas
+          context.drawImage(this.cameraVideo, 0, 0, width, height);
+        } catch (e) {
+          // Ignore errors if video is not ready
+          console.warn('⚠️ Error drawing camera frame:', e);
+        }
+        context.globalAlpha = savedAlpha;
+      }
+      
       this.barchartAnimationFrame = requestAnimationFrame(draw);
     };
+    draw();
+  }
+
+  startCameraBlendLoop() {
+    // Stop any existing camera blend loop
+    if (this.cameraBlendAnimationFrame) {
+      cancelAnimationFrame(this.cameraBlendAnimationFrame);
+      this.cameraBlendAnimationFrame = null;
+    }
+
+    const canvas = this.masterPunchcardCanvas;
+    const ctx = this.getMasterPunchcardContext();
+    if (!canvas || !ctx) {
+      return;
+    }
+
+    const draw = () => {
+      // Only continue if camera is enabled and visualizer is spectrum or pianoroll
+      if (!this.cameraEnabled || 
+          (this.selectedVisualizer !== 'spectrum' && this.selectedVisualizer !== 'pianoroll')) {
+        this.cameraBlendAnimationFrame = null;
+        return;
+      }
+
+      if (!this.cameraVideo || this.cameraVideo.readyState < 2) {
+        this.cameraBlendAnimationFrame = requestAnimationFrame(draw);
+        return;
+      }
+
+      try {
+        const pixelRatio = window.devicePixelRatio || 1;
+        const width = canvas.width / pixelRatio;
+        const height = canvas.height / pixelRatio;
+        
+        const savedAlpha = ctx.globalAlpha;
+        ctx.globalAlpha = this.cameraBlendValue;
+        ctx.drawImage(this.cameraVideo, 0, 0, width, height);
+        ctx.globalAlpha = savedAlpha;
+      } catch (e) {
+        // Ignore errors if video is not ready
+        console.warn('⚠️ Error drawing camera frame in blend loop:', e);
+      }
+
+      this.cameraBlendAnimationFrame = requestAnimationFrame(draw);
+    };
+
     draw();
   }
 
