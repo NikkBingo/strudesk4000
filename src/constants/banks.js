@@ -43,6 +43,16 @@ export const DRUM_BANK_DISPLAY_NAMES = DRUM_BANKS.reduce((acc, bank) => {
   return acc;
 }, {});
 
+export const BUILTIN_BANK_OPTIONS = [
+  { group: 'Drums', options: DRUM_BANKS },
+  { group: 'Basic Waveforms', options: WAVEFORM_BANKS },
+  { group: 'Sample-based Synths', options: SAMPLE_BANKS }
+];
+
+export const BUILTIN_BANK_VALUES = new Set(
+  BUILTIN_BANK_OPTIONS.flatMap((group) => group.options).map((option) => option.value)
+);
+
 export const VCSL_OPTION_PREFIX = 'vcsl:';
 
 export const parseBankSelectionValue = (rawValue) => {
@@ -60,12 +70,6 @@ export const parseBankSelectionValue = (rawValue) => {
   }
   return { rawValue, bankValue: rawValue, isVcslInstrument: false, vcslInstrument: '' };
 };
-
-export const BUILTIN_BANK_OPTIONS = [
-  { group: 'Drums', options: DRUM_BANKS },
-  { group: 'Basic Waveforms', options: WAVEFORM_BANKS },
-  { group: 'Sample-based Synths', options: SAMPLE_BANKS }
-];
 
 export const formatBankLabel = (value) => {
   if (!value) return 'Default';
@@ -92,5 +96,7 @@ export const formatBankLabel = (value) => {
   }
   return value;
 };
+
+export const isBuiltinBankValue = (value) => BUILTIN_BANK_VALUES.has(value);
 
 
