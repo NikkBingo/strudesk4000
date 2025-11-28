@@ -1077,13 +1077,13 @@ header h1 {
 }
 
 .punchcard-text {
-  font-size: clamp(2.6rem, 5vw, 3.5rem);
+  font-size: clamp(2.6rem, 5vw, 3.2rem);
   font-weight: 700;
   color: #38bdf8;
   background: transparent;
   padding: 20px 40px;
   border-radius: 8px;
-  width: 75%;
+  width: 100%;
   text-align: center;
   letter-spacing: 0.1em;
   user-select: none;
@@ -1254,8 +1254,7 @@ header h1 {
 }
 
 .credits-separator {
-  color: rgba(255, 255, 255, 0.6);
-  margin: 0 4px;
+  display: none;
 }
 
 .credits-section a {
@@ -2428,7 +2427,7 @@ header h1 {
 }
 
 .modal-presets {
-  margin-top: 8px;
+  margin-top: 4px;
   display: flex;
   flex-direction: column;
   border-radius: 6px;
