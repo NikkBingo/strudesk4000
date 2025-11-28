@@ -55,12 +55,6 @@ export class SavePatternDialog {
               </div>
 
               <div class="form-group">
-                <label for="save-pattern-image">Cover Image URL (optional)</label>
-                <input type="url" id="save-pattern-image" placeholder="https://example.com/cover.jpg" />
-                <small>Shown in the Top Tracks section when shared</small>
-              </div>
-
-              <div class="form-group">
                 <label for="save-pattern-version-name">Version Name (optional)</label>
                 <input type="text" id="save-pattern-version-name" placeholder="e.g., Remix, Live, Studio" />
                 <small>Add a label to this version (version number is automatic)</small>
