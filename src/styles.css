@@ -1076,13 +1076,13 @@ header h1 {
 }
 
 .punchcard-text {
-  font-size: 4rem;
+  font-size: clamp(2.6rem, 5vw, 3.5rem);
   font-weight: 700;
   color: #38bdf8;
   background: transparent;
   padding: 20px 40px;
   border-radius: 8px;
-  width: 85%;
+  width: 75%;
   text-align: center;
   letter-spacing: 0.1em;
   user-select: none;
@@ -1115,9 +1115,6 @@ header h1 {
 }
 
 @media (max-width: 640px) {
-  .punchcard-text {
-    font-size: clamp(1.8rem, 8vw, 3rem);
-  }
   .punchcard-logo-img {
     display: block;
   }
@@ -1153,6 +1150,9 @@ header h1 {
   background: rgba(255, 255, 255, 0.95);
   border: none;
   box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .punchcard-grid:fullscreen canvas,
@@ -1160,6 +1160,12 @@ header h1 {
   border-radius: 0;
   width: 100%;
   height: 100%;
+}
+
+.punchcard-grid:fullscreen .punchcard-text,
+#master-punchcard.is-fullscreen .punchcard-text {
+  width: 75%;
+  transform: scale(0.75);
 }
 
 /* Mobile-specific fullscreen styles */
