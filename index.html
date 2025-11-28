@@ -60,7 +60,7 @@
     </div>
 
     <!-- Interactive Elements -->
-    <div class="elements-container">
+    <div class="elements-container" data-requires-auth hidden aria-hidden="true">
       <div class="sound-element" data-sound-id="element-1">
         <input type="range" class="gain-slider" min="0" max="1" step="0.01" value="0.8" orient="vertical" />
         <div class="volume-label">Gain</div>
@@ -322,7 +322,7 @@
         </div>
       </div>
       <!-- Add Element Button -->
-      <button class="add-element-button" id="add-element-btn" title="Add New Element">
+      <button class="add-element-button" id="add-element-btn" title="Add New Element" data-requires-auth hidden aria-hidden="true">
         <span class="plus-icon">+</span>
       </button>
     </div>

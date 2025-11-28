@@ -229,7 +229,7 @@ function renderPianoSection(context) {
   if (!config) return '';
   const elementId = config.pianoElementId || `${context}-piano`;
   return `
-    <div class="piano-section" data-piano-section data-piano-element-id="${elementId}">
+    <div class="piano-section" data-piano-section data-piano-context="${context}" data-piano-element-id="${elementId}" hidden>
       <div class="piano-header">
         <h3>Interactive Piano</h3>
         <div class="piano-octave-controls">
@@ -296,7 +296,7 @@ export function getTheoryControlsTemplate(context) {
   throw new Error(`Unknown theory block context: ${context}`);
 }
 
-export function updateTheoryControlsVisibility(context, { showTimeSignature, showKeyScale }) {
+export function updateTheoryControlsVisibility(context, { showTimeSignature, showKeyScale, showPiano }) {
   const config = CONTEXT_CONFIG[context];
   if (!config) return;
 
@@ -317,6 +317,21 @@ export function updateTheoryControlsVisibility(context, { showTimeSignature, sho
         el.style.display = showKeyScale ? '' : 'none';
       }
     });
+  }
+
+  const mount = config.mountId ? document.getElementById(config.mountId) : null;
+  const pianoSection = mount?.querySelector('[data-piano-section]');
+  if (pianoSection) {
+    const shouldShow = !!showPiano;
+    if (shouldShow) {
+      pianoSection.hidden = false;
+      pianoSection.classList.remove('piano-section--hidden');
+      pianoSection.style.removeProperty('display');
+    } else {
+      pianoSection.hidden = true;
+      pianoSection.classList.add('piano-section--hidden');
+      pianoSection.style.setProperty('display', 'none', 'important');
+    }
   }
 }
 

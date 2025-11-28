@@ -2416,6 +2416,10 @@ header h1 {
   border: 1px solid rgba(102, 126, 234, 0.12);
   padding: 4px 6px;
 }
+.modal-presets--beta {
+  background: #f4f4f5;
+  border-color: #d4d4d8;
+}
 
 .modal-presets-toggle {
   width: 100%;
@@ -6438,6 +6442,10 @@ header h1 {
   padding: 20px;
   margin: 24px 0;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.08);
+}
+.piano-section[hidden],
+.piano-section.piano-section--hidden {
+  display: none !important;
 }
 
 .piano-header {
