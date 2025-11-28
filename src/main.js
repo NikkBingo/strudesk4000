@@ -5585,9 +5585,18 @@ class InteractiveSoundApp {
 
   drawVisualizerMessage(message) {
     const canvas = this.masterPunchcardCanvas;
-    const ctx = this.getMasterPunchcardContext();
-    if (!canvas || !ctx) {
+    if (!canvas) {
       return;
+    }
+    // Get native 2D context (needed for setTransform)
+    let ctx = this.masterPunchcardCtx;
+    if (!ctx || typeof ctx.setTransform !== 'function') {
+      ctx = canvas.getContext('2d');
+      if (!ctx || typeof ctx.setTransform !== 'function') {
+        console.warn('⚠️ drawVisualizerMessage: Cannot get valid 2D context');
+        return;
+      }
+      this.masterPunchcardCtx = ctx;
     }
     this.sizeCanvasToContainer(canvas, ctx);
     const pixelRatio = window.devicePixelRatio || 1;
@@ -5610,9 +5619,8 @@ class InteractiveSoundApp {
     }
     
     const canvas = this.masterPunchcardCanvas;
-    const ctx = this.getMasterPunchcardContext();
-    if (!canvas || !ctx) {
-      console.warn('⚠️ Scope visualizer: Canvas or context not available');
+    if (!canvas) {
+      console.warn('⚠️ Scope visualizer: Canvas not available');
       return;
     }
     const analyser = this.ensureVisualizerAnalyser();
@@ -5681,16 +5689,19 @@ class InteractiveSoundApp {
       
       // Blend camera if enabled
       if (this.cameraEnabled && this.cameraVideo && this.cameraVideo.readyState >= 2) {
-        const savedAlpha = context.globalAlpha;
-        context.globalAlpha = this.cameraBlendValue;
-        try {
-          // Draw camera video to fill canvas
-          context.drawImage(this.cameraVideo, 0, 0, width, height);
-        } catch (e) {
-          // Ignore errors if video is not ready
-          console.warn('⚠️ Error drawing camera frame:', e);
+        // Check if video has valid dimensions
+        if (this.cameraVideo.videoWidth > 0 && this.cameraVideo.videoHeight > 0) {
+          const savedAlpha = context.globalAlpha;
+          context.globalAlpha = this.cameraBlendValue;
+          try {
+            // Draw camera video to fill canvas
+            context.drawImage(this.cameraVideo, 0, 0, width, height);
+          } catch (e) {
+            // Ignore errors if video is not ready
+            console.warn('⚠️ Error drawing camera frame:', e);
+          }
+          context.globalAlpha = savedAlpha;
         }
-        context.globalAlpha = savedAlpha;
       }
       
       this.scopeAnimationFrame = requestAnimationFrame(draw);
@@ -5706,9 +5717,8 @@ class InteractiveSoundApp {
     }
     
     const canvas = this.masterPunchcardCanvas;
-    const ctx = this.getMasterPunchcardContext();
-    if (!canvas || !ctx) {
-      console.warn('⚠️ Bar chart visualizer: Canvas or context not available');
+    if (!canvas) {
+      console.warn('⚠️ Bar chart visualizer: Canvas not available');
       return;
     }
     const analyser = this.ensureVisualizerAnalyser();
@@ -5820,16 +5830,19 @@ class InteractiveSoundApp {
       
       // Blend camera if enabled
       if (this.cameraEnabled && this.cameraVideo && this.cameraVideo.readyState >= 2) {
-        const savedAlpha = context.globalAlpha;
-        context.globalAlpha = this.cameraBlendValue;
-        try {
-          // Draw camera video to fill canvas
-          context.drawImage(this.cameraVideo, 0, 0, width, height);
-        } catch (e) {
-          // Ignore errors if video is not ready
-          console.warn('⚠️ Error drawing camera frame:', e);
+        // Check if video has valid dimensions
+        if (this.cameraVideo.videoWidth > 0 && this.cameraVideo.videoHeight > 0) {
+          const savedAlpha = context.globalAlpha;
+          context.globalAlpha = this.cameraBlendValue;
+          try {
+            // Draw camera video to fill canvas
+            context.drawImage(this.cameraVideo, 0, 0, width, height);
+          } catch (e) {
+            // Ignore errors if video is not ready
+            console.warn('⚠️ Error drawing camera frame:', e);
+          }
+          context.globalAlpha = savedAlpha;
         }
-        context.globalAlpha = savedAlpha;
       }
       
       this.barchartAnimationFrame = requestAnimationFrame(draw);
