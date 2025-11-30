@@ -4555,6 +4555,13 @@ class InteractiveSoundApp {
           if (success) {
             this.cameraEnabled = true;
           }
+        } else if (this.selectedVisualizer !== 'off' && this.cameraEnabled && this.cameraVideo) {
+          // Ensure video is playing if camera is already enabled (desktop browsers may pause hidden videos)
+          if (this.cameraVideo.paused) {
+            this.cameraVideo.play().catch(err => {
+              console.warn('⚠️ Could not play camera video when enabling visualizer:', err);
+            });
+          }
         } else if (this.selectedVisualizer === 'off' && this.cameraEnabled) {
           // Stop camera when visualizer is turned off
           this.stopCamera();
@@ -4652,6 +4659,12 @@ class InteractiveSoundApp {
         this.cameraStream.getTracks().forEach(track => {
           track.enabled = true;
         });
+        // Explicitly play video on desktop when tab becomes visible
+        if (this.cameraVideo && this.cameraVideo.paused) {
+          this.cameraVideo.play().catch(err => {
+            console.warn('⚠️ Could not resume camera video playback:', err);
+          });
+        }
       }
     });
     
@@ -4969,6 +4982,10 @@ class InteractiveSoundApp {
     
     if (this.selectedVisualizer !== 'off') {
       await this.prepareCanvasForExternalVisualizer();
+      // Small delay to ensure canvas is ready in DOM for Strudel visualizers
+      if (this.selectedVisualizer === 'spectrum' || this.selectedVisualizer === 'pianoroll') {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
       
     if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'spectrum') {
       soundManager.setupVisualizerAnalyser();
@@ -5050,9 +5067,8 @@ class InteractiveSoundApp {
       if (this.selectedVisualizer === 'scope' || this.selectedVisualizer === 'barchart' || this.selectedVisualizer === 'punchcard') {
       patternWithVisualizer = basePattern;
     } else if (this.selectedVisualizer === 'spectrum') {
-      patternWithVisualizer = `${basePattern}._spectrum({
+      patternWithVisualizer = `${basePattern}.spectrum({
         id: '${canvasId}',
-        ctx: ${ctxExpression},
         thickness: 3,
         speed: 1,
         min: -80,
@@ -5129,11 +5145,19 @@ class InteractiveSoundApp {
       if (this.cameraEnabled) {
         this.startCameraBlendLoop();
       }
+      // Watch for Strudel to create the pianoroll canvas and attach it
+      this.watchForExternalVisualizerCanvas('pianoroll');
     } else if (this.selectedVisualizer === 'spectrum') {
+      if (this.masterPunchcardCanvas) {
+        this.masterPunchcardCanvas.style.display = 'block';
+      }
+      this.hideMasterPunchcardPlaceholder();
       // Start camera blend loop if camera is enabled
       if (this.cameraEnabled) {
         this.startCameraBlendLoop();
       }
+      // Watch for Strudel to create the spectrum canvas and attach it
+      this.watchForExternalVisualizerCanvas('spectrum');
     }
     
     this.refreshMasterPunchcard(this.selectedVisualizer === 'off' ? 'visualizer-off' : 'visualizer-applied').catch(err => {
@@ -5518,6 +5542,22 @@ class InteractiveSoundApp {
           this.cameraVideo.addEventListener('loadedmetadata', resolve, { once: true });
         }
       });
+
+      // Explicitly play the video - required on desktop browsers for hidden video elements
+      // Even though autoplay is set, desktop browsers often require explicit play() call
+      try {
+        await this.cameraVideo.play();
+      } catch (playError) {
+        console.warn('⚠️ Could not play camera video automatically:', playError);
+        // Try to play again after a short delay (sometimes needed for permission handling)
+        setTimeout(async () => {
+          try {
+            await this.cameraVideo.play();
+          } catch (retryError) {
+            console.warn('⚠️ Retry play() also failed:', retryError);
+          }
+        }, 100);
+      }
 
       console.log('✅ Camera access granted');
       return true;
