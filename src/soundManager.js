@@ -8446,7 +8446,7 @@ class SoundManager {
     }
 
     this._ensureMasterPatternSanitized();
-    const patternText = this.masterPattern.trim();
+    let patternText = this.masterPattern.trim();
     
     try {
       // Handle patterns with setDefaultVoicings - it must be evaluated before the pattern
@@ -8454,23 +8454,31 @@ class SoundManager {
       if (patternText.includes('setDefaultVoicings')) {
         // Extract setDefaultVoicings call and evaluate it first
         // Match setDefaultVoicings('...') or setDefaultVoicings("...")
-        const setDefaultVoicingsMatch = patternText.match(/setDefaultVoicings\s*\(['"]([^'"]*)['"]\s*\)/);
+        let setDefaultVoicingsMatch = patternText.match(/setDefaultVoicings\s*\(['"]([^'"]*)['"]\s*\)/);
         if (setDefaultVoicingsMatch) {
           const voicingType = setDefaultVoicingsMatch[1];
           try {
             await window.strudel.evaluate(`setDefaultVoicings('${voicingType}')`);
             console.log(`✅ Evaluated setDefaultVoicings('${voicingType}') before pattern`);
+            // Remove setDefaultVoicings from pattern (it's invalid inside stack/all)
+            patternText = patternText.replace(/setDefaultVoicings\s*\(['"]([^'"]*)['"]\s*\)/g, '').trim();
+            // Clean up extra newlines
+            patternText = patternText.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
           } catch (e) {
             console.warn(`⚠️ Could not evaluate setDefaultVoicings:`, e.message);
           }
         } else {
           // Try to match without quotes
-          const setDefaultVoicingsMatch2 = patternText.match(/setDefaultVoicings\s*\(([^)]+)\)/);
-          if (setDefaultVoicingsMatch2) {
-            const voicingArg = setDefaultVoicingsMatch2[1].trim();
+          setDefaultVoicingsMatch = patternText.match(/setDefaultVoicings\s*\(([^)]+)\)/);
+          if (setDefaultVoicingsMatch) {
+            const voicingArg = setDefaultVoicingsMatch[1].trim();
             try {
               await window.strudel.evaluate(`setDefaultVoicings(${voicingArg})`);
               console.log(`✅ Evaluated setDefaultVoicings(${voicingArg}) before pattern`);
+              // Remove setDefaultVoicings from pattern (it's invalid inside stack/all)
+              patternText = patternText.replace(/setDefaultVoicings\s*\(([^)]+)\)/g, '').trim();
+              // Clean up extra newlines
+              patternText = patternText.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
             } catch (e) {
               console.warn(`⚠️ Could not evaluate setDefaultVoicings:`, e.message);
             }
@@ -8481,6 +8489,7 @@ class SoundManager {
       // Handle multi-statement patterns from strudel.cc
       // If pattern has multiple lines and looks like it has setup + final pattern,
       // evaluate setup statements first, then the final pattern
+      // Note: patternText may have been modified (setDefaultVoicings removed)
       const lines = patternText.split('\n').filter(l => l.trim() && !l.trim().startsWith('//'));
       const hasMultipleStatements = lines.length > 1 && (
         patternText.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m) // Has variable assignments with : (but not setDefaultVoicings, already handled)
@@ -8506,13 +8515,14 @@ class SoundManager {
           console.log(`🔄 Re-evaluating master pattern (${reason}) with multi-statement support...`);
           await window.strudel.evaluate(code);
         } catch (e) {
-          // Fallback: try evaluating the whole pattern
+          // Fallback: try evaluating the whole pattern (without setDefaultVoicings)
           console.warn(`⚠️ Failed to evaluate as multi-statement, trying as single expression:`, e.message);
           const fallbackCode = `${slot} = ${patternText}`;
           await window.strudel.evaluate(fallbackCode);
         }
       } else {
         // Simple single-expression pattern (including stack() with statements inside)
+        // patternText has already had setDefaultVoicings removed if it was present
         const code = `${slot} = ${patternText}`;
         console.log(`🔄 Re-evaluating master pattern (${reason})...`);
         await window.strudel.evaluate(code);
