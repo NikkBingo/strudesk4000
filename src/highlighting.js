@@ -277,12 +277,22 @@ function runHighlightLoop() {
     
     const ranges = collectActiveRanges(haps);
     
-    // Debug logging
+    // Debug logging - only log occasionally to avoid spam
     if (ranges.length > 0) {
       console.log(`🎯 Highlighting ${ranges.length} active range(s) at time ${now.toFixed(3)}`, ranges);
-    } else if (haps.length > 0) {
+    } else if (haps.length > 0 && Math.random() < 0.01) {
       // Haps exist but no ranges - likely missing location data
+      // Only log 1% of the time to avoid console spam
       console.log(`ℹ️ Found ${haps.length} hap(s) but no highlight ranges (missing location data?)`);
+      // Log a sample hap structure for debugging
+      if (haps[0]) {
+        console.log('Sample hap structure:', {
+          hasContext: !!haps[0].context,
+          hasLocations: !!(haps[0].context?.locations),
+          locationCount: haps[0].context?.locations?.length || 0,
+          contextKeys: haps[0].context ? Object.keys(haps[0].context) : []
+        });
+      }
     }
     
     setStrudelEditorHighlights(MASTER_EDITOR_ID, ranges);
