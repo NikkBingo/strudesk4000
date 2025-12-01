@@ -8097,11 +8097,9 @@ class SoundManager {
       } else {
         // If manual override is set, don't wrap in stack() - use existing masterPattern as-is
         if (this.masterPatternManualOverride && this.masterPattern && this.masterPattern.trim() !== '') {
-          console.log('📝 Using manual override pattern - skipping stack() wrapping');
-          // Still apply master mix modifiers if needed
-          const existingPattern = this.masterPattern;
-          this.masterPattern = this.applyMasterMixModifiers(existingPattern, { wrapStack: false });
-          return; // Don't rebuild from tracked patterns
+          console.log('📝 Using manual override pattern - skipping stack() wrapping and master mix modifiers');
+          // Keep the user's pattern exactly as provided for multi-statement scripts
+          return; // Don't rebuild or modify the manual pattern
         }
         
         const formattedPatterns = patterns.map((pattern, index) => {
