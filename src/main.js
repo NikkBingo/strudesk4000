@@ -7094,10 +7094,10 @@ class InteractiveSoundApp {
   }
 
   enableNativeStrudelHighlighting() {
-    this.nativeHighlightingEnabled = false;
-        this.nativeHighlightingDisabled = true;
+    this.nativeHighlightingEnabled = true;
+    this.nativeHighlightingDisabled = false;
     if (typeof soundManager?.setEditorHighlightingEnabled === 'function') {
-      soundManager.setEditorHighlightingEnabled(false);
+      soundManager.setEditorHighlightingEnabled(true);
     }
   }
 

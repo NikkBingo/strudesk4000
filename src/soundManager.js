@@ -8446,11 +8446,58 @@ class SoundManager {
     }
 
     this._ensureMasterPatternSanitized();
-    const code = `${slot} = ${this.masterPattern.trim()}`;
+    const patternText = this.masterPattern.trim();
+    
     try {
-      console.log(`🔄 Re-evaluating master pattern (${reason})...`);
-      await window.strudel.evaluate(code);
+      // Handle multi-statement patterns from strudel.cc
+      // If pattern has multiple lines and looks like it has setup + final pattern,
+      // evaluate setup statements first, then the final pattern
+      const lines = patternText.split('\n').filter(l => l.trim() && !l.trim().startsWith('//'));
+      const hasMultipleStatements = lines.length > 1 && (
+        patternText.includes('setDefaultVoicings') ||
+        patternText.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m)
+      );
       
+      if (hasMultipleStatements && lines.length > 1) {
+        // Evaluate all statements except the last one as setup
+        const setupCode = lines.slice(0, -1).join('\n');
+        if (setupCode.trim()) {
+          try {
+            await window.strudel.evaluate(setupCode);
+          } catch (e) {
+            console.warn(`⚠️ Could not evaluate setup statements:`, e.message);
+          }
+        }
+        // Evaluate the last line as the pattern
+        const finalPattern = lines[lines.length - 1].trim();
+        const code = `${slot} = ${finalPattern}`;
+        try {
+          console.log(`🔄 Re-evaluating master pattern (${reason}) with multi-statement support...`);
+          await window.strudel.evaluate(code);
+        } catch (e) {
+          // Fallback: try evaluating the whole pattern
+          console.warn(`⚠️ Failed to evaluate as multi-statement, trying as single expression:`, e.message);
+          const fallbackCode = `${slot} = ${patternText}`;
+          await window.strudel.evaluate(fallbackCode);
+        }
+      } else {
+        // Simple single-expression pattern
+        const code = `${slot} = ${patternText}`;
+        console.log(`🔄 Re-evaluating master pattern (${reason})...`);
+        await window.strudel.evaluate(code);
+      }
+      
+      // CRITICAL: Set scheduler.pattern for highlighting to work (for both branches)
+      try {
+        const patternValue = await window.strudel.evaluate(slot);
+        if (patternValue && typeof patternValue.queryArc === 'function') {
+          window.strudel.scheduler.pattern = patternValue;
+          console.log('✅ Set scheduler.pattern for highlighting (re-evaluation)');
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not set scheduler.pattern for highlighting:', e.message);
+      }
+        
       // CRITICAL: Ensure scheduler is still running after re-evaluation
       if (window.strudel.scheduler && !window.strudel.scheduler.started) {
         console.log(`🔄 Scheduler stopped after re-evaluation, restarting...`);
@@ -8507,6 +8554,17 @@ class SoundManager {
       if (window.strudel.scheduler) {
         if (!window.strudel.scheduler.started) {
           await window.strudel.scheduler.start();
+        }
+        // CRITICAL: Set scheduler.pattern for highlighting to work
+        // The pattern is stored in the slot, but we need to get it and set it on scheduler
+        try {
+          const patternValue = await window.strudel.evaluate(slot);
+          if (patternValue && typeof patternValue.queryArc === 'function') {
+            window.strudel.scheduler.pattern = patternValue;
+            console.log('✅ Set scheduler.pattern for highlighting');
+          }
+        } catch (e) {
+          console.warn('⚠️ Could not set scheduler.pattern for highlighting:', e.message);
         }
       } else {
         console.warn('⚠️ Strudel scheduler missing - cannot ensure playback');
