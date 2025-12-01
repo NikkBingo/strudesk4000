@@ -87,6 +87,7 @@ function stripCommentsForEvaluation(code) {
 
 /**
  * Map position from evaluated code (without comments) to displayed code (with comments)
+ * Builds accurate position mapping by simulating the comment stripping process
  */
 function mapPositionToDisplayedCode(from, to, evaluatedCode, displayedCode) {
   // If codes are the same, no mapping needed
@@ -94,119 +95,147 @@ function mapPositionToDisplayedCode(from, to, evaluatedCode, displayedCode) {
     return { from, to };
   }
   
-  // Build a character-by-character mapping
-  // Process displayed code line by line, tracking which characters map to evaluated code
-  const displayedLines = displayedCode.split('\n');
-  const evaluatedLines = evaluatedCode.split('\n');
+  // Build position map: evalPos -> displayPos
+  // Process displayed code and simulate stripping to see which characters survive
+  const positionMap = new Map();
+  let evalPos = 0;
+  let displayPos = 0;
+  let i = 0;
   
-  // Find which line and column in evaluated code contains the position
-  let evalLineNum = 0;
-  let evalCol = 0;
-  let evalCharCount = 0;
-  
-  for (let i = 0; i < evaluatedLines.length; i++) {
-    const lineLength = evaluatedLines[i].length;
-    if (evalCharCount + lineLength >= from) {
-      evalLineNum = i;
-      evalCol = from - evalCharCount;
-      break;
-    }
-    evalCharCount += lineLength + 1; // +1 for newline
-  }
-  
-  // Now find the corresponding line in displayed code
-  // We need to match evaluated lines to displayed lines, skipping comment lines
-  let displayCharPos = 0;
-  let matchedEvalLineNum = 0;
-  
-  for (let i = 0; i < displayedLines.length; i++) {
-    const displayLine = displayedLines[i];
-    const strippedDisplayLine = stripCommentsForEvaluation(displayLine);
+  while (i < displayedCode.length && evalPos < evaluatedCode.length) {
+    const remaining = displayedCode.substring(i);
     
-    // Check if this is a comment-only line
-    const trimmedDisplay = displayLine.trim();
-    const isCommentLine = trimmedDisplay.startsWith('//') || 
-                         trimmedDisplay.startsWith('/*') ||
-                         trimmedDisplay.startsWith('*') ||
-                         (strippedDisplayLine.trim() === '' && trimmedDisplay !== '');
-    
-    if (isCommentLine) {
-      // Skip comment lines - they don't exist in evaluated code
-      displayCharPos += displayLine.length + 1; // +1 for newline
+    // Check for single-line comment
+    if (remaining.startsWith('//')) {
+      // Skip to end of line
+      const newlineIndex = remaining.indexOf('\n');
+      if (newlineIndex !== -1) {
+        i += newlineIndex + 1;
+        displayPos += newlineIndex + 1;
+      } else {
+        // End of file
+        break;
+      }
       continue;
     }
     
-    // This line should correspond to an evaluated line
-    if (matchedEvalLineNum < evaluatedLines.length) {
-      const evalLine = evaluatedLines[matchedEvalLineNum];
-      
-      // Check if stripped displayed line matches evaluated line
-      // Handle case where displayed line might have trailing whitespace
-      const strippedEvalLine = evalLine.trimEnd();
-      const strippedDisplay = strippedDisplayLine.trimEnd();
-      
-      if (strippedDisplay === strippedEvalLine || strippedDisplayLine === evalLine) {
-        // Lines match
-        if (matchedEvalLineNum === evalLineNum) {
-          // Found the target line - map the column position
-          // Column should be the same since the line content matches (after stripping)
-          const mappedFrom = displayCharPos + evalCol;
-          const mappedTo = mappedFrom + (to - from);
-          return { from: mappedFrom, to: mappedTo };
+    // Check for multi-line comment
+    if (remaining.startsWith('/*')) {
+      const endIndex = remaining.indexOf('*/');
+      if (endIndex !== -1) {
+        const comment = remaining.substring(0, endIndex + 2);
+        const isChannelMarker = /\/\*\s*Channel\s+\d+\s*\*\//i.test(comment);
+        
+        if (isChannelMarker) {
+          // Channel marker is preserved - map characters that match evaluated code
+          for (let j = 0; j < comment.length && evalPos < evaluatedCode.length; j++) {
+            if (evaluatedCode[evalPos] === comment[j]) {
+              positionMap.set(evalPos, displayPos + j);
+              evalPos++;
+            }
+          }
+          i += comment.length;
+          displayPos += comment.length;
+        } else {
+          // Regular comment - skip it
+          i += endIndex + 2;
+          displayPos += endIndex + 2;
         }
-        matchedEvalLineNum++;
+        continue;
       } else {
-        // Lines don't match - might be a mismatch
-        // This can happen if there are differences in whitespace or formatting
-        // Continue to next displayed line to find the match
+        // Unclosed comment
+        break;
       }
     }
     
-    displayCharPos += displayLine.length + 1; // +1 for newline
-  }
-  
-  // Fallback: if we couldn't find the exact match, calculate offset from comment lines
-  // Build a character map by processing both codes and finding where evaluated code starts
-  let commentLinesOffset = 0;
-  let foundFirstCodeLine = false;
-  
-  // Find where the actual code starts in displayed code (after all comments)
-  for (let i = 0; i < displayedLines.length; i++) {
-    const displayLine = displayedLines[i];
-    const stripped = stripCommentsForEvaluation(displayLine);
-    const trimmed = displayLine.trim();
+    // Regular character - check if it matches evaluated code
+    const displayChar = displayedCode[i];
+    const evalChar = evaluatedCode[evalPos];
     
-    // Check if this is a comment line or empty line before code
-    if (!foundFirstCodeLine) {
-      if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
-        commentLinesOffset += displayLine.length + 1; // +1 for newline
-        continue;
-      } else if (trimmed === '') {
-        // Empty line - count it as part of the offset
-        commentLinesOffset += displayLine.length + 1;
-        continue;
-      } else if (stripped.trim() === '' && trimmed !== '') {
-        // Line has content but strips to empty (might be a comment)
-        commentLinesOffset += displayLine.length + 1;
-        continue;
-      } else {
-        // Found first code line
-        foundFirstCodeLine = true;
-        // Don't add this line to offset - it's the start of the code
-      }
+    if (displayChar === evalChar) {
+      // Characters match - map this position
+      positionMap.set(evalPos, displayPos);
+      evalPos++;
+      displayPos++;
+      i++;
+    } else if (/\s/.test(displayChar) && /\s/.test(evalChar)) {
+      // Both are whitespace - map and advance both
+      positionMap.set(evalPos, displayPos);
+      evalPos++;
+      displayPos++;
+      i++;
+    } else if (/\s/.test(displayChar)) {
+      // Display has whitespace but eval doesn't - skip display whitespace
+      displayPos++;
+      i++;
+    } else if (/\s/.test(evalChar)) {
+      // Eval has whitespace but display doesn't - advance eval
+      evalPos++;
+    } else {
+      // Characters don't match - this shouldn't happen if stripping is correct
+      // Advance both to avoid infinite loop
+      evalPos++;
+      displayPos++;
+      i++;
     }
   }
   
-  // Apply offset to positions
-  const mappedFrom = from + commentLinesOffset;
-  const mappedTo = to + commentLinesOffset;
+  // Use position map to translate positions
+  const mappedFrom = positionMap.get(from);
+  const mappedTo = positionMap.get(to);
   
-  // Debug logging (only log if offset is significant)
-  if (commentLinesOffset > 0) {
-    console.log(`📍 Position mapping: ${from}-${to} -> ${mappedFrom}-${mappedTo} (offset: ${commentLinesOffset} chars from ${Math.floor(commentLinesOffset / 50)} comment lines)`);
+  if (mappedFrom !== undefined && mappedTo !== undefined) {
+    return { from: mappedFrom, to: mappedTo };
   }
   
-  return { from: mappedFrom, to: mappedTo };
+  // Fallback: find closest mapped positions and interpolate
+  if (positionMap.size > 0) {
+    // Find positions before and after
+    let beforeEval = -1;
+    let beforeDisplay = -1;
+    let afterEval = Infinity;
+    let afterDisplay = Infinity;
+    
+    for (const [ePos, dPos] of positionMap.entries()) {
+      if (ePos <= from && ePos > beforeEval) {
+        beforeEval = ePos;
+        beforeDisplay = dPos;
+      }
+      if (ePos >= from && ePos < afterEval) {
+        afterEval = ePos;
+        afterDisplay = dPos;
+      }
+    }
+    
+    if (beforeEval >= 0) {
+      const offset = beforeDisplay - beforeEval;
+      return { from: from + offset, to: to + offset };
+    }
+    if (afterEval < Infinity) {
+      const offset = afterDisplay - afterEval;
+      return { from: from + offset, to: to + offset };
+    }
+  }
+  
+  // Final fallback: calculate offset from comment lines at start
+  const displayedLines = displayedCode.split('\n');
+  let commentOffset = 0;
+  let foundCode = false;
+  
+  for (let i = 0; i < displayedLines.length && !foundCode; i++) {
+    const line = displayedLines[i];
+    const trimmed = line.trim();
+    const stripped = stripCommentsForEvaluation(line);
+    
+    if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*') || 
+        (trimmed === '' && !foundCode) || (stripped.trim() === '' && trimmed !== '')) {
+      commentOffset += line.length + 1;
+    } else if (stripped.trim() !== '') {
+      foundCode = true;
+    }
+  }
+  
+  return { from: from + commentOffset, to: to + commentOffset };
 }
 
 function runHighlightLoop() {
@@ -263,4 +292,5 @@ export function stopMasterHighlighting() {
   }
   setStrudelEditorHighlights(MASTER_EDITOR_ID, []);
 }
+
 
