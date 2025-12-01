@@ -1939,13 +1939,15 @@ header h1 {
   border-right: 1px solid rgba(102, 126, 234, 0.15) !important;
 }
 
-/* Syntax highlighting - dark green for .ͼkn (keywords/numbers) */
-.ͼkn {
+/* Syntax highlighting - dark green for .ͼkn (keywords/numbers) and .ͼkl (keywords) */
+.ͼkn,
+.ͼkl {
   color: #002610 !important; /* very dark green */
 }
 
-/* Also support .cm-kn for compatibility */
-.cm-kn {
+/* Also support .cm-kn and .cm-kl for compatibility */
+.cm-kn,
+.cm-kl {
   color: #002610 !important; /* very dark green */
 }
 
