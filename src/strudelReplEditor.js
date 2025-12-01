@@ -193,6 +193,9 @@ export function createStrudelReplEditor(textarea, options = {}) {
         color: '#999',
         border: 'none',
         borderRight: '1px solid rgba(102, 126, 234, 0.15)'
+      },
+      '.cm-kn': {
+        color: '#006400' // dark green
       }
     })
   ];
