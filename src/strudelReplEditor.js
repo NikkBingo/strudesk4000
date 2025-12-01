@@ -196,6 +196,15 @@ export function createStrudelReplEditor(textarea, options = {}) {
       },
       '.cm-kn': {
         color: '#006400' // dark green
+      },
+      '.cm-string': {
+        color: '#1a1a1a' // very dark gray/black for better readability
+      },
+      '.cm-string1': {
+        color: '#1a1a1a' // single quotes
+      },
+      '.cm-string2': {
+        color: '#1a1a1a' // double quotes
       }
     })
   ];
