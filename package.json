@@ -10,8 +10,8 @@
     "start": "npx prisma migrate deploy --schema server/prisma/schema.prisma && node server/index.js"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Niclas Etelävuori @ eKommissar.com",
+  "license": "AGPL-3.0",
   "description": "Strudel Pattern Mixer",
   "devDependencies": {
     "vite": "^6.4.1"
