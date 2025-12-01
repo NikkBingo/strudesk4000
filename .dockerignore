@@ -1,0 +1,61 @@
+# Dependencies
+node_modules
+server/node_modules
+npm-debug.log
+package-lock.json
+server/package-lock.json
+
+# Build outputs (will be rebuilt in Docker)
+dist
+build
+.next
+out
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Development files
+*.log
+*.md
+!README.md
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large assets that aren't needed for build
+# (Keep only what's needed for the frontend build)
+assets/sounds
+assets/samples
+
+# Unnecessary files
+midi2strudel
+cookies.txt
+resolve-migration-railway.sh
+DEPLOYMENT.md
+FIX_MIGRATION.md
+SCALES_REFERENCE.md
+
+# Server files that will be copied separately
+server/node_modules
+server/.dockerignore
+
+# Railway config (not needed in image)
+railway.toml
+server/railway.toml
+server/nixpacks.toml
+
