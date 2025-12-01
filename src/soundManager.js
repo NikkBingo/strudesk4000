@@ -8454,36 +8454,36 @@ class SoundManager {
       if (patternText.includes('setDefaultVoicings')) {
         // Extract setDefaultVoicings call and evaluate it first
         // Match setDefaultVoicings('...') or setDefaultVoicings("...")
-        let setDefaultVoicingsMatch = patternText.match(/setDefaultVoicings\s*\(['"]([^'"]*)['"]\s*\)/);
+        let setDefaultVoicingsMatch = patternText.match(/setDefaultVoicings\s*\(\s*['"]([^'"]*)['"]\s*\)/);
         if (setDefaultVoicingsMatch) {
           const voicingType = setDefaultVoicingsMatch[1];
           try {
             await window.strudel.evaluate(`setDefaultVoicings('${voicingType}')`);
             console.log(`✅ Evaluated setDefaultVoicings('${voicingType}') before pattern`);
-            // Remove setDefaultVoicings from pattern (it's invalid inside stack/all)
-            patternText = patternText.replace(/setDefaultVoicings\s*\(['"]([^'"]*)['"]\s*\)/g, '').trim();
-            // Clean up extra newlines
-            patternText = patternText.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
           } catch (e) {
             console.warn(`⚠️ Could not evaluate setDefaultVoicings:`, e.message);
           }
         } else {
           // Try to match without quotes
-          setDefaultVoicingsMatch = patternText.match(/setDefaultVoicings\s*\(([^)]+)\)/);
+          setDefaultVoicingsMatch = patternText.match(/setDefaultVoicings\s*\(\s*([^)]+)\s*\)/);
           if (setDefaultVoicingsMatch) {
             const voicingArg = setDefaultVoicingsMatch[1].trim();
             try {
               await window.strudel.evaluate(`setDefaultVoicings(${voicingArg})`);
               console.log(`✅ Evaluated setDefaultVoicings(${voicingArg}) before pattern`);
-              // Remove setDefaultVoicings from pattern (it's invalid inside stack/all)
-              patternText = patternText.replace(/setDefaultVoicings\s*\(([^)]+)\)/g, '').trim();
-              // Clean up extra newlines
-              patternText = patternText.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
             } catch (e) {
               console.warn(`⚠️ Could not evaluate setDefaultVoicings:`, e.message);
             }
           }
         }
+        
+        // Remove setDefaultVoicings from pattern (it's invalid inside stack/all)
+        // Remove lines that contain setDefaultVoicings
+        const lines = patternText.split('\n');
+        const filteredLines = lines.filter(line => !line.includes('setDefaultVoicings'));
+        patternText = filteredLines.join('\n');
+        // Clean up extra newlines
+        patternText = patternText.replace(/\n{3,}/g, '\n\n').trim();
       }
       
       // Handle multi-statement patterns from strudel.cc
