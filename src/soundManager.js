@@ -3931,12 +3931,56 @@ class SoundManager {
                   // Get the webaudio module and scheduler to check/register MIDI methods
                   const { webaudioModule } = await getStrudelModules();
                   const scheduler = window.strudel?.scheduler || strudelContext?.scheduler;
-                  const webaudio = scheduler?.webaudio || window.strudel?.webaudio;
+                  
+                  // Try multiple ways to find webaudio (same as above)
+                  let webaudio = scheduler?.webaudio || 
+                                 window.strudel?.webaudio || 
+                                 strudelContext?.webaudio ||
+                                 strudelContext?.output?.webaudio ||
+                                 (scheduler && scheduler.output && scheduler.output.webaudio);
+                  
+                  // If webaudio is not found, check if output itself is webaudio (has midiOutput)
+                  if (!webaudio && scheduler && scheduler.output) {
+                    console.log('   Checking scheduler.output for webaudio...');
+                    if (typeof scheduler.output.midiOutput === 'function') {
+                      console.log('   scheduler.output has midiOutput, treating as webaudio');
+                      webaudio = scheduler.output;
+                      // Store it for future use
+                      window.strudel.webaudio = webaudio;
+                    } else if (scheduler.output.webaudio) {
+                      webaudio = scheduler.output.webaudio;
+                      window.strudel.webaudio = webaudio;
+                    }
+                  }
+                  
+                  // Also check strudelContext.output
+                  if (!webaudio && strudelContext && strudelContext.output) {
+                    console.log('   Checking strudelContext.output for webaudio...');
+                    if (typeof strudelContext.output.midiOutput === 'function') {
+                      console.log('   strudelContext.output has midiOutput, treating as webaudio');
+                      webaudio = strudelContext.output;
+                      window.strudel.webaudio = webaudio;
+                    } else if (strudelContext.output.webaudio) {
+                      webaudio = strudelContext.output.webaudio;
+                      window.strudel.webaudio = webaudio;
+                    }
+                  }
+                  
+                  // Log what we found
+                  if (!webaudio) {
+                    console.log('   Checking strudelContext for webaudio in various locations...');
+                    console.log('   strudelContext keys:', strudelContext ? Object.keys(strudelContext).slice(0, 10) : []);
+                    if (scheduler) {
+                      console.log('   scheduler keys:', Object.keys(scheduler).slice(0, 10));
+                    }
+                  }
                   
                   console.log('🔍 Checking for scheduler/webaudio after delay:', {
                     hasScheduler: !!scheduler,
                     hasWebaudio: !!webaudio,
-                    midiOutputType: webaudio ? typeof webaudio.midiOutput : 'N/A'
+                    midiOutputType: webaudio ? typeof webaudio.midiOutput : 'N/A',
+                    schedulerKeys: scheduler ? Object.keys(scheduler).slice(0, 10) : [],
+                    strudelContextKeys: strudelContext ? Object.keys(strudelContext).slice(0, 10) : []
                   });
                   
                   // Expose webaudio module to REPL and try to ensure MIDI methods are registered
@@ -4112,9 +4156,20 @@ class SoundManager {
             window.strudel.scheduler = strudelContext.scheduler;
             console.log('✅ Stored scheduler from strudelContext to window.strudel.scheduler');
             
-            // Check scheduler for webaudio
+            // Check scheduler for webaudio in various locations
             if (strudelContext.scheduler.webaudio) {
               console.log('✅ Found webaudio in strudelContext.scheduler.webaudio');
+              window.strudel.webaudio = strudelContext.scheduler.webaudio;
+            } else if (strudelContext.scheduler.output) {
+              console.log('✅ Found output in scheduler, checking for webaudio...');
+              if (strudelContext.scheduler.output.webaudio) {
+                console.log('✅ Found webaudio in scheduler.output.webaudio');
+                window.strudel.webaudio = strudelContext.scheduler.output.webaudio;
+              } else {
+                // The output itself might be the webaudio instance
+                console.log('   scheduler.output might be webaudio, storing it');
+                window.strudel.webaudio = strudelContext.scheduler.output;
+              }
             }
           }
           
@@ -4123,6 +4178,19 @@ class SoundManager {
             console.log('✅ Found webaudio in strudelContext.webaudio');
             window.strudel = window.strudel || {};
             window.strudel.webaudio = strudelContext.webaudio;
+          }
+          
+          // Check if output is webaudio
+          if (strudelContext.output) {
+            console.log('✅ Found output in strudelContext, checking if it\'s webaudio...');
+            if (strudelContext.output.webaudio) {
+              console.log('✅ Found webaudio in strudelContext.output.webaudio');
+              window.strudel.webaudio = strudelContext.output.webaudio;
+            } else if (typeof strudelContext.output.midiOutput === 'function') {
+              // The output itself might be the webaudio instance (has midiOutput method)
+              console.log('✅ strudelContext.output has midiOutput, treating as webaudio');
+              window.strudel.webaudio = strudelContext.output;
+            }
           }
           
           if (replInstance && replInstance.scheduler) {
