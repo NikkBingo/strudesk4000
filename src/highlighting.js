@@ -94,10 +94,12 @@ function mapPositionToDisplayedCode(from, to, evaluatedCode, displayedCode) {
     return { from, to };
   }
   
-  const evaluatedLines = evaluatedCode.split('\n');
+  // Build a character-by-character mapping
+  // Process displayed code line by line, tracking which characters map to evaluated code
   const displayedLines = displayedCode.split('\n');
+  const evaluatedLines = evaluatedCode.split('\n');
   
-  // Find line and column in evaluated code
+  // Find which line and column in evaluated code contains the position
   let evalLineNum = 0;
   let evalCol = 0;
   let evalCharCount = 0;
@@ -112,8 +114,8 @@ function mapPositionToDisplayedCode(from, to, evaluatedCode, displayedCode) {
     evalCharCount += lineLength + 1; // +1 for newline
   }
   
-  // Find corresponding line in displayed code
-  // Match evaluated lines to displayed lines, skipping comment lines
+  // Now find the corresponding line in displayed code
+  // We need to match evaluated lines to displayed lines, skipping comment lines
   let displayCharPos = 0;
   let matchedEvalLineNum = 0;
   
@@ -122,40 +124,89 @@ function mapPositionToDisplayedCode(from, to, evaluatedCode, displayedCode) {
     const strippedDisplayLine = stripCommentsForEvaluation(displayLine);
     
     // Check if this is a comment-only line
-    const isCommentLine = displayLine.trim().startsWith('//') || 
-                         displayLine.trim().startsWith('/*') ||
-                         displayLine.trim().startsWith('*') ||
-                         (strippedDisplayLine.trim() === '' && displayLine.trim() !== '');
+    const trimmedDisplay = displayLine.trim();
+    const isCommentLine = trimmedDisplay.startsWith('//') || 
+                         trimmedDisplay.startsWith('/*') ||
+                         trimmedDisplay.startsWith('*') ||
+                         (strippedDisplayLine.trim() === '' && trimmedDisplay !== '');
     
     if (isCommentLine) {
       // Skip comment lines - they don't exist in evaluated code
-      displayCharPos += displayLine.length + 1;
+      displayCharPos += displayLine.length + 1; // +1 for newline
       continue;
     }
     
-    // Check if this line matches the current evaluated line
+    // This line should correspond to an evaluated line
     if (matchedEvalLineNum < evaluatedLines.length) {
       const evalLine = evaluatedLines[matchedEvalLineNum];
       
-      // Compare stripped displayed line with evaluated line
-      if (strippedDisplayLine === evalLine) {
+      // Check if stripped displayed line matches evaluated line
+      // Handle case where displayed line might have trailing whitespace
+      const strippedEvalLine = evalLine.trimEnd();
+      const strippedDisplay = strippedDisplayLine.trimEnd();
+      
+      if (strippedDisplay === strippedEvalLine || strippedDisplayLine === evalLine) {
         // Lines match
         if (matchedEvalLineNum === evalLineNum) {
           // Found the target line - map the column position
-          // Column should be the same since the line content matches
+          // Column should be the same since the line content matches (after stripping)
           const mappedFrom = displayCharPos + evalCol;
           const mappedTo = mappedFrom + (to - from);
           return { from: mappedFrom, to: mappedTo };
         }
         matchedEvalLineNum++;
+      } else {
+        // Lines don't match - might be a mismatch
+        // This can happen if there are differences in whitespace or formatting
+        // Continue to next displayed line to find the match
       }
     }
     
     displayCharPos += displayLine.length + 1; // +1 for newline
   }
   
-  // Fallback: return positions as-is if mapping failed
-  return { from, to };
+  // Fallback: if we couldn't find the exact match, calculate offset from comment lines
+  // Build a character map by processing both codes and finding where evaluated code starts
+  let commentLinesOffset = 0;
+  let foundFirstCodeLine = false;
+  
+  // Find where the actual code starts in displayed code (after all comments)
+  for (let i = 0; i < displayedLines.length; i++) {
+    const displayLine = displayedLines[i];
+    const stripped = stripCommentsForEvaluation(displayLine);
+    const trimmed = displayLine.trim();
+    
+    // Check if this is a comment line or empty line before code
+    if (!foundFirstCodeLine) {
+      if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
+        commentLinesOffset += displayLine.length + 1; // +1 for newline
+        continue;
+      } else if (trimmed === '') {
+        // Empty line - count it as part of the offset
+        commentLinesOffset += displayLine.length + 1;
+        continue;
+      } else if (stripped.trim() === '' && trimmed !== '') {
+        // Line has content but strips to empty (might be a comment)
+        commentLinesOffset += displayLine.length + 1;
+        continue;
+      } else {
+        // Found first code line
+        foundFirstCodeLine = true;
+        // Don't add this line to offset - it's the start of the code
+      }
+    }
+  }
+  
+  // Apply offset to positions
+  const mappedFrom = from + commentLinesOffset;
+  const mappedTo = to + commentLinesOffset;
+  
+  // Debug logging (only log if offset is significant)
+  if (commentLinesOffset > 0) {
+    console.log(`📍 Position mapping: ${from}-${to} -> ${mappedFrom}-${mappedTo} (offset: ${commentLinesOffset} chars from ${Math.floor(commentLinesOffset / 50)} comment lines)`);
+  }
+  
+  return { from: mappedFrom, to: mappedTo };
 }
 
 function runHighlightLoop() {
