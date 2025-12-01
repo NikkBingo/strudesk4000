@@ -8449,16 +8449,47 @@ class SoundManager {
     const patternText = this.masterPattern.trim();
     
     try {
+      // Handle patterns with setDefaultVoicings - it must be evaluated before the pattern
+      // Check if setDefaultVoicings appears in the pattern (could be before or inside stack)
+      if (patternText.includes('setDefaultVoicings')) {
+        // Extract setDefaultVoicings call and evaluate it first
+        // Match setDefaultVoicings('...') or setDefaultVoicings("...")
+        const setDefaultVoicingsMatch = patternText.match(/setDefaultVoicings\s*\(['"]([^'"]*)['"]\s*\)/);
+        if (setDefaultVoicingsMatch) {
+          const voicingType = setDefaultVoicingsMatch[1];
+          try {
+            await window.strudel.evaluate(`setDefaultVoicings('${voicingType}')`);
+            console.log(`✅ Evaluated setDefaultVoicings('${voicingType}') before pattern`);
+          } catch (e) {
+            console.warn(`⚠️ Could not evaluate setDefaultVoicings:`, e.message);
+          }
+        } else {
+          // Try to match without quotes
+          const setDefaultVoicingsMatch2 = patternText.match(/setDefaultVoicings\s*\(([^)]+)\)/);
+          if (setDefaultVoicingsMatch2) {
+            const voicingArg = setDefaultVoicingsMatch2[1].trim();
+            try {
+              await window.strudel.evaluate(`setDefaultVoicings(${voicingArg})`);
+              console.log(`✅ Evaluated setDefaultVoicings(${voicingArg}) before pattern`);
+            } catch (e) {
+              console.warn(`⚠️ Could not evaluate setDefaultVoicings:`, e.message);
+            }
+          }
+        }
+      }
+      
       // Handle multi-statement patterns from strudel.cc
       // If pattern has multiple lines and looks like it has setup + final pattern,
       // evaluate setup statements first, then the final pattern
       const lines = patternText.split('\n').filter(l => l.trim() && !l.trim().startsWith('//'));
       const hasMultipleStatements = lines.length > 1 && (
-        patternText.includes('setDefaultVoicings') ||
-        patternText.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m)
+        patternText.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m) // Has variable assignments with : (but not setDefaultVoicings, already handled)
       );
       
-      if (hasMultipleStatements && lines.length > 1) {
+      // Don't split if pattern is a single stack() or all() call
+      const isSingleExpression = patternText.trim().match(/^(stack|all)\s*\(/);
+      
+      if (hasMultipleStatements && lines.length > 1 && !isSingleExpression) {
         // Evaluate all statements except the last one as setup
         const setupCode = lines.slice(0, -1).join('\n');
         if (setupCode.trim()) {
@@ -8481,7 +8512,7 @@ class SoundManager {
           await window.strudel.evaluate(fallbackCode);
         }
       } else {
-        // Simple single-expression pattern
+        // Simple single-expression pattern (including stack() with statements inside)
         const code = `${slot} = ${patternText}`;
         console.log(`🔄 Re-evaluating master pattern (${reason})...`);
         await window.strudel.evaluate(code);
