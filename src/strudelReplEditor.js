@@ -221,17 +221,7 @@ export function createStrudelReplEditor(textarea, options = {}) {
     textarea.style.display = 'none';
     textarea.parentNode.insertBefore(editor.dom, textarea);
     
-    // Verify JavaScript syntax highlighting is active
-    const languageSupport = editor.state.facet(EditorState.language);
-    if (languageSupport && languageSupport.length > 0) {
-      console.log(`✅ Editor created with language support for ${textarea.id || 'textarea'}`);
-      console.log(`   Language: ${languageSupport[0]?.name || 'unknown'}`);
-    } else {
-      console.warn(`⚠️ Editor created but no language support detected for ${textarea.id || 'textarea'}`);
-      console.warn('   This may indicate JavaScript syntax highlighting is not working');
-    }
-    
-    console.log(`   Editor DOM created and inserted for ${textarea.id || 'textarea'}`);
+    console.log(`✅ Editor created and inserted for ${textarea.id || 'textarea'}`);
   } catch (error) {
     console.error('❌ Error creating Strudel REPL editor:', error);
     console.error('   Error details:', error.message, error.stack);
