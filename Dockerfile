@@ -8,7 +8,9 @@ COPY package.json package-lock.json ./
 # Install dependencies
 # Use npm install with legacy-peer-deps to handle peer dependency issues
 # Include optional dependencies for Rollup native modules
-RUN npm install --legacy-peer-deps --include=optional --no-audit
+# Workaround for npm bug with optional dependencies: install Rollup native module explicitly
+RUN npm install --legacy-peer-deps --include=optional --no-audit && \
+    npm install --save-optional @rollup/rollup-linux-x64-gnu || true
 
 # Copy frontend source files
 COPY vite.config.js ./
