@@ -8580,6 +8580,45 @@ class SoundManager {
         }
       }
       
+      // Manual override: evaluate setup code separately and assign final expression to slot
+      if (this.masterPatternManualOverride) {
+        const { setupCode, finalExpression } = this._splitManualOverridePattern(patternText);
+        if (setupCode) {
+          try {
+            await window.strudel.evaluate(setupCode);
+          } catch (e) {
+            console.warn('⚠️ Manual override setup code failed:', e.message);
+          }
+        }
+        if (finalExpression) {
+          const manualCode = `${slot} = ${finalExpression}`;
+          console.log(`🔄 Re-evaluating manual override pattern (${reason})...`);
+          await window.strudel.evaluate(manualCode);
+          try {
+            const patternValue = await window.strudel.evaluate(slot);
+            if (patternValue && typeof patternValue.queryArc === 'function') {
+              window.strudel.scheduler.pattern = patternValue;
+              console.log('✅ Set scheduler.pattern for manual override');
+            }
+          } catch (e) {
+            console.warn('⚠️ Could not set scheduler.pattern for manual override:', e.message);
+          }
+          if (window.strudel.scheduler && !window.strudel.scheduler.started) {
+            console.log(`🔄 Scheduler stopped after manual override, restarting...`);
+            try {
+              await window.strudel.scheduler.start();
+              console.log(`✅ Scheduler restarted after manual override`);
+            } catch (e) {
+              console.warn(`⚠️ Could not restart scheduler after manual override:`, e.message);
+            }
+          }
+          console.log(`✅ Manual override pattern re-evaluated (${reason})`);
+          return { success: true, slot };
+        } else {
+          console.warn('⚠️ Manual override pattern missing final expression - falling back to multi-statement evaluation');
+        }
+      }
+      
       // Handle multi-statement patterns from strudel.cc
       // If pattern has multiple lines and looks like it has setup + final pattern,
       // evaluate setup statements first, then the final pattern
@@ -8683,9 +8722,27 @@ class SoundManager {
 
     this._ensureMasterPatternSanitized();
     const slot = this.masterSlot || 'd0';
-    const code = `${slot} = ${this.masterPattern.trim()}`;
+    const patternText = this.masterPattern.trim();
+    const isManualOverride = this.masterPatternManualOverride;
     try {
-      await window.strudel.evaluate(code);
+      if (isManualOverride) {
+        const { setupCode, finalExpression } = this._splitManualOverridePattern(patternText);
+        if (setupCode) {
+          try {
+            await window.strudel.evaluate(setupCode);
+          } catch (error) {
+            console.warn('⚠️ Manual override setup code failed:', error);
+          }
+        }
+        if (finalExpression) {
+          await window.strudel.evaluate(`${slot} = ${finalExpression}`);
+        } else {
+          console.warn('⚠️ Manual override missing final expression, falling back to default evaluation');
+          await window.strudel.evaluate(`${slot} = ${patternText}`);
+        }
+      } else {
+        await window.strudel.evaluate(`${slot} = ${patternText}`);
+      }
       if (window.strudel.scheduler) {
         if (!window.strudel.scheduler.started) {
           await window.strudel.scheduler.start();
@@ -10113,6 +10170,52 @@ class SoundManager {
     }
     
     return false;
+  }
+
+  _splitManualOverridePattern(pattern) {
+    if (!pattern || typeof pattern !== 'string') {
+      return { setupCode: '', finalExpression: '' };
+    }
+    const normalized = pattern.replace(/\r/g, '').trim();
+    if (!normalized) {
+      return { setupCode: '', finalExpression: '' };
+    }
+    
+    const blocks = [];
+    let currentBlock = [];
+    const pushBlock = () => {
+      if (currentBlock.length > 0) {
+        blocks.push(currentBlock.join('\n').trim());
+        currentBlock = [];
+      }
+    };
+    
+    normalized.split('\n').forEach(line => {
+      if (line.trim() === '') {
+        pushBlock();
+      } else {
+        currentBlock.push(line);
+      }
+    });
+    pushBlock();
+    
+    if (!blocks.length) {
+      return { setupCode: '', finalExpression: normalized };
+    }
+    
+    let finalExpression = blocks.pop();
+    const colonRegex = /^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/;
+    if (colonRegex.test(finalExpression)) {
+      // No final expression block, treat everything as setup
+      blocks.push(finalExpression);
+      finalExpression = '';
+    }
+    
+    const setupCode = blocks.join('\n\n').trim();
+    return {
+      setupCode,
+      finalExpression: finalExpression.trim()
+    };
   }
 
   /**
