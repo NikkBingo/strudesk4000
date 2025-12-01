@@ -2,8 +2,7 @@
 node_modules
 server/node_modules
 npm-debug.log
-package-lock.json
-server/package-lock.json
+# Keep package-lock.json files - needed for npm ci
 
 # Build outputs (will be rebuilt in Docker)
 dist
