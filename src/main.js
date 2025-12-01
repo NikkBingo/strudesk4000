@@ -2,7 +2,7 @@
  * Main entry point - Wires together all components
  */
 
-import { soundManager } from './soundManager.js';
+import { soundManager, getStrudelModules } from './soundManager.js';
 import { uiController } from './ui.js';
 import { soundConfig } from './config.js';
 import { initStrudelReplEditors, getStrudelEditor, getStrudelEditorValue, setStrudelEditorValue, setStrudelEditorEditable, insertStrudelEditorSnippet } from './strudelReplEditor.js';
@@ -6886,11 +6886,11 @@ class InteractiveSoundApp {
     
     let patternObject;
     try {
-      // Use dynamic imports to avoid duplicate loading
-      const [{ evaluate: strudelCoreEvaluate }, { transpiler: strudelTranspiler }] = await Promise.all([
-        import('@strudel/core'),
-        import('@strudel/transpiler')
-      ]);
+      // Use cached modules from soundManager to avoid duplicate loading
+      const { coreModule } = await getStrudelModules();
+      const strudelCoreEvaluate = coreModule?.evaluate;
+      // Import transpiler separately (not cached in getStrudelModules)
+      const { transpiler: strudelTranspiler } = await import('@strudel/transpiler');
       const evaluation = await strudelCoreEvaluate(patternForEval, strudelTranspiler, {
         wrapAsync: false,
         addReturn: false,

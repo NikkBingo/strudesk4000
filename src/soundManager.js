@@ -58,7 +58,7 @@ const normalizeSampleManifest = (manifest) => {
 
 const DOUGH_SAMPLES_BASE_URL = 'https://raw.githubusercontent.com/felixroos/dough-samples/main';
 
-async function getStrudelModules() {
+export async function getStrudelModules() {
   // Create promise only once - this ensures all calls use the same module instances
   // Vite will pre-bundle these, and we cache them to prevent duplicate imports
   if (!strudelModulesPromise) {
