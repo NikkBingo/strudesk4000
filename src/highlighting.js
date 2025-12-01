@@ -265,11 +265,24 @@ function runHighlightLoop() {
     const begin = Math.max(0, now - lookBehind);
     const end = now + lookAhead;
     const haps = pattern.queryArc(begin, end) || [];
+    
+    // Debug: Check if haps have location data
+    if (haps.length > 0 && haps.length <= 5) {
+      const hasLocations = haps.some(hap => hap?.context?.locations?.length > 0);
+      if (!hasLocations) {
+        console.warn('⚠️ Haps found but no location data. Pattern may not have withLoc enabled or locations not preserved.');
+        console.log('Sample hap:', haps[0]);
+      }
+    }
+    
     const ranges = collectActiveRanges(haps);
     
-    // Debug logging (can be removed later)
+    // Debug logging
     if (ranges.length > 0) {
-      console.log(`🎯 Highlighting ${ranges.length} active range(s) at time ${now.toFixed(3)}`);
+      console.log(`🎯 Highlighting ${ranges.length} active range(s) at time ${now.toFixed(3)}`, ranges);
+    } else if (haps.length > 0) {
+      // Haps exist but no ranges - likely missing location data
+      console.log(`ℹ️ Found ${haps.length} hap(s) but no highlight ranges (missing location data?)`);
     }
     
     setStrudelEditorHighlights(MASTER_EDITOR_ID, ranges);
