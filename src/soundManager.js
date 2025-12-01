@@ -3966,12 +3966,58 @@ class SoundManager {
                     }
                   }
                   
-                  // Log what we found
+                  // Log what we found and inspect scheduler structure
                   if (!webaudio) {
                     console.log('   Checking strudelContext for webaudio in various locations...');
                     console.log('   strudelContext keys:', strudelContext ? Object.keys(strudelContext).slice(0, 10) : []);
                     if (scheduler) {
-                      console.log('   scheduler keys:', Object.keys(scheduler).slice(0, 10));
+                      console.log('   scheduler keys:', Object.keys(scheduler));
+                      // Check each scheduler property for webaudio or midiOutput
+                      for (const key of Object.keys(scheduler)) {
+                        const value = scheduler[key];
+                        if (value && typeof value === 'object') {
+                          if (typeof value.midiOutput === 'function') {
+                            console.log(`   ✅ Found midiOutput in scheduler.${key} - treating as webaudio`);
+                            webaudio = value;
+                            window.strudel.webaudio = webaudio;
+                            break;
+                          } else if (value.webaudio) {
+                            console.log(`   ✅ Found webaudio in scheduler.${key}.webaudio`);
+                            webaudio = value.webaudio;
+                            window.strudel.webaudio = webaudio;
+                            break;
+                          }
+                        }
+                      }
+                    }
+                  }
+                  
+                  // If still not found, try to create webaudio using the stored factory
+                  if (!webaudio && this.strudelOutputFactory && scheduler) {
+                    console.log('   ⚠️ webaudio not found, attempting to create using webaudioOutput factory...');
+                    try {
+                      // The webaudioOutput factory might need to be called with the scheduler and audioContext
+                      const createdOutput = this.strudelOutputFactory({
+                        scheduler: scheduler,
+                        audioContext: this.audioContext,
+                        getTime: () => this.audioContext ? this.audioContext.currentTime : 0,
+                        midiOutput: (message) => {
+                          if (this.midiEnabled && this.selectedMidiOutput) {
+                            this.sendMIDIMessage(message);
+                          }
+                        }
+                      });
+                      if (createdOutput && typeof createdOutput.midiOutput === 'function') {
+                        console.log('   ✅ Created webaudio output using factory');
+                        webaudio = createdOutput;
+                        window.strudel.webaudio = webaudio;
+                        // Try to attach it to scheduler
+                        if (scheduler && !scheduler.webaudio) {
+                          scheduler.webaudio = webaudio;
+                        }
+                      }
+                    } catch (factoryError) {
+                      console.warn('   ⚠️ Failed to create webaudio using factory:', factoryError);
                     }
                   }
                   
