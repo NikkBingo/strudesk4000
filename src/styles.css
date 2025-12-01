@@ -1951,6 +1951,18 @@ header h1 {
   color: #002610 !important; /* very dark green */
 }
 
+/* Syntax highlighting - dark red for .ͼkq and .ͼjz */
+.ͼkq,
+.ͼjz {
+  color: #400707 !important; /* dark red */
+}
+
+/* Also support .cm-kq and .cm-jz for compatibility */
+.cm-kq,
+.cm-jz {
+  color: #400707 !important; /* dark red */
+}
+
 /* Syntax highlighting - darker color for strings (inside quotes) */
 .cm-string,
 .cm-string1,
