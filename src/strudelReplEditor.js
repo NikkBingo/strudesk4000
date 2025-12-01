@@ -471,7 +471,15 @@ export function setStrudelEditorHighlights(textareaOrId, ranges = []) {
     return;
   }
 
-  const doc = editor.state.doc;
+  // If it's a StrudelMirror, get the underlying CodeMirror EditorView
+  const codeMirrorEditor = editor.editor ? editor.editor : editor;
+  
+  if (!codeMirrorEditor || !codeMirrorEditor.state || !codeMirrorEditor.state.doc) {
+    console.warn(`⚠️ CodeMirror EditorView not available for ${typeof textareaOrId === 'string' ? textareaOrId : textareaOrId?.id || 'unknown'}`);
+    return;
+  }
+
+  const doc = codeMirrorEditor.state.doc;
   const decorationRanges = [];
 
   if (Array.isArray(ranges)) {
@@ -493,7 +501,7 @@ export function setStrudelEditorHighlights(textareaOrId, ranges = []) {
     : Decoration.none;
 
   try {
-    editor.dispatch({
+    codeMirrorEditor.dispatch({
       effects: setHighlightsEffect.of(decorations)
     });
     if (ranges.length > 0) {
