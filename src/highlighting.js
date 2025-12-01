@@ -27,12 +27,13 @@ function collectActiveRanges(haps) {
     const locations = hap?.context?.locations;
     if (!Array.isArray(locations)) {
       // Debug: Log why locations aren't being used (only occasionally)
-      if (Math.random() < 0.01 && hapIndex === 0) {
-        console.log('🔍 Debug: Hap has no locations array', {
+      if (Math.random() < 0.1 && hapIndex === 0) {
+        console.log('🔍 Debug collectActiveRanges: Hap has no locations array', {
           hasContext: !!hap?.context,
           contextKeys: hap?.context ? Object.keys(hap.context) : [],
           locationsType: typeof locations,
-          locationsValue: locations
+          locationsValue: locations,
+          fullContext: hap?.context
         });
       }
       return;
@@ -310,18 +311,43 @@ function runHighlightLoop() {
     // Debug logging - only log occasionally to avoid spam
     if (ranges.length > 0) {
       console.log(`🎯 Highlighting ${ranges.length} active range(s) at time ${now.toFixed(3)}`, ranges);
-    } else if (haps.length > 0 && Math.random() < 0.01) {
+    } else if (haps.length > 0 && Math.random() < 0.1) {
       // Haps exist but no ranges - likely missing location data
       // Only log 1% of the time to avoid console spam
       console.log(`ℹ️ Found ${haps.length} hap(s) but no highlight ranges (missing location data?)`);
       // Log a sample hap structure for debugging
       if (haps[0]) {
-        console.log('Sample hap structure:', {
-          hasContext: !!haps[0].context,
-          hasLocations: !!(haps[0].context?.locations),
-          locationCount: haps[0].context?.locations?.length || 0,
-          contextKeys: haps[0].context ? Object.keys(haps[0].context) : []
+        const hap = haps[0];
+        const context = hap.context || {};
+        const locations = context.locations;
+        
+        // Try to serialize the hap structure (may fail if circular references)
+        let hapStructure = 'Unable to serialize';
+        try {
+          hapStructure = JSON.stringify({
+            hapKeys: Object.keys(hap),
+            context: context,
+            value: hap.value,
+            whole: hap.whole ? { begin: hap.whole.begin, end: hap.whole.end } : null,
+            part: hap.part ? { begin: hap.part.begin, end: hap.part.end } : null
+          }, null, 2).substring(0, 1000);
+        } catch (e) {
+          hapStructure = `Serialization error: ${e.message}`;
+        }
+        
+        console.log('🔍 Sample hap structure:', {
+          hasContext: !!hap.context,
+          contextKeys: hap.context ? Object.keys(hap.context) : [],
+          hasLocations: !!locations,
+          locationType: typeof locations,
+          isArray: Array.isArray(locations),
+          locationCount: Array.isArray(locations) ? locations.length : 0,
+          firstLocation: Array.isArray(locations) && locations.length > 0 ? locations[0] : null,
+          fullStructure: hapStructure
         });
+        
+        // Also log the raw hap for inspection
+        console.log('🔍 Raw hap object:', hap);
       }
     }
     
