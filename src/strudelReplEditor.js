@@ -494,6 +494,26 @@ export function setStrudelEditorHighlights(textareaOrId, ranges = []) {
     return;
   }
 
+  // Try using Strudel's built-in highlighting first (for strudel-editor components)
+  if (typeof highlightMiniLocations === 'function' && isPatternHighlightingEnabled && isPatternHighlightingEnabled()) {
+    try {
+      // Convert ranges to miniLocations format expected by Strudel
+      const miniLocations = ranges.map(range => ({
+        start: range.from,
+        end: range.to
+      }));
+      
+      if (miniLocations.length > 0) {
+        highlightMiniLocations(codeMirrorEditor, miniLocations);
+        console.log(`✅ Applied ${ranges.length} highlight range(s) using Strudel's built-in highlighting`);
+        return;
+      }
+    } catch (error) {
+      console.warn('⚠️ Strudel built-in highlighting failed, falling back to custom:', error);
+    }
+  }
+
+  // Fallback to custom highlighting system
   const doc = codeMirrorEditor.state.doc;
   const decorationRanges = [];
 
@@ -520,7 +540,7 @@ export function setStrudelEditorHighlights(textareaOrId, ranges = []) {
       effects: setHighlightsEffect.of(decorations)
     });
     if (ranges.length > 0) {
-      console.log(`✅ Applied ${ranges.length} highlight range(s) to CodeMirror editor`);
+      console.log(`✅ Applied ${ranges.length} highlight range(s) to CodeMirror editor (custom system)`);
     }
   } catch (error) {
     console.warn('⚠️ Error applying highlights to CodeMirror editor:', error);
