@@ -3910,22 +3910,37 @@ class SoundManager {
           replInstance = strudelContext.repl || strudelContext;
           console.log('✅ initStrudel completed, replInstance:', !!replInstance);
           
+          // Store strudelContext for later access
+          window.strudel = window.strudel || {};
+          if (strudelContext.scheduler) {
+            window.strudel.scheduler = strudelContext.scheduler;
+            console.log('✅ Stored scheduler in window.strudel');
+          }
+          
           // Ensure MIDI output handler is connected after initStrudel
           // This is needed because initStrudel creates the webaudio module
           if (this.midiEnabled) {
             this.setupStrudelMIDIOutput();
             
-            // Try to manually ensure MIDI methods are registered
-            // initStrudel should register them, but if not, we'll try to register them manually
-            if (replInstance && replInstance.evaluate) {
-              try {
-                // Get the webaudio module and scheduler to check/register MIDI methods
-                const { webaudioModule } = await getStrudelModules();
-                const scheduler = window.strudel?.scheduler;
-                const webaudio = scheduler?.webaudio || window.strudel?.webaudio;
-                
-                // Expose webaudio module to REPL and try to ensure MIDI methods are registered
-                await replInstance.evaluate(`
+            // Wait a bit for scheduler to be fully set up, then try to register MIDI methods
+            setTimeout(async () => {
+              // Try to manually ensure MIDI methods are registered
+              // initStrudel should register them, but if not, we'll try to register them manually
+              if (replInstance && replInstance.evaluate) {
+                try {
+                  // Get the webaudio module and scheduler to check/register MIDI methods
+                  const { webaudioModule } = await getStrudelModules();
+                  const scheduler = window.strudel?.scheduler || strudelContext?.scheduler;
+                  const webaudio = scheduler?.webaudio || window.strudel?.webaudio;
+                  
+                  console.log('🔍 Checking for scheduler/webaudio after delay:', {
+                    hasScheduler: !!scheduler,
+                    hasWebaudio: !!webaudio,
+                    midiOutputType: webaudio ? typeof webaudio.midiOutput : 'N/A'
+                  });
+                  
+                  // Expose webaudio module to REPL and try to ensure MIDI methods are registered
+                  await replInstance.evaluate(`
                   (function() {
                     // Verify MIDI methods are available on Pattern.prototype
                     if (typeof Pattern !== 'undefined' && Pattern.prototype) {
@@ -4026,10 +4041,11 @@ class SoundManager {
                     }
                   })()
                 `);
-              } catch (verifyError) {
-                console.warn('⚠️ Could not verify/register MIDI methods in REPL context:', verifyError);
+                } catch (verifyError) {
+                  console.warn('⚠️ Could not verify/register MIDI methods in REPL context:', verifyError);
+                }
               }
-            }
+            }, 500); // Wait 500ms for scheduler to be fully set up
           }
           
           // Load strudel.json if it exists
