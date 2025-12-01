@@ -8451,39 +8451,78 @@ class SoundManager {
     try {
       // Handle patterns with setDefaultVoicings - it must be evaluated before the pattern
       // Check if setDefaultVoicings appears in the pattern (could be before or inside stack)
-      if (patternText.includes('setDefaultVoicings')) {
-        // Extract setDefaultVoicings call and evaluate it first
-        // Match setDefaultVoicings('...') or setDefaultVoicings("...")
-        let setDefaultVoicingsMatch = patternText.match(/setDefaultVoicings\s*\(\s*['"]([^'"]*)['"]\s*\)/);
-        if (setDefaultVoicingsMatch) {
-          const voicingType = setDefaultVoicingsMatch[1];
-          try {
-            await window.strudel.evaluate(`setDefaultVoicings('${voicingType}')`);
-            console.log(`✅ Evaluated setDefaultVoicings('${voicingType}') before pattern`);
-          } catch (e) {
-            console.warn(`⚠️ Could not evaluate setDefaultVoicings:`, e.message);
-          }
-        } else {
-          // Try to match without quotes
-          setDefaultVoicingsMatch = patternText.match(/setDefaultVoicings\s*\(\s*([^)]+)\s*\)/);
-          if (setDefaultVoicingsMatch) {
-            const voicingArg = setDefaultVoicingsMatch[1].trim();
-            try {
-              await window.strudel.evaluate(`setDefaultVoicings(${voicingArg})`);
-              console.log(`✅ Evaluated setDefaultVoicings(${voicingArg}) before pattern`);
-            } catch (e) {
-              console.warn(`⚠️ Could not evaluate setDefaultVoicings:`, e.message);
-            }
-          }
+      // Extract ALL setDefaultVoicings calls (there might be multiple) and evaluate them first
+      const setDefaultVoicingsRegex = /setDefaultVoicings\s*\(\s*(['"]([^'"]*)['"]|([^)]+))\s*\)/g;
+      const setDefaultVoicingsMatches = [];
+      let match;
+      
+      // Find all setDefaultVoicings calls
+      while ((match = setDefaultVoicingsRegex.exec(patternText)) !== null) {
+        setDefaultVoicingsMatches.push({
+          fullMatch: match[0],
+          arg: match[2] || match[3], // Quoted string or unquoted argument
+          isQuoted: !!match[2]
+        });
+      }
+      
+      // Evaluate all setDefaultVoicings calls first
+      for (const voicingMatch of setDefaultVoicingsMatches) {
+        try {
+          const evalCode = voicingMatch.isQuoted 
+            ? `setDefaultVoicings('${voicingMatch.arg}')`
+            : `setDefaultVoicings(${voicingMatch.arg})`;
+          await window.strudel.evaluate(evalCode);
+          console.log(`✅ Evaluated ${evalCode} before pattern`);
+        } catch (e) {
+          console.warn(`⚠️ Could not evaluate setDefaultVoicings:`, e.message);
+        }
+      }
+      
+      // Remove ALL setDefaultVoicings calls from pattern (it's invalid inside stack/all)
+      // Remove lines that contain setDefaultVoicings, but preserve structure
+      if (setDefaultVoicingsMatches.length > 0) {
+        // Remove each setDefaultVoicings call
+        for (const voicingMatch of setDefaultVoicingsMatches) {
+          // Escape special regex characters in the match
+          const escapedMatch = voicingMatch.fullMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          patternText = patternText.replace(new RegExp(escapedMatch, 'g'), '');
         }
         
-        // Remove setDefaultVoicings from pattern (it's invalid inside stack/all)
-        // Remove lines that contain setDefaultVoicings
+        // Clean up: remove lines that are now empty or only whitespace
         const lines = patternText.split('\n');
-        const filteredLines = lines.filter(line => !line.includes('setDefaultVoicings'));
+        const filteredLines = lines.filter(line => {
+          const trimmed = line.trim();
+          return trimmed !== '' && !trimmed.match(/^\/\*\s*Channel\s+\d+\s*\*\/\s*$/);
+        });
         patternText = filteredLines.join('\n');
-        // Clean up extra newlines
+        
+        // Clean up extra newlines and whitespace
         patternText = patternText.replace(/\n{3,}/g, '\n\n').trim();
+        
+        // If pattern starts with stack(, ensure we didn't break the structure
+        if (patternText.startsWith('stack(')) {
+          // Count opening and closing parens to ensure stack() is still valid
+          let depth = 0;
+          let inString = false;
+          let stringChar = null;
+          for (let i = 0; i < patternText.length; i++) {
+            const char = patternText[i];
+            if (!inString && (char === '"' || char === "'")) {
+              inString = true;
+              stringChar = char;
+            } else if (inString && char === stringChar && patternText[i - 1] !== '\\') {
+              inString = false;
+              stringChar = null;
+            }
+            if (!inString) {
+              if (char === '(') depth++;
+              else if (char === ')') depth--;
+            }
+          }
+          if (depth !== 0) {
+            console.warn(`⚠️ Pattern structure may be broken after removing setDefaultVoicings (depth: ${depth})`);
+          }
+        }
       }
       
       // Handle multi-statement patterns from strudel.cc
