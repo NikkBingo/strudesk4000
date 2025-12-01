@@ -35,6 +35,7 @@
     "@strudel/midi": "^1.2.6",
     "@strudel/mini": "1.2.5",
     "@strudel/reference": "^1.2.1",
+    "@strudel/repl": "^1.2.7",
     "@strudel/sampler": "^0.2.3",
     "@strudel/tonal": "1.2.4",
     "@strudel/transpiler": "^1.2.5",

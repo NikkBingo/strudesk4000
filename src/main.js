@@ -6,6 +6,8 @@ import { soundManager } from './soundManager.js';
 import { uiController } from './ui.js';
 import { soundConfig } from './config.js';
 import { initStrudelReplEditors, getStrudelEditor, getStrudelEditorValue, setStrudelEditorValue, setStrudelEditorEditable, insertStrudelEditorSnippet } from './strudelReplEditor.js';
+// Import Strudel REPL web component for proper syntax highlighting
+import '@strudel/repl';
 // Strudel modules are loaded dynamically via soundManager to avoid duplicate loading
 // Use getStrudelModules() or window.strudel functions instead of static imports
 import { Scale, Note, Progression } from '@tonaljs/tonal';
