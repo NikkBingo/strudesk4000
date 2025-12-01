@@ -6,8 +6,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # Install dependencies
-# Use npm install instead of npm ci to handle lock file sync issues
-RUN npm install --prefer-offline --no-audit
+# Use npm install with legacy-peer-deps to handle peer dependency issues
+RUN npm install --legacy-peer-deps --no-audit
 
 # Copy frontend source files
 COPY vite.config.js ./
