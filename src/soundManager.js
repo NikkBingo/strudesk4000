@@ -3890,11 +3890,13 @@ class SoundManager {
             getTime: () => this.audioContext ? this.audioContext.currentTime : 0,
             editPattern: () => {},
             setUrl: () => {},
+            withLoc: true, // Enable location tracking for code highlighting
           };
           initOptions.midiOutput = (message) => {
             this.sendMIDIMessage(message);
           };
           console.log('🎚️ initStrudel options:', Object.keys(initOptions));
+          console.log('📍 withLoc enabled for code highlighting');
           const strudelContext = await initStrudel(initOptions);
           
           replInstance = strudelContext.repl || strudelContext;
@@ -3989,7 +3991,8 @@ class SoundManager {
             console.warn('replInstance.evaluate not available, creating REPL manually...');
             replInstance = repl({
               audioContext: this.audioContext,
-              getTime: () => this.audioContext.currentTime
+              getTime: () => this.audioContext.currentTime,
+              withLoc: true // Enable location tracking for code highlighting
             });
             console.log('Created manual REPL, evaluate available:', typeof replInstance.evaluate);
           }
@@ -4006,7 +4009,8 @@ class SoundManager {
         console.log('Creating REPL manually (initStrudel not available)...');
         replInstance = repl({
           audioContext: this.audioContext,
-          getTime: () => this.audioContext.currentTime
+          getTime: () => this.audioContext.currentTime,
+          withLoc: true // Enable location tracking for code highlighting
         });
       }
       
@@ -4382,7 +4386,8 @@ class SoundManager {
         if (initStrudel) {
           initStrudel({
             audioContext: this.audioContext,
-            output: this.audioContext
+            output: this.audioContext,
+            withLoc: true // Enable location tracking for code highlighting
           });
         }
         
@@ -4407,6 +4412,7 @@ class SoundManager {
         // Create repl for evaluation with core functions in scope
         const replInstance = repl({
           getTime: () => this.audioContext.currentTime,
+          withLoc: true, // Enable location tracking for code highlighting
           // Pass core functions directly to REPL scope if available
           scope: coreModule ? { ...coreModule } : undefined
         });
