@@ -592,6 +592,7 @@ class SoundManager {
     this.masterSlot = 'd0'; // Dedicated slot for master output
     this.trackedPatterns = new Map(); // elementId -> {pattern, gain, pan, muted, soloed}
     this.masterActive = false; // Is master pattern playing
+    this.masterPatternManualOverride = false; // If true, use masterPattern as-is without stack() wrapping
     this.masterPlaybackStartTime = null;
     this.masterPlaybackSpeed = 1;
     this.masterPlaybackTempo = this.currentTempo;
@@ -8091,8 +8092,18 @@ class SoundManager {
       
       if (patterns.length === 0) {
         this.masterPattern = '';
+        this.masterPatternManualOverride = false;
         console.log(`🔇 No active patterns - master pattern cleared`);
       } else {
+        // If manual override is set, don't wrap in stack() - use existing masterPattern as-is
+        if (this.masterPatternManualOverride && this.masterPattern && this.masterPattern.trim() !== '') {
+          console.log('📝 Using manual override pattern - skipping stack() wrapping');
+          // Still apply master mix modifiers if needed
+          const existingPattern = this.masterPattern;
+          this.masterPattern = this.applyMasterMixModifiers(existingPattern, { wrapStack: false });
+          return; // Don't rebuild from tracked patterns
+        }
+        
         const formattedPatterns = patterns.map((pattern, index) => {
           const channelNumber = patternChannels[index] ?? (index + 1);
           return `  /* Channel ${channelNumber} */\n  ${pattern}`;
@@ -8102,6 +8113,7 @@ class SoundManager {
 
         stackPattern = this.applyMasterMixModifiers(stackPattern, { wrapStack: true });
         this.masterPattern = stackPattern;
+        this.masterPatternManualOverride = false; // Reset override when rebuilding from elements
 
         let depth = 0;
         let inString = false;
@@ -10081,6 +10093,31 @@ class SoundManager {
   }
 
   /**
+   * Check if a pattern is a complete pattern (not individual elements)
+   * Complete patterns have all(), or multiple statements with : assignments
+   */
+  _isCompletePattern(pattern) {
+    if (!pattern || typeof pattern !== 'string') return false;
+    const trimmed = pattern.trim();
+    
+    // Check if it starts with all( or has all( somewhere
+    if (trimmed.includes('all(') && !trimmed.startsWith('stack(')) {
+      return true;
+    }
+    
+    // Check if it has multiple statements with : assignments (like melody:, piano:)
+    const lines = trimmed.split('\n').filter(l => l.trim() && !l.trim().startsWith('//'));
+    const hasMultipleStatements = lines.length > 1;
+    const hasColonAssignments = trimmed.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m);
+    
+    if (hasMultipleStatements && hasColonAssignments) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
    * Set master pattern code manually (for editing)
    */
   async setMasterPatternCode(code) {
@@ -10088,6 +10125,11 @@ class SoundManager {
       console.log(`✏️ Setting master pattern code: ${code.substring(0, 100)}...`);
       
       if (code && code.trim() !== '') {
+        // Check if this is a complete pattern (not individual elements)
+        this.masterPatternManualOverride = this._isCompletePattern(code);
+        if (this.masterPatternManualOverride) {
+          console.log('📝 Detected complete pattern - will use as-is without stack() wrapping');
+        }
         // Extract and evaluate setDefaultVoicings BEFORE storing the pattern
         // This prevents it from being wrapped in stack() later
         let cleanedCode = code.trim();
