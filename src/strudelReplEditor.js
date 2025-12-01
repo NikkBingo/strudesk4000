@@ -197,6 +197,9 @@ export function createStrudelReplEditor(textarea, options = {}) {
       '.cm-kn': {
         color: '#002610' // very dark green
       },
+      '.cm-kl': {
+        color: '#002610' // very dark green (same as keywords/numbers)
+      },
       '.cm-string': {
         color: '#1a1a1a' // very dark gray/black for better readability
       },
