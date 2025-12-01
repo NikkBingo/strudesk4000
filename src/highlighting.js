@@ -266,6 +266,12 @@ function runHighlightLoop() {
     const end = now + lookAhead;
     const haps = pattern.queryArc(begin, end) || [];
     const ranges = collectActiveRanges(haps);
+    
+    // Debug logging (can be removed later)
+    if (ranges.length > 0) {
+      console.log(`🎯 Highlighting ${ranges.length} active range(s) at time ${now.toFixed(3)}`);
+    }
+    
     setStrudelEditorHighlights(MASTER_EDITOR_ID, ranges);
   } catch (error) {
     console.warn('⚠️ Unable to update code highlights:', error);
@@ -279,6 +285,7 @@ export function startMasterHighlighting() {
     return;
   }
   highlightActive = true;
+  console.log('✅ Starting master pattern highlighting');
   if (!highlightLoopId) {
     highlightLoopId = requestAnimationFrame(runHighlightLoop);
   }
