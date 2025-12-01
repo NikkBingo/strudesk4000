@@ -1887,9 +1887,9 @@ header h1 {
   font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
   font-size: 13px;
   padding: 15px;
-  border: 2px solid #667eea;
+  border: none;
   border-radius: 8px;
-  background: #f8f9fa;
+  background: transparent;
   resize: vertical;
   line-height: 1.5;
   min-height: 200px;
@@ -1897,8 +1897,8 @@ header h1 {
 
 .master-pattern-field:focus {
   outline: none;
-  border-color: #5568d3;
-  background: #fff;
+  border: none;
+  background: transparent;
 }
 
 /* CodeMirror editor styling for all pattern editors */
