@@ -23,18 +23,48 @@ function collectActiveRanges(haps) {
   // This matches what's actually evaluated: comments are stripped
   const evaluatedCode = stripCommentsForEvaluation(displayedCode);
   
-  haps.forEach((hap) => {
+  haps.forEach((hap, hapIndex) => {
     const locations = hap?.context?.locations;
     if (!Array.isArray(locations)) {
+      // Debug: Log why locations aren't being used (only occasionally)
+      if (Math.random() < 0.01 && hapIndex === 0) {
+        console.log('🔍 Debug: Hap has no locations array', {
+          hasContext: !!hap?.context,
+          contextKeys: hap?.context ? Object.keys(hap.context) : [],
+          locationsType: typeof locations,
+          locationsValue: locations
+        });
+      }
       return;
     }
-    locations.forEach((loc) => {
-      if (typeof loc?.start !== 'number' || typeof loc?.end !== 'number') {
+    locations.forEach((loc, locIndex) => {
+      // Check if location has start/end properties (might be different structure)
+      if (typeof loc?.start !== 'number' && typeof loc?.from !== 'number') {
+        // Debug: Log location structure if it's unexpected (only occasionally)
+        if (Math.random() < 0.01 && hapIndex === 0 && locIndex === 0) {
+          console.log('🔍 Debug: Location has unexpected structure', {
+            location: loc,
+            locationKeys: loc ? Object.keys(loc) : [],
+            hasStart: typeof loc?.start === 'number',
+            hasFrom: typeof loc?.from === 'number',
+            hasEnd: typeof loc?.end === 'number',
+            hasTo: typeof loc?.to === 'number'
+          });
+        }
         return;
       }
+      
+      // Support both {start, end} and {from, to} formats
+      const start = loc.start ?? loc.from;
+      const end = loc.end ?? loc.to;
+      
+      if (typeof start !== 'number' || typeof end !== 'number') {
+        return;
+      }
+      
       // Locations are relative to evaluated code (without comments)
-      let from = Math.max(0, Math.min(loc.start, loc.end));
-      let to = Math.max(from, Math.max(loc.start, loc.end));
+      let from = Math.max(0, Math.min(start, end));
+      let to = Math.max(from, Math.max(start, end));
       
       // Clamp positions to evaluated code length
       const evaluatedLength = evaluatedCode.length;
