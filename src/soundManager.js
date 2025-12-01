@@ -3915,37 +3915,34 @@ class SoundManager {
           if (this.midiEnabled) {
             this.setupStrudelMIDIOutput();
             
-            // Ensure @strudel/webaudio is imported in REPL context to register MIDI methods
-            // This is similar to how @strudel/draw is imported to add methods to Pattern.prototype
-            // The MIDI methods (.midi(), .midiport()) are added to Pattern.prototype when webaudio is imported
+            // Verify MIDI methods are available in REPL context
+            // The MIDI methods (.midi(), .midiport()) should already be registered by initStrudel
+            // when midiOutput is passed to initStrudel
             if (replInstance && replInstance.evaluate) {
               try {
-                // Import @strudel/webaudio in REPL context - this will add .midi() and .midiport() to Pattern.prototype
-                // Use the same version as in package.json
-                const webaudioImportPath = 'https://unpkg.com/@strudel/webaudio@1.2.6/dist/index.mjs';
+                // Verify that MIDI methods are available on Pattern.prototype
+                // initStrudel should have registered them when midiOutput was provided
                 await replInstance.evaluate(`
-                  (async function() {
-                    try {
-                      // Import the webaudio module - this automatically adds MIDI methods to Pattern.prototype
-                      const webaudio = await import('${webaudioImportPath}')
-                      console.log('✅ @strudel/webaudio imported in REPL context')
-                      
-                      // Verify MIDI methods are available
-                      if (typeof Pattern !== 'undefined' && Pattern.prototype) {
-                        const hasMidi = typeof Pattern.prototype.midi === 'function'
-                        const hasMidiport = typeof Pattern.prototype.midiport === 'function'
-                        console.log('MIDI methods on Pattern.prototype:', { midi: hasMidi, midiport: hasMidiport })
+                  (function() {
+                    // Verify MIDI methods are available on Pattern.prototype
+                    if (typeof Pattern !== 'undefined' && Pattern.prototype) {
+                      const hasMidi = typeof Pattern.prototype.midi === 'function';
+                      const hasMidiport = typeof Pattern.prototype.midiport === 'function';
+                      console.log('MIDI methods on Pattern.prototype:', { midi: hasMidi, midiport: hasMidiport });
+                      if (!hasMidi || !hasMidiport) {
+                        console.warn('⚠️ MIDI methods not found on Pattern.prototype.');
+                        console.warn('   They should be registered by initStrudel when midiOutput is provided.');
+                        console.warn('   This may indicate a Strudel version compatibility issue.');
+                      } else {
+                        console.log('✅ MIDI methods (.midi(), .midiport()) are available on patterns');
                       }
-                    } catch (err) {
-                      console.error('Error importing @strudel/webaudio in REPL:', err)
+                    } else {
+                      console.warn('⚠️ Pattern class not found in REPL context');
                     }
                   })()
                 `);
-                // Wait a bit for async import to complete
-                await new Promise(resolve => setTimeout(resolve, 500));
-                console.log('✅ MIDI methods should now be available on patterns');
-              } catch (webaudioError) {
-                console.warn('⚠️ Could not load @strudel/webaudio in REPL context:', webaudioError);
+              } catch (verifyError) {
+                console.warn('⚠️ Could not verify MIDI methods in REPL context:', verifyError);
               }
             }
           }
