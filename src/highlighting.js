@@ -1,4 +1,4 @@
-import { setStrudelEditorHighlights } from './strudelReplEditor.js';
+import { setStrudelEditorHighlights, getStrudelEditorValue } from './strudelReplEditor.js';
 
 const MASTER_EDITOR_ID = 'master-pattern';
 let highlightLoopId = null;
@@ -13,8 +13,8 @@ function collectActiveRanges(haps) {
   }
   
   // Get the editor content (displayed code with comments)
-  const editor = document.getElementById(MASTER_EDITOR_ID)?._strudelEditor;
-  const displayedCode = editor ? editor.getValue() : '';
+  // Use helper function to get value from either strudel-editor or CodeMirror editor
+  const displayedCode = getStrudelEditorValue(MASTER_EDITOR_ID) || '';
   if (!displayedCode) {
     return ranges;
   }
