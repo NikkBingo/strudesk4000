@@ -2,15 +2,19 @@ FROM node:18-alpine AS frontend-builder
 
 WORKDIR /app
 
-# Build frontend
-COPY package.json ./
+# Copy package files first for better layer caching
+COPY package.json package-lock.json ./
+
+# Install dependencies (use ci for faster, reliable installs)
+RUN npm ci
+
+# Copy frontend source files
 COPY vite.config.js ./
 COPY index.html ./
 COPY src ./src
 COPY assets ./assets
 
-# Use npm install instead of npm ci since lock file might be out of sync
-RUN npm install
+# Build frontend
 RUN npm run build
 
 # Server stage
