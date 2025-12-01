@@ -3940,59 +3940,83 @@ class SoundManager {
                         // Check if webaudio is available and has midiOutput
                         const scheduler = window.strudel?.scheduler;
                         const webaudio = scheduler?.webaudio || window.strudel?.webaudio;
+                        console.log('   Checking webaudio:', {
+                          hasScheduler: !!scheduler,
+                          hasWebaudio: !!webaudio,
+                          midiOutputType: webaudio ? typeof webaudio.midiOutput : 'N/A'
+                        });
+                        
                         if (webaudio && typeof webaudio.midiOutput === 'function') {
                           console.log('✅ webaudio found with midiOutput');
                           
                           // Try to manually add MIDI methods to Pattern.prototype
                           // These are simple wrappers that use the webaudio midiOutput
-                          if (!Pattern.prototype.midi) {
-                            Pattern.prototype.midi = function() {
-                              // Return a new pattern that sends MIDI messages
-                              return this.fmap((value, { time, context }) => {
-                                if (webaudio && webaudio.midiOutput) {
-                                  // Extract MIDI note from value if it's a note pattern
-                                  if (value && typeof value === 'object' && value.note !== undefined) {
-                                    const note = value.note;
-                                    const velocity = value.velocity || 127;
-                                    const channel = value.channel || 0;
-                                    webaudio.midiOutput({
-                                      type: 'noteOn',
-                                      note: note,
-                                      velocity: velocity,
-                                      channel: channel,
-                                      time: time
-                                    });
+                          // Note: This is a workaround - the actual Strudel implementation may differ
+                          try {
+                            if (!Pattern.prototype.midi) {
+                              Pattern.prototype.midi = function() {
+                                // Return a new pattern that sends MIDI messages
+                                // This is a simplified implementation - Strudel's actual implementation may be more complex
+                                const webaudio = window.strudel?.scheduler?.webaudio || window.strudel?.webaudio;
+                                if (!webaudio || !webaudio.midiOutput) {
+                                  console.warn('⚠️ webaudio.midiOutput not available in .midi() method');
+                                  return this;
+                                }
+                                // Use Strudel's pattern methods to add MIDI output
+                                return this.fmap((value, { time, context }) => {
+                                  if (webaudio && webaudio.midiOutput) {
+                                    // Extract MIDI note from value if it's a note pattern
+                                    if (value && typeof value === 'object' && value.note !== undefined) {
+                                      const note = value.note;
+                                      const velocity = value.velocity || 127;
+                                      const channel = value.channel || 0;
+                                      webaudio.midiOutput({
+                                        type: 'noteOn',
+                                        note: note,
+                                        velocity: velocity,
+                                        channel: channel,
+                                        time: time
+                                      });
+                                    }
                                   }
-                                }
-                                return value;
-                              });
-                            };
-                            console.log('✅ Manually registered Pattern.prototype.midi()');
-                          }
-                          
-                          if (!Pattern.prototype.midiport) {
-                            Pattern.prototype.midiport = function(port) {
-                              // Return a new pattern that uses the specified MIDI port
-                              return this.fmap((value, { time, context }) => {
-                                if (value && typeof value === 'object') {
-                                  value.midiport = port;
-                                }
-                                return value;
-                              });
-                            };
-                            console.log('✅ Manually registered Pattern.prototype.midiport()');
-                          }
-                          
-                          // Verify they're now available
-                          const hasMidiNow = typeof Pattern.prototype.midi === 'function';
-                          const hasMidiportNow = typeof Pattern.prototype.midiport === 'function';
-                          if (hasMidiNow && hasMidiportNow) {
-                            console.log('✅ MIDI methods (.midi(), .midiport()) are now available on patterns');
-                          } else {
-                            console.warn('⚠️ Failed to manually register MIDI methods');
+                                  return value;
+                                });
+                              };
+                              console.log('✅ Manually registered Pattern.prototype.midi()');
+                            }
+                            
+                            if (!Pattern.prototype.midiport) {
+                              Pattern.prototype.midiport = function(port) {
+                                // Return a new pattern that uses the specified MIDI port
+                                return this.fmap((value, { time, context }) => {
+                                  if (value && typeof value === 'object') {
+                                    value.midiport = port;
+                                  }
+                                  return value;
+                                });
+                              };
+                              console.log('✅ Manually registered Pattern.prototype.midiport()');
+                            }
+                            
+                            // Verify they're now available
+                            const hasMidiNow = typeof Pattern.prototype.midi === 'function';
+                            const hasMidiportNow = typeof Pattern.prototype.midiport === 'function';
+                            console.log('   Verification after registration:', { midi: hasMidiNow, midiport: hasMidiportNow });
+                            if (hasMidiNow && hasMidiportNow) {
+                              console.log('✅ MIDI methods (.midi(), .midiport()) are now available on patterns');
+                            } else {
+                              console.warn('⚠️ Failed to manually register MIDI methods - methods not found after assignment');
+                            }
+                          } catch (regError) {
+                            console.error('❌ Error during manual MIDI method registration:', regError);
                           }
                         } else {
                           console.warn('   webaudio not found or midiOutput not available');
+                          console.warn('   scheduler:', !!scheduler);
+                          console.warn('   webaudio:', !!webaudio);
+                          if (webaudio) {
+                            console.warn('   webaudio.midiOutput type:', typeof webaudio.midiOutput);
+                          }
                         }
                       } else {
                         console.log('✅ MIDI methods (.midi(), .midiport()) are available on patterns');
