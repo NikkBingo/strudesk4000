@@ -3910,6 +3910,12 @@ class SoundManager {
           replInstance = strudelContext.repl || strudelContext;
           console.log('✅ initStrudel completed, replInstance:', !!replInstance);
           
+          // Ensure MIDI output handler is connected after initStrudel
+          // This is needed because initStrudel creates the webaudio module
+          if (this.midiEnabled) {
+            this.setupStrudelMIDIOutput();
+          }
+          
           // Load strudel.json if it exists
           try {
             const response = await fetch('/strudel.json');
