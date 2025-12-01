@@ -11,6 +11,18 @@ function collectActiveRanges(haps) {
   if (!Array.isArray(haps)) {
     return ranges;
   }
+  
+  // Get the editor to check its content length
+  const editor = document.getElementById(MASTER_EDITOR_ID)?._strudelEditor;
+  const editorContent = editor ? editor.getValue() : '';
+  
+  // Remove tempo comments to get the evaluated code length
+  // Locations from Strudel are relative to the evaluated code (without tempo comments)
+  const tempoPrefix = '// Controls Selected Tempo:';
+  const editorLines = editorContent.split('\n');
+  const codeLines = editorLines.filter(line => !line.trim().startsWith(tempoPrefix));
+  const evaluatedCode = codeLines.join('\n');
+  
   haps.forEach((hap) => {
     const locations = hap?.context?.locations;
     if (!Array.isArray(locations)) {
@@ -20,8 +32,19 @@ function collectActiveRanges(haps) {
       if (typeof loc?.start !== 'number' || typeof loc?.end !== 'number') {
         return;
       }
-      const from = Math.max(0, Math.min(loc.start, loc.end));
-      const to = Math.max(from, Math.max(loc.start, loc.end));
+      // Locations are relative to evaluated code (without tempo comments)
+      let from = Math.max(0, Math.min(loc.start, loc.end));
+      let to = Math.max(from, Math.max(loc.start, loc.end));
+      
+      // Clamp positions to evaluated code length (tempo comments are at the end)
+      const evaluatedLength = evaluatedCode.length;
+      if (from > evaluatedLength) {
+        // Position is beyond evaluated code (in tempo comment area), skip
+        return;
+      }
+      to = Math.min(to, evaluatedLength);
+      
+      // Positions should match directly since tempo comments are appended at the end
       const key = `${from}:${to}`;
       if (!seen.has(key)) {
         seen.add(key);
