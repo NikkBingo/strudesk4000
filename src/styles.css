@@ -1951,15 +1951,17 @@ header h1 {
   color: #002610 !important; /* very dark green */
 }
 
-/* Syntax highlighting - dark red for .ͼkq and .ͼjz */
+/* Syntax highlighting - dark red for .ͼkq, .ͼjz, and .ͼkv */
 .ͼkq,
-.ͼjz {
+.ͼjz,
+.ͼkv {
   color: #400707 !important; /* dark red */
 }
 
-/* Also support .cm-kq and .cm-jz for compatibility */
+/* Also support .cm-kq, .cm-jz, and .cm-kv for compatibility */
 .cm-kq,
-.cm-jz {
+.cm-jz,
+.cm-kv {
   color: #400707 !important; /* dark red */
 }
 

@@ -206,6 +206,9 @@ export function createStrudelReplEditor(textarea, options = {}) {
       '.cm-jz': {
         color: '#400707' // dark red
       },
+      '.cm-kv': {
+        color: '#400707' // dark red
+      },
       '.cm-string': {
         color: '#1a1a1a' // very dark gray/black for better readability
       },
