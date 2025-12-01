@@ -5,12 +5,14 @@
 
 import { EditorView, lineNumbers, keymap, Decoration } from '@codemirror/view';
 import { EditorState, EditorSelection, StateEffect, StateField } from '@codemirror/state';
-import { javascript } from '@codemirror/lang-javascript';
+import { javascript, javascriptLanguage } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { foldGutter, foldKeymap, bracketMatching } from '@codemirror/language';
+import { foldGutter, foldKeymap, bracketMatching, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { highlightSelectionMatches } from '@codemirror/search';
+// Import Strudel CodeMirror extensions for proper syntax highlighting
+import { updateMiniLocations, highlightMiniLocations, isPatternHighlightingEnabled } from '@strudel/codemirror';
 
 // Store editor instances by textarea ID
 const editorInstances = new Map();
@@ -70,6 +72,14 @@ export function createStrudelReplEditor(textarea, options = {}) {
       ...foldKeymap
     ]),
     javascript(),
+    // Configure JavaScript language for Strudel syntax (supports pattern syntax)
+    javascriptLanguage.data.of({
+      closeBrackets: { brackets: ['(', '[', '{', "'", '"', '<'] },
+      bracketMatching: { brackets: ['(', '[', '{', "'", '"', '<'] },
+    }),
+    syntaxHighlighting(defaultHighlightStyle),
+    // Enable Strudel pattern highlighting (requires editor instance and miniLocations)
+    // This will be enabled after editor is created if pattern highlighting is available
     EditorView.lineWrapping,
     EditorView.updateListener.of((update) => {
       if (update.docChanged && onUpdate) {
@@ -210,6 +220,16 @@ export function createStrudelReplEditor(textarea, options = {}) {
     // Hide textarea and insert editor before it
     textarea.style.display = 'none';
     textarea.parentNode.insertBefore(editor.dom, textarea);
+    
+    // Verify JavaScript syntax highlighting is active
+    const languageSupport = editor.state.facet(EditorState.language);
+    if (languageSupport && languageSupport.length > 0) {
+      console.log(`✅ Editor created with language support for ${textarea.id || 'textarea'}`);
+      console.log(`   Language: ${languageSupport[0]?.name || 'unknown'}`);
+    } else {
+      console.warn(`⚠️ Editor created but no language support detected for ${textarea.id || 'textarea'}`);
+      console.warn('   This may indicate JavaScript syntax highlighting is not working');
+    }
     
     console.log(`   Editor DOM created and inserted for ${textarea.id || 'textarea'}`);
   } catch (error) {
