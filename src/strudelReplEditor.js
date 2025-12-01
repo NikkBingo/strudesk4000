@@ -263,60 +263,83 @@ export function createStrudelReplEditor(textarea, options = {}) {
 
 /**
  * Initialize Strudel REPL editors on all textareas with data-strudel-repl attribute
+ * Also handles strudel-editor web components
  */
 export function initStrudelReplEditors() {
   try {
-    // Verify CodeMirror is available
-    if (typeof EditorView === 'undefined') {
-      console.error('❌ CodeMirror EditorView is not available - check imports');
-      return;
-    }
-    console.log('🎨 Initializing Strudel REPL editors (CodeMirror available)...');
-    const textareas = document.querySelectorAll('textarea[data-strudel-repl], #modal-pattern, #master-pattern');
-    console.log(`   Found ${textareas.length} textareas to initialize:`, Array.from(textareas).map(t => t.id || 'unnamed'));
+    console.log('🎨 Initializing Strudel REPL editors...');
     
-    textareas.forEach((textarea) => {
-      if (textarea.tagName === 'TEXTAREA' && !textarea.dataset.strudelReplInitialized) {
-        const isModal = textarea.id === 'modal-pattern';
-        const isMaster = textarea.id === 'master-pattern';
-        
-        console.log(`   Initializing editor for: ${textarea.id || 'unnamed textarea'}`);
-        
-        // Get placeholder from textarea
-        const placeholder = textarea.placeholder || '';
-        
-        // Create editor
-        try {
-          const editor = createStrudelReplEditor(textarea, {
-            theme: 'light',
-            placeholder,
-            lineNumbers: true,
-            autofocus: false,
-            onUpdate: (value) => {
-              // Update textarea value for compatibility
-              textarea.value = value;
-            }
-          });
-
-          // Only mark as initialized if editor was created successfully
-          if (editor) {
-            textarea.dataset.strudelReplInitialized = 'true';
-            textarea._strudelEditor = editor;
-            
-            // Store in global map for easy access
-            editorInstances.set(textarea.id, editor);
-            
-            console.log(`   ✅ Successfully created editor for ${textarea.id || 'textarea'}`);
-          } else {
-            console.warn(`   ⚠️ Editor creation returned null for ${textarea.id || 'textarea'}`);
+    // Check for strudel-editor components
+    const strudelEditors = document.querySelectorAll('strudel-editor[data-strudel-repl], strudel-editor#master-pattern');
+    console.log(`   Found ${strudelEditors.length} strudel-editor components`);
+    
+    // Wait for strudel-editor components to be ready
+    strudelEditors.forEach((editor) => {
+      if (editor.editor) {
+        console.log(`✅ strudel-editor already initialized for ${editor.id || 'unnamed'}`);
+      } else {
+        // Wait for the component to initialize
+        const checkReady = setInterval(() => {
+          if (editor.editor) {
+            console.log(`✅ strudel-editor ready for ${editor.id || 'unnamed'}`);
+            clearInterval(checkReady);
           }
-        } catch (editorError) {
-          console.error(`   ❌ Error creating editor for ${textarea.id || 'textarea'}:`, editorError);
-        }
-      } else if (textarea.dataset.strudelReplInitialized) {
-        console.log(`   ⏭️ Skipping ${textarea.id || 'unnamed'} - already initialized`);
+        }, 100);
+        // Timeout after 5 seconds
+        setTimeout(() => clearInterval(checkReady), 5000);
       }
     });
+    
+    // Also handle textareas (for modal-pattern and other textareas)
+    if (typeof EditorView !== 'undefined') {
+      const textareas = document.querySelectorAll('textarea[data-strudel-repl], textarea#modal-pattern');
+      console.log(`   Found ${textareas.length} textareas to initialize:`, Array.from(textareas).map(t => t.id || 'unnamed'));
+      
+      textareas.forEach((textarea) => {
+        if (textarea.tagName === 'TEXTAREA' && !textarea.dataset.strudelReplInitialized) {
+          const isModal = textarea.id === 'modal-pattern';
+          
+          console.log(`   Initializing editor for: ${textarea.id || 'unnamed textarea'}`);
+          
+          // Get placeholder from textarea
+          const placeholder = textarea.placeholder || '';
+          
+          // Create editor
+          try {
+            const editor = createStrudelReplEditor(textarea, {
+              theme: 'light',
+              placeholder,
+              lineNumbers: true,
+              autofocus: false,
+              onUpdate: (value) => {
+                // Update textarea value for compatibility
+                textarea.value = value;
+              }
+            });
+
+            // Only mark as initialized if editor was created successfully
+            if (editor) {
+              textarea.dataset.strudelReplInitialized = 'true';
+              textarea._strudelEditor = editor;
+              
+              // Store in global map for easy access
+              editorInstances.set(textarea.id, editor);
+              
+              console.log(`   ✅ Successfully created editor for ${textarea.id || 'textarea'}`);
+            } else {
+              console.warn(`   ⚠️ Editor creation returned null for ${textarea.id || 'textarea'}`);
+            }
+          } catch (editorError) {
+            console.error(`   ❌ Error creating editor for ${textarea.id || 'textarea'}:`, editorError);
+          }
+        } else if (textarea.dataset.strudelReplInitialized) {
+          console.log(`   ⏭️ Skipping ${textarea.id || 'unnamed'} - already initialized`);
+        }
+      });
+    } else {
+      console.warn('⚠️ CodeMirror EditorView is not available - textarea editors will not be initialized');
+    }
+    
     console.log('✅ Strudel REPL editors initialization complete');
   } catch (error) {
     console.error('❌ Error initializing Strudel REPL editors:', error);
@@ -325,59 +348,96 @@ export function initStrudelReplEditors() {
 }
 
 /**
- * Get the CodeMirror editor instance for a textarea
- * @param {HTMLTextAreaElement|string} textareaOrId - The textarea element or its ID
- * @returns {EditorView|null} - The editor instance or null
+ * Get the CodeMirror editor instance for a textarea or strudel-editor component
+ * @param {HTMLTextAreaElement|HTMLElement|string} textareaOrId - The textarea/strudel-editor element or its ID
+ * @returns {EditorView|StrudelMirror|null} - The editor instance or null
  */
 export function getStrudelEditor(textareaOrId) {
-  const textarea = typeof textareaOrId === 'string' 
+  const element = typeof textareaOrId === 'string' 
     ? document.getElementById(textareaOrId)
     : textareaOrId;
   
-  if (!textarea) return null;
+  if (!element) return null;
   
-  return textarea._strudelEditor || null;
+  // Check if it's a strudel-editor web component
+  if (element.tagName === 'STRUDEL-EDITOR' && element.editor) {
+    return element.editor;
+  }
+  
+  // Check if it's a textarea with CodeMirror editor
+  if (element._strudelEditor) {
+    return element._strudelEditor;
+  }
+  
+  return null;
 }
 
 /**
  * Get the value from a Strudel REPL editor
- * @param {HTMLTextAreaElement|string} textareaOrId - The textarea element or its ID
+ * @param {HTMLTextAreaElement|HTMLElement|string} textareaOrId - The textarea/strudel-editor element or its ID
  * @returns {string} - The editor value
  */
 export function getStrudelEditorValue(textareaOrId) {
   const editor = getStrudelEditor(textareaOrId);
-  if (editor && editor.getValue) {
-    return editor.getValue();
+  if (editor) {
+    // StrudelMirror has getCode() method
+    if (editor.getCode && typeof editor.getCode === 'function') {
+      return editor.getCode();
+    }
+    // CodeMirror EditorView has getValue() method
+    if (editor.getValue && typeof editor.getValue === 'function') {
+      return editor.getValue();
+    }
   }
   
-  const textarea = typeof textareaOrId === 'string' 
+  const element = typeof textareaOrId === 'string' 
     ? document.getElementById(textareaOrId)
     : textareaOrId;
   
-  return textarea ? textarea.value : '';
+  // Fallback to textarea value or strudel-editor code attribute
+  if (element) {
+    if (element.tagName === 'STRUDEL-EDITOR') {
+      return element.getAttribute('code') || '';
+    }
+    return element.value || '';
+  }
+  
+  return '';
 }
 
 /**
  * Set the value in a Strudel REPL editor
- * @param {HTMLTextAreaElement|string} textareaOrId - The textarea element or its ID
+ * @param {HTMLTextAreaElement|HTMLElement|string} textareaOrId - The textarea/strudel-editor element or its ID
  * @param {string} value - The value to set
  */
 export function setStrudelEditorValue(textareaOrId, value) {
   const editor = getStrudelEditor(textareaOrId);
-  if (editor && editor.setValue) {
-    editor.setValue(value);
-    return;
+  if (editor) {
+    // StrudelMirror has setCode() method
+    if (editor.setCode && typeof editor.setCode === 'function') {
+      editor.setCode(value);
+      return;
+    }
+    // CodeMirror EditorView has setValue() method
+    if (editor.setValue && typeof editor.setValue === 'function') {
+      editor.setValue(value);
+      return;
+    }
   }
   
-  const textarea = typeof textareaOrId === 'string' 
+  const element = typeof textareaOrId === 'string' 
     ? document.getElementById(textareaOrId)
     : textareaOrId;
   
-  if (textarea) {
-    textarea.value = value;
+  if (element) {
+    if (element.tagName === 'STRUDEL-EDITOR') {
+      element.setAttribute('code', value);
+      return;
+    }
+    element.value = value;
     // Trigger input event
     const event = new Event('input', { bubbles: true });
-    textarea.dispatchEvent(event);
+    element.dispatchEvent(event);
   }
 }
 
