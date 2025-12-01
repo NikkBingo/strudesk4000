@@ -1944,6 +1944,13 @@ header h1 {
   color: #006400 !important; /* dark green */
 }
 
+/* Syntax highlighting - darker color for strings (inside quotes) */
+.cm-string,
+.cm-string1,
+.cm-string2 {
+  color: #1a1a1a !important; /* very dark gray/black for better readability */
+}
+
 /* Modal pattern editor specific height */
 .form-group .cm-editor,
 .form-group .cm-scroller,
