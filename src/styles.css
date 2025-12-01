@@ -1941,7 +1941,7 @@ header h1 {
 
 /* Syntax highlighting - dark green for .cm-kn (keywords/numbers) */
 .cm-kn {
-  color: #006400 !important; /* dark green */
+  color: #002610 !important; /* very dark green */
 }
 
 /* Syntax highlighting - darker color for strings (inside quotes) */
