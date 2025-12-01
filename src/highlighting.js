@@ -12,16 +12,16 @@ function collectActiveRanges(haps) {
     return ranges;
   }
   
-  // Get the editor to check its content length
+  // Get the editor content (displayed code with comments)
   const editor = document.getElementById(MASTER_EDITOR_ID)?._strudelEditor;
-  const editorContent = editor ? editor.getValue() : '';
+  const displayedCode = editor ? editor.getValue() : '';
+  if (!displayedCode) {
+    return ranges;
+  }
   
-  // Remove tempo comments to get the evaluated code length
-  // Locations from Strudel are relative to the evaluated code (without tempo comments)
-  const tempoPrefix = '// Controls Selected Tempo:';
-  const editorLines = editorContent.split('\n');
-  const codeLines = editorLines.filter(line => !line.trim().startsWith(tempoPrefix));
-  const evaluatedCode = codeLines.join('\n');
+  // Get the evaluated code (strip comments like Strudel does)
+  // This matches what's actually evaluated: comments are stripped
+  const evaluatedCode = stripCommentsForEvaluation(displayedCode);
   
   haps.forEach((hap) => {
     const locations = hap?.context?.locations;
@@ -32,27 +32,130 @@ function collectActiveRanges(haps) {
       if (typeof loc?.start !== 'number' || typeof loc?.end !== 'number') {
         return;
       }
-      // Locations are relative to evaluated code (without tempo comments)
+      // Locations are relative to evaluated code (without comments)
       let from = Math.max(0, Math.min(loc.start, loc.end));
       let to = Math.max(from, Math.max(loc.start, loc.end));
       
-      // Clamp positions to evaluated code length (tempo comments are at the end)
+      // Clamp positions to evaluated code length
       const evaluatedLength = evaluatedCode.length;
       if (from > evaluatedLength) {
-        // Position is beyond evaluated code (in tempo comment area), skip
+        // Position is beyond evaluated code, skip
         return;
       }
       to = Math.min(to, evaluatedLength);
       
-      // Positions should match directly since tempo comments are appended at the end
-      const key = `${from}:${to}`;
+      // Map positions from evaluated code to displayed code
+      const mapped = mapPositionToDisplayedCode(from, to, evaluatedCode, displayedCode);
+      
+      const key = `${mapped.from}:${mapped.to}`;
       if (!seen.has(key)) {
         seen.add(key);
-        ranges.push({ from, to });
+        ranges.push({ from: mapped.from, to: mapped.to });
       }
     });
   });
   return ranges;
+}
+
+/**
+ * Strip comments from code to match what Strudel evaluates
+ * This should match the stripping logic used before evaluation
+ */
+function stripCommentsForEvaluation(code) {
+  if (!code) return '';
+  
+  // Remove tempo comments
+  const tempoPrefix = '// Controls Selected Tempo:';
+  let result = code.split('\n')
+    .filter(line => !line.trim().startsWith(tempoPrefix))
+    .join('\n');
+  
+  // Remove single-line comments (// ...)
+  result = result.replace(/\/\/.*$/gm, '');
+  
+  // Remove multi-line comments (/* ... */) but preserve channel markers
+  result = result.replace(/\/\*[\s\S]*?\*\//g, (comment) => {
+    // Keep channel markers like /* Channel 1 */
+    return /\/\*\s*Channel\s+\d+\s*\*\//i.test(comment) ? comment : '';
+  });
+  
+  // Clean up extra whitespace and newlines
+  result = result.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
+  
+  return result;
+}
+
+/**
+ * Map position from evaluated code (without comments) to displayed code (with comments)
+ */
+function mapPositionToDisplayedCode(from, to, evaluatedCode, displayedCode) {
+  // If codes are the same, no mapping needed
+  if (evaluatedCode === displayedCode) {
+    return { from, to };
+  }
+  
+  const evaluatedLines = evaluatedCode.split('\n');
+  const displayedLines = displayedCode.split('\n');
+  
+  // Find line and column in evaluated code
+  let evalLineNum = 0;
+  let evalCol = 0;
+  let evalCharCount = 0;
+  
+  for (let i = 0; i < evaluatedLines.length; i++) {
+    const lineLength = evaluatedLines[i].length;
+    if (evalCharCount + lineLength >= from) {
+      evalLineNum = i;
+      evalCol = from - evalCharCount;
+      break;
+    }
+    evalCharCount += lineLength + 1; // +1 for newline
+  }
+  
+  // Find corresponding line in displayed code
+  // Match evaluated lines to displayed lines, skipping comment lines
+  let displayCharPos = 0;
+  let matchedEvalLineNum = 0;
+  
+  for (let i = 0; i < displayedLines.length; i++) {
+    const displayLine = displayedLines[i];
+    const strippedDisplayLine = stripCommentsForEvaluation(displayLine);
+    
+    // Check if this is a comment-only line
+    const isCommentLine = displayLine.trim().startsWith('//') || 
+                         displayLine.trim().startsWith('/*') ||
+                         displayLine.trim().startsWith('*') ||
+                         (strippedDisplayLine.trim() === '' && displayLine.trim() !== '');
+    
+    if (isCommentLine) {
+      // Skip comment lines - they don't exist in evaluated code
+      displayCharPos += displayLine.length + 1;
+      continue;
+    }
+    
+    // Check if this line matches the current evaluated line
+    if (matchedEvalLineNum < evaluatedLines.length) {
+      const evalLine = evaluatedLines[matchedEvalLineNum];
+      
+      // Compare stripped displayed line with evaluated line
+      if (strippedDisplayLine === evalLine) {
+        // Lines match
+        if (matchedEvalLineNum === evalLineNum) {
+          // Found the target line - map the column position
+          // Column should be the same since the line content matches
+          const mappedFrom = displayCharPos + evalCol;
+          const mappedTo = mappedFrom + (to - from);
+          return { from: mappedFrom, to: mappedTo };
+        }
+        matchedEvalLineNum++;
+      }
+    }
+    
+    displayCharPos += displayLine.length + 1; // +1 for newline
+  }
+  
+  // Fallback: return positions as-is if mapping failed
+  return { from, to };
 }
 
 function runHighlightLoop() {

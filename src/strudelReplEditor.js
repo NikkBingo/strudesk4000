@@ -256,7 +256,12 @@ export function createStrudelReplEditor(textarea, options = {}) {
  */
 export function initStrudelReplEditors() {
   try {
-    console.log('🎨 Initializing Strudel REPL editors...');
+    // Verify CodeMirror is available
+    if (typeof EditorView === 'undefined') {
+      console.error('❌ CodeMirror EditorView is not available - check imports');
+      return;
+    }
+    console.log('🎨 Initializing Strudel REPL editors (CodeMirror available)...');
     const textareas = document.querySelectorAll('textarea[data-strudel-repl], #modal-pattern, #master-pattern');
     console.log(`   Found ${textareas.length} textareas to initialize:`, Array.from(textareas).map(t => t.id || 'unnamed'));
     
@@ -391,6 +396,8 @@ export function setStrudelEditorEditable(textareaOrId, editable) {
 export function setStrudelEditorHighlights(textareaOrId, ranges = []) {
   const editor = getStrudelEditor(textareaOrId);
   if (!editor) {
+    // Editor not found - might not be initialized yet or CodeMirror failed to load
+    console.warn(`⚠️ CodeMirror editor not found for ${typeof textareaOrId === 'string' ? textareaOrId : textareaOrId?.id || 'unknown'}`);
     return;
   }
 
@@ -415,9 +422,16 @@ export function setStrudelEditorHighlights(textareaOrId, ranges = []) {
     ? Decoration.set(decorationRanges.sort((a, b) => a.from - b.from))
     : Decoration.none;
 
-  editor.dispatch({
-    effects: setHighlightsEffect.of(decorations)
-  });
+  try {
+    editor.dispatch({
+      effects: setHighlightsEffect.of(decorations)
+    });
+    if (ranges.length > 0) {
+      console.log(`✅ Applied ${ranges.length} highlight range(s) to CodeMirror editor`);
+    }
+  } catch (error) {
+    console.warn('⚠️ Error applying highlights to CodeMirror editor:', error);
+  }
 }
 
 /**
