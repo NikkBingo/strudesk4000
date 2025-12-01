@@ -1,4 +1,4 @@
-FROM node:18-alpine AS frontend-builder
+FROM node:18 AS frontend-builder
 
 WORKDIR /app
 
@@ -7,8 +7,7 @@ COPY package.json package-lock.json ./
 
 # Install dependencies
 # Use npm install with legacy-peer-deps to handle peer dependency issues
-# Include optional dependencies for Rollup native modules
-RUN npm install --legacy-peer-deps --include=optional --no-audit
+RUN npm install --legacy-peer-deps --no-audit
 
 # Copy frontend source files
 COPY vite.config.js ./
@@ -20,12 +19,11 @@ COPY assets ./assets
 RUN npm run build
 
 # Server stage
-FROM node:18-alpine
+FROM node:18
 
 WORKDIR /app
 
-# Install OpenSSL for Prisma (Alpine 3.21+ uses OpenSSL 3.x by default)
-RUN apk add --no-cache openssl
+# OpenSSL is already available in standard Node.js image
 
 # Copy server package files
 COPY server/package.json server/package-lock.json ./
