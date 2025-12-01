@@ -494,6 +494,14 @@ export function setStrudelEditorHighlights(textareaOrId, ranges = []) {
     return;
   }
 
+  // Check if highlightField is registered on this editor
+  const hasHighlightField = codeMirrorEditor.state.field && 
+    codeMirrorEditor.state.field(highlightField) !== undefined;
+  
+  if (!hasHighlightField) {
+    console.warn('⚠️ highlightField not registered on editor. Highlights may not display.');
+  }
+
   // Try using Strudel's built-in highlighting first (for strudel-editor components)
   if (typeof highlightMiniLocations === 'function' && isPatternHighlightingEnabled && isPatternHighlightingEnabled()) {
     try {
@@ -541,6 +549,11 @@ export function setStrudelEditorHighlights(textareaOrId, ranges = []) {
     });
     if (ranges.length > 0) {
       console.log(`✅ Applied ${ranges.length} highlight range(s) to CodeMirror editor (custom system)`);
+    } else {
+      // Clear highlights
+      codeMirrorEditor.dispatch({
+        effects: setHighlightsEffect.of(Decoration.none)
+      });
     }
   } catch (error) {
     console.warn('⚠️ Error applying highlights to CodeMirror editor:', error);
