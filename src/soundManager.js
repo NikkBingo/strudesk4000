@@ -3915,13 +3915,16 @@ class SoundManager {
           if (this.midiEnabled) {
             this.setupStrudelMIDIOutput();
             
-            // Verify MIDI methods are available in REPL context
-            // The MIDI methods (.midi(), .midiport()) should already be registered by initStrudel
-            // when midiOutput is passed to initStrudel
+            // Try to manually ensure MIDI methods are registered
+            // initStrudel should register them, but if not, we'll try to register them manually
             if (replInstance && replInstance.evaluate) {
               try {
-                // Verify that MIDI methods are available on Pattern.prototype
-                // initStrudel should have registered them when midiOutput was provided
+                // Get the webaudio module and scheduler to check/register MIDI methods
+                const { webaudioModule } = await getStrudelModules();
+                const scheduler = window.strudel?.scheduler;
+                const webaudio = scheduler?.webaudio || window.strudel?.webaudio;
+                
+                // Expose webaudio module to REPL and try to ensure MIDI methods are registered
                 await replInstance.evaluate(`
                   (function() {
                     // Verify MIDI methods are available on Pattern.prototype
@@ -3929,10 +3932,68 @@ class SoundManager {
                       const hasMidi = typeof Pattern.prototype.midi === 'function';
                       const hasMidiport = typeof Pattern.prototype.midiport === 'function';
                       console.log('MIDI methods on Pattern.prototype:', { midi: hasMidi, midiport: hasMidiport });
+                      
                       if (!hasMidi || !hasMidiport) {
                         console.warn('⚠️ MIDI methods not found on Pattern.prototype.');
-                        console.warn('   They should be registered by initStrudel when midiOutput is provided.');
-                        console.warn('   This may indicate a Strudel version compatibility issue.');
+                        console.warn('   Attempting to manually register MIDI methods...');
+                        
+                        // Check if webaudio is available and has midiOutput
+                        const scheduler = window.strudel?.scheduler;
+                        const webaudio = scheduler?.webaudio || window.strudel?.webaudio;
+                        if (webaudio && typeof webaudio.midiOutput === 'function') {
+                          console.log('✅ webaudio found with midiOutput');
+                          
+                          // Try to manually add MIDI methods to Pattern.prototype
+                          // These are simple wrappers that use the webaudio midiOutput
+                          if (!Pattern.prototype.midi) {
+                            Pattern.prototype.midi = function() {
+                              // Return a new pattern that sends MIDI messages
+                              return this.fmap((value, { time, context }) => {
+                                if (webaudio && webaudio.midiOutput) {
+                                  // Extract MIDI note from value if it's a note pattern
+                                  if (value && typeof value === 'object' && value.note !== undefined) {
+                                    const note = value.note;
+                                    const velocity = value.velocity || 127;
+                                    const channel = value.channel || 0;
+                                    webaudio.midiOutput({
+                                      type: 'noteOn',
+                                      note: note,
+                                      velocity: velocity,
+                                      channel: channel,
+                                      time: time
+                                    });
+                                  }
+                                }
+                                return value;
+                              });
+                            };
+                            console.log('✅ Manually registered Pattern.prototype.midi()');
+                          }
+                          
+                          if (!Pattern.prototype.midiport) {
+                            Pattern.prototype.midiport = function(port) {
+                              // Return a new pattern that uses the specified MIDI port
+                              return this.fmap((value, { time, context }) => {
+                                if (value && typeof value === 'object') {
+                                  value.midiport = port;
+                                }
+                                return value;
+                              });
+                            };
+                            console.log('✅ Manually registered Pattern.prototype.midiport()');
+                          }
+                          
+                          // Verify they're now available
+                          const hasMidiNow = typeof Pattern.prototype.midi === 'function';
+                          const hasMidiportNow = typeof Pattern.prototype.midiport === 'function';
+                          if (hasMidiNow && hasMidiportNow) {
+                            console.log('✅ MIDI methods (.midi(), .midiport()) are now available on patterns');
+                          } else {
+                            console.warn('⚠️ Failed to manually register MIDI methods');
+                          }
+                        } else {
+                          console.warn('   webaudio not found or midiOutput not available');
+                        }
                       } else {
                         console.log('✅ MIDI methods (.midi(), .midiport()) are available on patterns');
                       }
@@ -3942,7 +4003,7 @@ class SoundManager {
                   })()
                 `);
               } catch (verifyError) {
-                console.warn('⚠️ Could not verify MIDI methods in REPL context:', verifyError);
+                console.warn('⚠️ Could not verify/register MIDI methods in REPL context:', verifyError);
               }
             }
           }
