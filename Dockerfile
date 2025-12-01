@@ -7,7 +7,8 @@ COPY package.json package-lock.json ./
 
 # Install dependencies
 # Use npm install with legacy-peer-deps to handle peer dependency issues
-RUN npm install --legacy-peer-deps --no-audit
+# Include optional dependencies for Rollup native modules
+RUN npm install --legacy-peer-deps --include=optional --no-audit
 
 # Copy frontend source files
 COPY vite.config.js ./
