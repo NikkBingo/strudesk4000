@@ -8687,6 +8687,21 @@ class SoundManager {
         if (patternValue && typeof patternValue.queryArc === 'function') {
           window.strudel.scheduler.pattern = patternValue;
           console.log('✅ Set scheduler.pattern for highlighting (re-evaluation)');
+          // Debug: Check if pattern has location tracking capability
+          // Query a small arc to see if haps have location data
+          try {
+            const testHaps = patternValue.queryArc(0, 0.1) || [];
+            if (testHaps.length > 0) {
+              const hasLocations = testHaps.some(hap => hap?.context?.locations?.length > 0);
+              if (!hasLocations) {
+                console.warn('⚠️ Pattern set on scheduler but haps have no location data. withLoc may not be working correctly.');
+              } else {
+                console.log('✅ Pattern has location data - highlighting should work');
+              }
+            }
+          } catch (testError) {
+            // Ignore test errors
+          }
         }
       } catch (e) {
         console.warn('⚠️ Could not set scheduler.pattern for highlighting:', e.message);
@@ -8774,6 +8789,20 @@ class SoundManager {
           if (patternValue && typeof patternValue.queryArc === 'function') {
             window.strudel.scheduler.pattern = patternValue;
             console.log('✅ Set scheduler.pattern for highlighting');
+            // Debug: Check if pattern has location tracking capability
+            try {
+              const testHaps = patternValue.queryArc(0, 0.1) || [];
+              if (testHaps.length > 0) {
+                const hasLocations = testHaps.some(hap => hap?.context?.locations?.length > 0);
+                if (!hasLocations) {
+                  console.warn('⚠️ Pattern set on scheduler but haps have no location data. withLoc may not be working correctly.');
+                } else {
+                  console.log('✅ Pattern has location data - highlighting should work');
+                }
+              }
+            } catch (testError) {
+              // Ignore test errors
+            }
           }
         } catch (e) {
           console.warn('⚠️ Could not set scheduler.pattern for highlighting:', e.message);
