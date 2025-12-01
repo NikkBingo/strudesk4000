@@ -504,11 +504,13 @@ export function setStrudelEditorHighlights(textareaOrId, ranges = []) {
   }
 
   // Check if highlightField is registered on this editor
-  const hasHighlightField = codeMirrorEditor.state.field && 
-    codeMirrorEditor.state.field(highlightField) !== undefined;
-  
-  if (!hasHighlightField) {
-    console.warn('⚠️ highlightField not registered on editor. Highlights may not display.');
+  let hasHighlightField = false;
+  try {
+    const fieldValue = codeMirrorEditor.state.field(highlightField);
+    hasHighlightField = fieldValue !== undefined;
+  } catch (error) {
+    // Field is not present in this state - this is expected for strudel-editor components
+    hasHighlightField = false;
   }
 
   // Try using Strudel's built-in highlighting first (for strudel-editor components)
@@ -524,13 +526,28 @@ export function setStrudelEditorHighlights(textareaOrId, ranges = []) {
         highlightMiniLocations(codeMirrorEditor, miniLocations);
         console.log(`✅ Applied ${ranges.length} highlight range(s) using Strudel's built-in highlighting`);
         return;
+      } else {
+        // Clear highlights using Strudel's built-in system
+        highlightMiniLocations(codeMirrorEditor, []);
+        return;
       }
     } catch (error) {
       console.warn('⚠️ Strudel built-in highlighting failed, falling back to custom:', error);
     }
   }
 
-  // Fallback to custom highlighting system
+  // Fallback to custom highlighting system (only if highlightField is registered)
+  if (!hasHighlightField) {
+    // For strudel-editor components without our custom field, we can't use custom highlighting
+    // This is expected - they should use Strudel's built-in highlighting above
+    if (ranges.length === 0) {
+      // Silently skip clearing highlights if field doesn't exist
+      return;
+    }
+    console.warn('⚠️ highlightField not registered on editor. Cannot apply custom highlights.');
+    return;
+  }
+
   const doc = codeMirrorEditor.state.doc;
   const decorationRanges = [];
 
