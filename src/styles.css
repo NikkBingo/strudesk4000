@@ -1939,6 +1939,11 @@ header h1 {
   border-right: 1px solid rgba(102, 126, 234, 0.15) !important;
 }
 
+/* Syntax highlighting - dark green for .cm-kn (keywords/numbers) */
+.cm-kn {
+  color: #006400 !important; /* dark green */
+}
+
 /* Modal pattern editor specific height */
 .form-group .cm-editor,
 .form-group .cm-scroller,
