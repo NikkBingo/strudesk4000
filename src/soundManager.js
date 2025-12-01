@@ -2245,7 +2245,7 @@ class SoundManager {
   /**
    * Set gain for a specific element (0-1)
    */
-  setElementGain(elementId, value) {
+  async setElementGain(elementId, value) {
     const gain = Math.max(0, Math.min(1, value));
     const oldGain = this.elementGainValues.get(elementId);
     this.elementGainValues.set(elementId, gain);
@@ -2270,7 +2270,7 @@ class SoundManager {
       
       // Update tracked pattern gain if element is tracked in master
       if (this.trackedPatterns.has(elementId)) {
-        this.updateTrackedElementGain(elementId, gain);
+        await this.updateTrackedElementGain(elementId, gain);
       }
     }
     
@@ -2285,7 +2285,7 @@ class SoundManager {
    * Set pan for a specific element (-1 to 1)
    * -1 = full left, 0 = center, 1 = full right
    */
-  setElementPan(elementId, value) {
+  async setElementPan(elementId, value) {
     const pan = Math.max(-1, Math.min(1, value));
     const oldPan = this.elementPanValues.get(elementId);
     this.elementPanValues.set(elementId, pan);
@@ -2310,7 +2310,7 @@ class SoundManager {
       
       // Update tracked pattern pan if element is tracked in master
       if (this.trackedPatterns.has(elementId)) {
-        this.updateTrackedElementPan(elementId, pan);
+        await this.updateTrackedElementPan(elementId, pan);
       }
     }
     
@@ -2378,7 +2378,7 @@ class SoundManager {
       __safeRouteLog(this, `🎚️ Updated tracked pattern for ${elementId} in master: ${newPattern.substring(0, 60)}...`);
       
       // Update the master pattern to reflect the changes
-      this.updateMasterPattern(this.soloedElements, this.mutedElements);
+      await this.updateMasterPattern(this.soloedElements, this.mutedElements);
       if (this.masterActive) {
         this.scheduleMasterPatternRefresh(`pattern-update:${elementId}`);
       }
@@ -3604,7 +3604,7 @@ class SoundManager {
           if (this.trackedPatterns.has(elementId)) {
             this.trackedPatterns.delete(elementId);
             console.log(`🗑️ Removed preview element ${elementId} from master tracking`);
-            this.updateMasterPattern(this.soloedElements, this.mutedElements);
+            await this.updateMasterPattern(this.soloedElements, this.mutedElements);
           }
         } else if (!this.trackedPatterns.has(elementId)) {
           const gain = this.getElementGain(elementId) || 0.8;
@@ -3620,7 +3620,7 @@ class SoundManager {
           });
           console.log(`➕ Auto-added ${elementId} to master tracked patterns`);
           // Update master pattern to include this element
-          this.updateMasterPattern(this.soloedElements, this.mutedElements);
+          await this.updateMasterPattern(this.soloedElements, this.mutedElements);
         }
         
         this.activeSounds.set(elementId, {
@@ -7724,7 +7724,7 @@ class SoundManager {
   /**
    * Update gain for a tracked element in master
    */
-  updateTrackedElementGain(elementId, gain) {
+  async updateTrackedElementGain(elementId, gain) {
     if (this.trackedPatterns.has(elementId)) {
       const trackData = this.trackedPatterns.get(elementId);
       trackData.gain = gain;
@@ -7733,7 +7733,7 @@ class SoundManager {
       // Rebuild master pattern to update the .gain() value in the pattern code
       // The Web Audio API nodes provide real-time control, but we still update the pattern
       // so the displayed code shows the current gain value
-      this.updateMasterPattern(this.soloedElements, this.mutedElements);
+      await this.updateMasterPattern(this.soloedElements, this.mutedElements);
       
       // Schedule a master refresh so the new gain value is heard during playback
       this.scheduleMasterPatternRefresh(`gain change: ${elementId}`);
@@ -7746,7 +7746,7 @@ class SoundManager {
   /**
    * Update pan for a tracked element in master
    */
-  updateTrackedElementPan(elementId, pan) {
+  async updateTrackedElementPan(elementId, pan) {
     if (this.trackedPatterns.has(elementId)) {
       const trackData = this.trackedPatterns.get(elementId);
       trackData.pan = pan;
@@ -7755,7 +7755,7 @@ class SoundManager {
       // Rebuild master pattern to update the .pan() value in the pattern code
       // The Web Audio API nodes provide real-time control, but we still update the pattern
       // so the displayed code shows the current pan value
-      this.updateMasterPattern(this.soloedElements, this.mutedElements);
+      await this.updateMasterPattern(this.soloedElements, this.mutedElements);
       
       // Schedule a master refresh so the new pan value is heard during playback
       this.scheduleMasterPatternRefresh(`pan change: ${elementId}`);
@@ -7831,7 +7831,7 @@ class SoundManager {
   /**
    * Update master pattern by combining all tracked patterns
    */
-  updateMasterPattern(soloedElements = new Set(), mutedElements = new Set()) {
+  async updateMasterPattern(soloedElements = new Set(), mutedElements = new Set()) {
     try {
       console.log(`🎛️ Updating master pattern. Tracks: ${this.trackedPatterns.size}, Solo: ${soloedElements.size}, Muted: ${mutedElements.size}`);
       
@@ -7862,7 +7862,7 @@ class SoundManager {
         }
         
         const originalSourcePattern = trackData.pattern || trackData.rawPattern || '';
-        const sourcePattern = this._sanitizePatternExpression(originalSourcePattern);
+        let sourcePattern = this._sanitizePatternExpression(originalSourcePattern);
         if (sourcePattern !== originalSourcePattern) {
           trackData.pattern = sourcePattern;
           trackData.rawPattern = sourcePattern;
@@ -7870,6 +7870,47 @@ class SoundManager {
         if (!sourcePattern || sourcePattern.trim() === '') {
           console.log(`  ⏭️ Skipping ${elementId} (empty pattern)`);
           continue;
+        }
+        
+        // Extract and evaluate setDefaultVoicings from individual patterns BEFORE combining
+        // This prevents setDefaultVoicings from ending up inside stack()
+        if (sourcePattern.includes('setDefaultVoicings')) {
+          const setDefaultVoicingsRegex = /setDefaultVoicings\s*\(\s*(['"]([^'"]*)['"]|([^)]+))\s*\)/g;
+          const setDefaultVoicingsMatches = [];
+          let match;
+          
+          while ((match = setDefaultVoicingsRegex.exec(sourcePattern)) !== null) {
+            setDefaultVoicingsMatches.push({
+              fullMatch: match[0],
+              arg: match[2] || match[3],
+              isQuoted: !!match[2]
+            });
+          }
+          
+          // Evaluate all setDefaultVoicings calls
+          for (const voicingMatch of setDefaultVoicingsMatches) {
+            try {
+              const evalCode = voicingMatch.isQuoted 
+                ? `setDefaultVoicings('${voicingMatch.arg}')`
+                : `setDefaultVoicings(${voicingMatch.arg})`;
+              if (window.strudel && window.strudel.evaluate) {
+                await window.strudel.evaluate(evalCode);
+                console.log(`  ✅ Evaluated ${evalCode} from ${elementId}`);
+              }
+            } catch (e) {
+              console.warn(`  ⚠️ Could not evaluate setDefaultVoicings from ${elementId}:`, e.message);
+            }
+          }
+          
+          // Remove setDefaultVoicings from the pattern
+          if (setDefaultVoicingsMatches.length > 0) {
+            const lines = sourcePattern.split('\n');
+            const filteredLines = lines.filter(line => !line.trim().includes('setDefaultVoicings'));
+            sourcePattern = filteredLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+            // Update stored pattern
+            trackData.pattern = sourcePattern;
+            trackData.rawPattern = sourcePattern;
+          }
         }
 
         // Preserve the format: if pattern uses note names, keep note names; if semitones, keep semitones
@@ -8481,23 +8522,24 @@ class SoundManager {
       // Remove ALL setDefaultVoicings calls from pattern (it's invalid inside stack/all)
       // Remove lines that contain setDefaultVoicings, but preserve structure
       if (setDefaultVoicingsMatches.length > 0) {
-        // Remove each setDefaultVoicings call
-        for (const voicingMatch of setDefaultVoicingsMatches) {
-          // Escape special regex characters in the match
-          const escapedMatch = voicingMatch.fullMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          patternText = patternText.replace(new RegExp(escapedMatch, 'g'), '');
-        }
-        
-        // Clean up: remove lines that are now empty or only whitespace
+        // Strategy: Remove entire lines that contain setDefaultVoicings
+        // This is safer than trying to remove just the function call
         const lines = patternText.split('\n');
         const filteredLines = lines.filter(line => {
           const trimmed = line.trim();
-          return trimmed !== '' && !trimmed.match(/^\/\*\s*Channel\s+\d+\s*\*\/\s*$/);
+          // Keep the line if it doesn't contain setDefaultVoicings
+          // But preserve channel comments and other important lines
+          if (trimmed.includes('setDefaultVoicings')) {
+            return false; // Remove this line
+          }
+          return true; // Keep this line
         });
+        
         patternText = filteredLines.join('\n');
         
-        // Clean up extra newlines and whitespace
-        patternText = patternText.replace(/\n{3,}/g, '\n\n').trim();
+        // Clean up: remove multiple consecutive empty lines, but preserve single empty lines
+        // This preserves structure while cleaning up excessive whitespace
+        patternText = patternText.replace(/\n\s*\n\s*\n+/g, '\n\n').trim();
         
         // If pattern starts with stack(, ensure we didn't break the structure
         if (patternText.startsWith('stack(')) {
@@ -8521,6 +8563,9 @@ class SoundManager {
           }
           if (depth !== 0) {
             console.warn(`⚠️ Pattern structure may be broken after removing setDefaultVoicings (depth: ${depth})`);
+            console.log(`   Pattern preview: ${patternText.substring(0, 200)}...`);
+          } else {
+            console.log(`✅ Pattern structure validated after removing setDefaultVoicings`);
           }
         }
       }
@@ -10043,7 +10088,45 @@ class SoundManager {
       console.log(`✏️ Setting master pattern code: ${code.substring(0, 100)}...`);
       
       if (code && code.trim() !== '') {
-        this.masterPattern = this.formatMasterPatternWithTempoComment(code);
+        // Extract and evaluate setDefaultVoicings BEFORE storing the pattern
+        // This prevents it from being wrapped in stack() later
+        let cleanedCode = code.trim();
+        const setDefaultVoicingsRegex = /setDefaultVoicings\s*\(\s*(['"]([^'"]*)['"]|([^)]+))\s*\)/g;
+        const setDefaultVoicingsMatches = [];
+        let match;
+        
+        // Find all setDefaultVoicings calls
+        while ((match = setDefaultVoicingsRegex.exec(cleanedCode)) !== null) {
+          setDefaultVoicingsMatches.push({
+            fullMatch: match[0],
+            arg: match[2] || match[3],
+            isQuoted: !!match[2]
+          });
+        }
+        
+        // Evaluate all setDefaultVoicings calls first
+        for (const voicingMatch of setDefaultVoicingsMatches) {
+          try {
+            const evalCode = voicingMatch.isQuoted 
+              ? `setDefaultVoicings('${voicingMatch.arg}')`
+              : `setDefaultVoicings(${voicingMatch.arg})`;
+            if (window.strudel && window.strudel.evaluate) {
+              await window.strudel.evaluate(evalCode);
+              console.log(`✅ Evaluated ${evalCode} before storing pattern`);
+            }
+          } catch (e) {
+            console.warn(`⚠️ Could not evaluate setDefaultVoicings:`, e.message);
+          }
+        }
+        
+        // Remove setDefaultVoicings from the code before storing
+        if (setDefaultVoicingsMatches.length > 0) {
+          const lines = cleanedCode.split('\n');
+          const filteredLines = lines.filter(line => !line.trim().includes('setDefaultVoicings'));
+          cleanedCode = filteredLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+        }
+        
+        this.masterPattern = this.formatMasterPatternWithTempoComment(cleanedCode);
       } else {
         this.masterPattern = '';
       }
