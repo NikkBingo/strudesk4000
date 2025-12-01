@@ -3876,24 +3876,32 @@ class SoundManager {
         try {
           // Initialize MIDI BEFORE initStrudel so midiOutput handler is available
           // This ensures MIDI functions are available when Strudel initializes
+          // Always try to initialize MIDI, even if it was previously attempted
           if (!this.midiEnabled) {
             try {
               await this.initializeMIDI();
             } catch (midiError) {
               console.warn('⚠️ MIDI initialization failed, continuing without MIDI:', midiError);
             }
+          } else {
+            // MIDI is already enabled, but ensure midiOutput handler is set up
+            console.log('✅ MIDI already enabled, ensuring midiOutput handler is connected');
           }
           
           // Set up MIDI output handler before initStrudel
+          // Always set midiOutput even if MIDI isn't enabled yet - it will be connected when MIDI is enabled
           const initOptions = {
             audioContext: this.audioContext,
             getTime: () => this.audioContext ? this.audioContext.currentTime : 0,
             editPattern: () => {},
             setUrl: () => {},
             withLoc: true, // Enable location tracking for code highlighting
-          };
-          initOptions.midiOutput = (message) => {
-            this.sendMIDIMessage(message);
+            midiOutput: (message) => {
+              // This will send MIDI messages if MIDI is enabled, otherwise it's a no-op
+              if (this.midiEnabled && this.selectedMidiOutput) {
+                this.sendMIDIMessage(message);
+              }
+            }
           };
           console.log('🎚️ initStrudel options:', Object.keys(initOptions));
           console.log('📍 withLoc enabled for code highlighting');
@@ -4392,21 +4400,21 @@ class SoundManager {
         }
         
         // Import core functions first so they're available to REPL
-        // Try local package first (via Vite), then CDN fallback
+        // Use cached modules from getStrudelModules() to avoid duplicate loading
         let coreModule = null;
         try {
-          // Try local import first (Vite will resolve dependencies properly)
-          try {
-            coreModule = await import('@strudel/core');
-            console.log('✅ Core module imported from local packages');
-          } catch (localError) {
-            // Fallback to CDN if local import fails
-            coreModule = await import('https://unpkg.com/@strudel/core@1.2.5/dist/index.mjs');
-            console.log('✅ Core module imported from CDN');
-          }
+          const modules = await getStrudelModules();
+          coreModule = modules.coreModule;
+          console.log('✅ Core module from cached getStrudelModules()');
           console.log('Available exports:', Object.keys(coreModule).slice(0, 10));
         } catch (error) {
-          console.warn('Could not import core module:', error);
+          console.warn('Could not get core module from cache, trying direct import:', error);
+          try {
+            coreModule = await import('@strudel/core');
+            console.log('✅ Core module imported directly (fallback)');
+          } catch (localError) {
+            console.warn('Could not import core module:', localError);
+          }
         }
         
         // Create repl for evaluation with core functions in scope
