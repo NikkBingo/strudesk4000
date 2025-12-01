@@ -5,8 +5,9 @@ WORKDIR /app
 # Copy package files first for better layer caching
 COPY package.json package-lock.json ./
 
-# Install dependencies (use ci for faster, reliable installs)
-RUN npm ci
+# Install dependencies
+# Use npm install instead of npm ci to handle lock file sync issues
+RUN npm install --prefer-offline --no-audit
 
 # Copy frontend source files
 COPY vite.config.js ./
