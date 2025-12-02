@@ -7599,6 +7599,18 @@ class SoundManager {
   _processPatternValueForMIDI(value, time, targetPort) {
     const midiMessage = this._convertValueToMidiMessage(value, time);
     if (!midiMessage) {
+      // Debug: log what value we got that couldn't be converted
+      if (Math.random() < 0.1) {
+        console.log('🔍 MIDI: Could not convert value to MIDI message:', {
+          value,
+          valueType: typeof value,
+          isObject: typeof value === 'object' && value !== null,
+          keys: typeof value === 'object' && value !== null ? Object.keys(value).slice(0, 10) : [],
+          hasNote: value?.note,
+          hasNumber: value?.number,
+          hasMidi: value?.midi
+        });
+      }
       return;
     }
 
@@ -7606,6 +7618,14 @@ class SoundManager {
     if (sender) {
       try {
         sender(midiMessage);
+        if (Math.random() < 0.05) {
+          console.log('🎹 MIDI sent:', {
+            note: midiMessage.note,
+            velocity: midiMessage.velocity,
+            channel: midiMessage.channel,
+            port: targetPort || 'default'
+          });
+        }
       } catch (error) {
         console.warn('⚠️ MIDI send error:', error, midiMessage);
       }
@@ -7619,18 +7639,50 @@ class SoundManager {
     const scheduler = window.strudel?.scheduler;
     const webaudio = scheduler?.webaudio || window.strudel?.webaudio;
 
+    // First try webaudio if available (Strudel's native MIDI output)
     if (webaudio && typeof webaudio.midiOutput === 'function') {
-      return (message) => webaudio.midiOutput(message);
+      return (message) => {
+        try {
+          webaudio.midiOutput(message);
+        } catch (error) {
+          console.warn('⚠️ webaudio.midiOutput error:', error);
+        }
+      };
     }
 
+    // Fallback to soundManager's MIDI output with port selection
     if (this.midiEnabled && typeof this.sendMIDIMessageToPort === 'function') {
+      // If a specific port is requested and available, use it
       if (targetPort && this.midiOutputs && this.midiOutputs.has(targetPort)) {
-        return (message) => this.sendMIDIMessageToPort(message, targetPort);
+        return (message) => {
+          try {
+            this.sendMIDIMessageToPort(message, targetPort);
+          } catch (error) {
+            console.warn('⚠️ sendMIDIMessageToPort error:', error);
+          }
+        };
+      }
+      // Otherwise use default selected output
+      if (this.selectedMidiOutput) {
+        return (message) => {
+          try {
+            this.sendMIDIMessageToPort(message, null); // null = use selectedMidiOutput
+          } catch (error) {
+            console.warn('⚠️ sendMIDIMessageToPort error:', error);
+          }
+        };
       }
     }
 
-    if (this.midiEnabled && typeof this.sendMIDIMessage === 'function') {
-      return (message) => this.sendMIDIMessage(message);
+    // Last resort: use sendMIDIMessage (uses selectedMidiOutput)
+    if (this.midiEnabled && typeof this.sendMIDIMessage === 'function' && this.selectedMidiOutput) {
+      return (message) => {
+        try {
+          this.sendMIDIMessage(message);
+        } catch (error) {
+          console.warn('⚠️ sendMIDIMessage error:', error);
+        }
+      };
     }
 
     return null;
@@ -7642,12 +7694,48 @@ class SoundManager {
     let channel = 0;
 
     if (value && typeof value === 'object') {
+      // Check for note properties first
       if (value.note !== undefined) {
         note = value.note;
       } else if (value.number !== undefined) {
         note = value.number;
       } else if (value.midi !== undefined) {
         note = value.midi;
+      }
+      // For sound patterns, check for sound name and convert to MIDI note
+      else if (value.sound !== undefined || value.name !== undefined) {
+        const soundName = value.sound || value.name;
+        if (typeof soundName === 'string') {
+          // Convert common drum sound names to MIDI notes
+          // This is a basic mapping - can be extended
+          const soundToMidi = {
+            'bd': 36,   // C2 - Bass drum
+            'sd': 38,   // D2 - Snare drum
+            'hh': 42,   // F#2 - Hi-hat
+            'oh': 46,   // A#2 - Open hi-hat
+            'cp': 49,   // C#3 - Crash
+            'ride': 51, // D#3 - Ride
+            'tom': 48,  // C3 - Tom
+            'kick': 36, // C2 - Kick
+            'snare': 38, // D2 - Snare
+            'hat': 42,  // F#2 - Hat
+            'crash': 49 // C#3 - Crash
+          };
+          
+          const lowerSound = soundName.toLowerCase();
+          if (soundToMidi[lowerSound]) {
+            note = soundToMidi[lowerSound];
+          } else {
+            // Try to extract MIDI note from sound name if it contains a number
+            const midiMatch = soundName.match(/(\d+)/);
+            if (midiMatch) {
+              const midiNum = parseInt(midiMatch[1], 10);
+              if (midiNum >= 0 && midiNum <= 127) {
+                note = midiNum;
+              }
+            }
+          }
+        }
       }
 
       if (value.velocity !== undefined) {
