@@ -620,6 +620,7 @@ class SoundManager {
     this.midiEnabled = false;
     this.midiOutputs = new Map(); // portName -> WebMidi output
     this.selectedMidiOutput = null; // Currently selected MIDI output port
+    this.activeMidiNotes = new Set(); // Track active MIDI notes (format: "note:channel")
     this.midiChannel = 0; // Default MIDI channel (0-15, where 0 = channel 1)
     this._midiFallbackLogged = false;
   }
@@ -7418,10 +7419,15 @@ class SoundManager {
         case 'noteon':
         case 'noteon':
           if (note !== null) {
+            // WebMidi API expects 'attack' (0-1) instead of 'velocity' (0-127)
+            const attack = Math.max(0, Math.min(1, velocity / 127));
             this.selectedMidiOutput.playNote(note, {
               channel: channel + 1, // WebMidi uses 1-16, we use 0-15
-              velocity: Math.max(1, Math.min(127, velocity))
+              attack: attack
             });
+            // Track active note
+            const noteKey = `${note}:${channel}`;
+            this.activeMidiNotes.add(noteKey);
           }
           break;
           
@@ -7431,6 +7437,9 @@ class SoundManager {
             this.selectedMidiOutput.stopNote(note, {
               channel: channel + 1
             });
+            // Remove from active notes
+            const noteKey = `${note}:${channel}`;
+            this.activeMidiNotes.delete(noteKey);
           }
           break;
           
@@ -7465,10 +7474,15 @@ class SoundManager {
             this.selectedMidiOutput.send(message.data);
           } else if (note !== null) {
             // Fallback: if we have a note but no type, send note on
+            // WebMidi API expects 'attack' (0-1) instead of 'velocity' (0-127)
+            const attack = Math.max(0, Math.min(1, velocity / 127));
             this.selectedMidiOutput.playNote(note, {
               channel: channel + 1,
-              velocity: Math.max(1, Math.min(127, velocity))
+              attack: attack
             });
+            // Track active note
+            const noteKey = `${note}:${channel}`;
+            this.activeMidiNotes.add(noteKey);
           }
       }
     } catch (error) {
@@ -7690,7 +7704,7 @@ class SoundManager {
 
   _convertValueToMidiMessage(value, time = 0) {
     let note = null;
-    let velocity = 127;
+    let velocity = 100; // Default velocity set to 100 instead of 127
     let channel = 0;
 
     if (value && typeof value === 'object') {
@@ -7813,6 +7827,46 @@ class SoundManager {
     if (channel >= 0 && channel <= 15) {
       this.midiChannel = channel;
       console.log(`✅ MIDI channel set to: ${channel + 1}`);
+    }
+  }
+  
+  /**
+   * Stop all active MIDI notes
+   * Called when pattern stops to prevent stuck notes
+   */
+  stopAllMIDINotes() {
+    if (!this.midiEnabled || !this.selectedMidiOutput || this.activeMidiNotes.size === 0) {
+      return;
+    }
+    
+    try {
+      const stoppedCount = this.activeMidiNotes.size;
+      
+      // Send noteOff for all active notes
+      for (const noteKey of this.activeMidiNotes) {
+        const [noteStr, channelStr] = noteKey.split(':');
+        const note = parseInt(noteStr, 10);
+        const channel = parseInt(channelStr, 10);
+        
+        if (!isNaN(note) && !isNaN(channel)) {
+          try {
+            this.selectedMidiOutput.stopNote(note, {
+              channel: channel + 1 // WebMidi uses 1-16
+            });
+          } catch (error) {
+            // Ignore individual note errors
+          }
+        }
+      }
+      
+      // Clear all active notes
+      this.activeMidiNotes.clear();
+      
+      if (stoppedCount > 0) {
+        console.log(`✅ Stopped ${stoppedCount} active MIDI note(s)`);
+      }
+    } catch (error) {
+      console.warn('⚠️ Error stopping MIDI notes:', error);
     }
   }
   
@@ -10542,6 +10596,10 @@ class SoundManager {
       this.masterActive = false;
       stopMasterHighlighting();
       this.masterPlaybackStartTime = null;
+      
+      // Stop all active MIDI notes
+      this.stopAllMIDINotes();
+      
       if (this.masterGainNode) {
         this.masterGainNode.gain.setValueAtTime(0, this.audioContext?.currentTime || 0);
       }
@@ -10602,6 +10660,9 @@ class SoundManager {
           clearInterval(this._audioChainCheckInterval);
           this._audioChainCheckInterval = null;
         }
+        
+        // Stop all active MIDI notes
+        this.stopAllMIDINotes();
         
         console.log(`✅ Master pattern stopped`);
         
