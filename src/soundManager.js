@@ -3828,158 +3828,8 @@ class SoundManager {
         console.warn('⚠️ No samples function found in any module');
       }
       
-      // Register MIDI methods on Pattern.prototype early, before initStrudel
-      // This ensures they're available when patterns are evaluated
-      if (this.midiEnabled && coreModule && coreModule.Pattern) {
-        try {
-          const Pattern = coreModule.Pattern;
-          if (Pattern && Pattern.prototype) {
-            if (!Pattern.prototype.midi) {
-              Pattern.prototype.midi = function(portName) {
-                // Return a new pattern that sends MIDI messages to the specified port
-                // portName can be a string like 'IAC Driver' or undefined to use default
-                return this.fmap((value, { time, context }) => {
-                  // Get the MIDI port name from arguments or context
-                  const targetPort = portName || context?.midiport || null;
-                  
-                  // Try to get midiOutput from various sources
-                  let midiOutput = null;
-                  
-                  // First try webaudio if available
-                  const scheduler = window.strudel?.scheduler;
-                  const webaudio = scheduler?.webaudio || window.strudel?.webaudio;
-                  if (webaudio && typeof webaudio.midiOutput === 'function') {
-                    midiOutput = webaudio.midiOutput;
-                  } 
-                  // Fallback to soundManager's sendMIDIMessage with port selection
-                  else if (window.soundManager && typeof window.soundManager.sendMIDIMessage === 'function') {
-                    // Get the MIDI output for the specified port
-                    let outputToUse = null;
-                    if (targetPort && window.soundManager.midiOutputs) {
-                      outputToUse = window.soundManager.midiOutputs.get(targetPort);
-                    } else if (window.soundManager.selectedMidiOutput) {
-                      outputToUse = window.soundManager.selectedMidiOutput;
-                    }
-                    
-                                  if (outputToUse) {
-                                    midiOutput = (message) => {
-                                      if (window.soundManager.midiEnabled) {
-                                        // Use sendMIDIMessageToPort to send to specific port
-                                        window.soundManager.sendMIDIMessageToPort(message, targetPort);
-                                      }
-                                    };
-                                  } else if (window.soundManager.selectedMidiOutput) {
-                                    // Fallback to default output
-                                    midiOutput = (message) => {
-                                      if (window.soundManager.midiEnabled) {
-                                        window.soundManager.sendMIDIMessage(message);
-                                      }
-                                    };
-                                  }
-                  }
-                  
-                  if (midiOutput && value) {
-                    // Convert value to MIDI message format
-                    let note = null;
-                    let velocity = 127;
-                    let channel = 0;
-                    
-                    // Handle different value types
-                    if (typeof value === 'object' && value !== null) {
-                      // Value is already a note object
-                      if (value.note !== undefined) {
-                        note = value.note;
-                      } else if (value.number !== undefined) {
-                        note = value.number;
-                      } else if (value.midi !== undefined) {
-                        note = value.midi;
-                      }
-                      if (value.velocity !== undefined) {
-                        velocity = value.velocity;
-                      }
-                      if (value.channel !== undefined) {
-                        channel = value.channel;
-                      } else if (value.port !== undefined) {
-                        channel = value.port;
-                      }
-                    } else if (typeof value === 'string') {
-                      // Value is a note name like "C4" - convert to MIDI number
-                      try {
-                        // Try to use Tonal or similar library if available
-                        if (window.Note && typeof window.Note.get === 'function') {
-                          const noteInfo = window.Note.get(value);
-                          if (noteInfo && typeof noteInfo.midi === 'number') {
-                            note = noteInfo.midi;
-                          }
-                        } else if (window.note && typeof window.note === 'function') {
-                          // Strudel's note() function might return a pattern
-                          const notePattern = window.note(value);
-                          if (notePattern && typeof notePattern.queryArc === 'function') {
-                            const events = notePattern.queryArc(0, 1);
-                            if (events && events.length > 0 && events[0].value) {
-                              const firstEvent = events[0].value;
-                              if (typeof firstEvent === 'object' && firstEvent.note !== undefined) {
-                                note = firstEvent.note;
-                              } else if (typeof firstEvent === 'number') {
-                                note = firstEvent;
-                              }
-                            }
-                          }
-                        }
-                      } catch (e) {
-                        // Ignore conversion errors
-                      }
-                    } else if (typeof value === 'number') {
-                      // Value is already a MIDI note number
-                      note = value;
-                    }
-                    
-                    // Send MIDI message if we have a note
-                    if (note !== null && typeof note === 'number') {
-                      try {
-                        const midiMessage = {
-                          type: 'noteOn',
-                          note: note,
-                          velocity: Math.max(1, Math.min(127, velocity)),
-                          channel: Math.max(0, Math.min(15, channel)),
-                          time: time
-                        };
-                        midiOutput(midiMessage);
-                        if (Math.random() < 0.05) {
-                          console.log(`🎹 MIDI sent: note=${note}, port=${targetPort || 'default'}, channel=${midiMessage.channel}`);
-                        }
-                      } catch (e) {
-                        console.warn('⚠️ MIDI send error:', e, { note, port: targetPort, value });
-                      }
-                    } else if (value && Math.random() < 0.01) {
-                      console.log('🔍 MIDI: value not converted to note:', { value, type: typeof value, hasNote: value?.note, hasNumber: value?.number });
-                    }
-                  } else if (Math.random() < 0.01) {
-                    console.log('🔍 MIDI: midiOutput or value missing:', { hasMidiOutput: !!midiOutput, hasValue: !!value, port: targetPort });
-                  }
-                  return value;
-                });
-              };
-              console.log('✅ Registered Pattern.prototype.midi() early (before initStrudel)');
-            }
-            
-            if (!Pattern.prototype.midiport) {
-              Pattern.prototype.midiport = function(port) {
-                // Return a new pattern that uses the specified MIDI port
-                return this.fmap((value, { time, context }) => {
-                  if (value && typeof value === 'object') {
-                    value.midiport = port;
-                  }
-                  return value;
-                });
-              };
-              console.log('✅ Registered Pattern.prototype.midiport() early (before initStrudel)');
-            }
-          }
-        } catch (midiRegError) {
-          console.warn('⚠️ Error registering MIDI methods early:', midiRegError);
-        }
-      }
+      // Ensure MIDI methods are registered on all known Pattern prototypes
+      this.ensurePatternMidiMethodsRegistered('pre-init module exposure');
       
       // Also check if there's a default sample map
       if (webModule.getAudioContext || webaudioModule.getAudioContext) {
@@ -4072,6 +3922,9 @@ class SoundManager {
           
           // Store soundManager instance on window for REPL access
           window.soundManager = this;
+
+          // Ensure MIDI methods exist after initStrudel completes
+          this.ensurePatternMidiMethodsRegistered('post-init initStrudel');
           
           // Ensure MIDI output handler is connected after initStrudel
           // This is needed because initStrudel creates the webaudio module
@@ -4080,6 +3933,8 @@ class SoundManager {
             
             // Wait a bit for scheduler to be fully set up, then try to register MIDI methods
             setTimeout(async () => {
+              this.ensurePatternMidiMethodsRegistered('delayed post-init check');
+              
               // Try to manually ensure MIDI methods are registered
               // initStrudel should register them, but if not, we'll try to register them manually
               if (replInstance && replInstance.evaluate) {
@@ -7360,6 +7215,7 @@ class SoundManager {
       
       // Set up Strudel MIDI output handler
       this.setupStrudelMIDIOutput();
+      this.ensurePatternMidiMethodsRegistered('initializeMIDI');
       
     } catch (error) {
       console.warn('⚠️ WebMidi initialization failed:', error);
@@ -7429,6 +7285,9 @@ class SoundManager {
       setTimeout(() => {
         this.selectIACDriver();
       }, 500);
+      
+      // Re-register MIDI methods now that webaudio handlers are wired
+      this.ensurePatternMidiMethodsRegistered('setupStrudelMIDIOutput');
       
       console.log('✅ Strudel MIDI output handler set up');
     } catch (error) {
@@ -7616,6 +7475,225 @@ class SoundManager {
       console.warn('⚠️ Failed to send MIDI message:', error, message);
     }
   }
+
+  /**
+   * Ensure MIDI helper methods exist on all known Pattern prototypes
+   * @param {string} reason - Description for logging
+   */
+  ensurePatternMidiMethodsRegistered(reason = 'unspecified') {
+    try {
+      const constructors = this._gatherPatternConstructors();
+      let updatedCount = 0;
+
+      constructors.forEach((ctor) => {
+        if (this._installMidiMethodsOnPatternCtor(ctor, reason)) {
+          updatedCount += 1;
+        }
+      });
+
+      if (updatedCount > 0) {
+        console.log(`✅ Registered MIDI methods on ${updatedCount} Pattern constructor(s) (${reason})`);
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to ensure MIDI methods on Pattern prototypes:', error);
+    }
+  }
+
+  _gatherPatternConstructors() {
+    const constructors = new Set();
+
+    const pushCtor = (ctor) => {
+      if (ctor && typeof ctor === 'function' && ctor.prototype) {
+        constructors.add(ctor);
+      }
+    };
+
+    pushCtor(globalThis.Pattern);
+    pushCtor(window?.strudel?.Pattern);
+
+    const silencePattern = globalThis.silence;
+    if (silencePattern && silencePattern.constructor) {
+      pushCtor(silencePattern.constructor);
+    }
+
+    const noteFn = globalThis.note || window?.strudel?.note;
+    if (typeof noteFn === 'function') {
+      try {
+        const testPattern = noteFn('c');
+        if (testPattern && testPattern.constructor) {
+          pushCtor(testPattern.constructor);
+        }
+      } catch (error) {
+        // Ignore errors from test note creation
+      }
+    }
+
+    if (Array.isArray(this._knownPatternConstructors)) {
+      this._knownPatternConstructors.forEach(pushCtor);
+    }
+
+    this._knownPatternConstructors = Array.from(constructors);
+    return constructors;
+  }
+
+  _installMidiMethodsOnPatternCtor(patternCtor, reason) {
+    if (!patternCtor || !patternCtor.prototype) {
+      return false;
+    }
+
+    const proto = patternCtor.prototype;
+    let updated = false;
+
+    if (typeof proto.midi !== 'function' || !proto.midi.__soundManagerInjected) {
+      proto.midi = this._getPatternMidiMethod();
+      proto.midi.__soundManagerInjected = true;
+      updated = true;
+    }
+
+    if (typeof proto.midiport !== 'function' || !proto.midiport.__soundManagerInjected) {
+      proto.midiport = this._getPatternMidiportMethod();
+      proto.midiport.__soundManagerInjected = true;
+      updated = true;
+    }
+
+    if (updated) {
+      const name = patternCtor.name || 'AnonymousPattern';
+      console.log(`🎛️ MIDI methods installed on Pattern prototype (${name}, reason: ${reason})`);
+    }
+
+    return updated;
+  }
+
+  _getPatternMidiMethod() {
+    if (this._patternMidiMethod) {
+      return this._patternMidiMethod;
+    }
+
+    const soundManager = this;
+    this._patternMidiMethod = function midi(portName) {
+      return this.fmap((value, meta = {}) => {
+        const targetPort = portName ?? meta?.context?.midiport ?? null;
+        soundManager._processPatternValueForMIDI(value, meta?.time, targetPort);
+        return value;
+      });
+    };
+    return this._patternMidiMethod;
+  }
+
+  _getPatternMidiportMethod() {
+    if (this._patternMidiportMethod) {
+      return this._patternMidiportMethod;
+    }
+
+    this._patternMidiportMethod = function midiport(port) {
+      return this.fmap((value) => {
+        if (value && typeof value === 'object') {
+          value.midiport = port;
+        }
+        return value;
+      });
+    };
+    return this._patternMidiportMethod;
+  }
+
+  _processPatternValueForMIDI(value, time, targetPort) {
+    const midiMessage = this._convertValueToMidiMessage(value, time);
+    if (!midiMessage) {
+      return;
+    }
+
+    const sender = this._getMidiOutputForPattern(targetPort);
+    if (sender) {
+      try {
+        sender(midiMessage);
+      } catch (error) {
+        console.warn('⚠️ MIDI send error:', error, midiMessage);
+      }
+    } else if (!this._midiOutputMissingWarned) {
+      this._midiOutputMissingWarned = true;
+      console.warn('⚠️ MIDI output handler not available. Select a MIDI output or enable WebMidi.');
+    }
+  }
+
+  _getMidiOutputForPattern(targetPort) {
+    const scheduler = window.strudel?.scheduler;
+    const webaudio = scheduler?.webaudio || window.strudel?.webaudio;
+
+    if (webaudio && typeof webaudio.midiOutput === 'function') {
+      return (message) => webaudio.midiOutput(message);
+    }
+
+    if (this.midiEnabled && typeof this.sendMIDIMessageToPort === 'function') {
+      if (targetPort && this.midiOutputs && this.midiOutputs.has(targetPort)) {
+        return (message) => this.sendMIDIMessageToPort(message, targetPort);
+      }
+    }
+
+    if (this.midiEnabled && typeof this.sendMIDIMessage === 'function') {
+      return (message) => this.sendMIDIMessage(message);
+    }
+
+    return null;
+  }
+
+  _convertValueToMidiMessage(value, time = 0) {
+    let note = null;
+    let velocity = 127;
+    let channel = 0;
+
+    if (value && typeof value === 'object') {
+      if (value.note !== undefined) {
+        note = value.note;
+      } else if (value.number !== undefined) {
+        note = value.number;
+      } else if (value.midi !== undefined) {
+        note = value.midi;
+      }
+
+      if (value.velocity !== undefined) {
+        velocity = value.velocity;
+      }
+
+      if (value.channel !== undefined) {
+        channel = value.channel;
+      } else if (value.port !== undefined) {
+        channel = value.port;
+      }
+    } else if (typeof value === 'number') {
+      note = value;
+    } else if (typeof value === 'string') {
+      note = this._noteNameToMidi(value);
+    }
+
+    if (typeof note !== 'number' || Number.isNaN(note)) {
+      return null;
+    }
+
+    return {
+      type: 'noteOn',
+      note: Math.round(note),
+      velocity: Math.max(1, Math.min(127, Math.round(velocity))),
+      channel: Math.max(0, Math.min(15, Math.round(channel))),
+      time
+    };
+  }
+
+  _noteNameToMidi(noteName) {
+    if (!noteName || typeof noteName !== 'string') {
+      return null;
+    }
+
+    try {
+      const info = Note.get(noteName);
+      if (info && typeof info.midi === 'number') {
+        return Math.round(info.midi);
+      }
+    } catch (error) {
+      // Ignore tonal conversion errors
+    }
+
+    return null;
+  }
   
   /**
    * Get available MIDI outputs
@@ -7656,93 +7734,42 @@ class SoundManager {
    * They should be available when midiOutput is passed to initStrudel
    */
   async ensureMIDIFunctionsAvailable() {
-    // Ensure Strudel modules are ready so we can safely inspect helpers
+    if (!this.midiEnabled) {
+      return;
+    }
+
     try {
       await getStrudelModules();
     } catch (moduleError) {
       console.warn('⚠️ Unable to load Strudel modules for MIDI check:', moduleError);
     }
 
-    try {
-      // Check if MIDI functions are available by testing if .midi() exists on a pattern.
-      // Use the global note() helper (or the imported one) directly to avoid Strudel REPL warnings.
-      const noteFn = typeof globalThis.note === 'function'
-        ? (...args) => globalThis.note(...args)
-        : (coreModule && typeof coreModule.note === 'function'
-            ? (...args) => coreModule.note(...args)
-            : null);
+    const noteFn = typeof globalThis.note === 'function'
+      ? (...args) => globalThis.note(...args)
+      : null;
 
-      let midiAvailable = false;
-
-      if (noteFn) {
-        try {
-          const testPattern = noteFn('c');
-          midiAvailable = !!testPattern && typeof testPattern.midi === 'function';
-        } catch (patternError) {
-          console.warn('⚠️ Could not create test pattern for MIDI check:', patternError?.message || patternError);
-          midiAvailable = false;
-        }
-      } else {
-        console.warn('⚠️ note() helper not available for MIDI check');
+    const testMidiAvailability = () => {
+      if (!noteFn) {
+        return false;
       }
-
-      if (!midiAvailable) {
-        console.log('📦 MIDI functions not available - checking webaudio MIDI setup...');
-        
-        // Check if webaudio has MIDI support enabled
-        const scheduler = window.strudel?.scheduler;
-        if (scheduler && scheduler.webaudio) {
-          const webaudio = scheduler.webaudio;
-          console.log('✅ webaudio found in scheduler');
-          
-          // Check if MIDI output handler is set
-          if (webaudio.midiOutput) {
-            console.log('✅ MIDI output handler found in webaudio');
-            console.log('ℹ️ MIDI modifiers (.midi(), .midiport()) should be available');
-            console.log('ℹ️ If they are not, this may be a Strudel version issue');
-            console.log('ℹ️ Try: note("c").midi() in the console to test');
-          } else {
-            console.warn('⚠️ MIDI output handler not found in webaudio');
-            console.warn('   This means MIDI modifiers may not be available');
-            console.warn('   We passed midiOutput to initStrudel, but it may not have been applied');
-            
-            // Try to set it manually
-            if (this.midiEnabled) {
-              webaudio.midiOutput = (message) => {
-                this.sendMIDIMessage(message);
-              };
-              console.log('✅ Manually set webaudio.midiOutput handler');
-            }
-          }
-        } else {
-          console.warn('⚠️ webaudio not found in scheduler');
-        }
-        
-        // Test again after a short delay by recreating the test pattern
-        await new Promise(resolve => setTimeout(resolve, 500));
-        let midiAvailableAfter = false;
-        if (noteFn) {
-          try {
-            const testPattern = noteFn('c');
-            midiAvailableAfter = !!testPattern && typeof testPattern.midi === 'function';
-          } catch (patternError) {
-            midiAvailableAfter = false;
-          }
-        }
-        if (midiAvailableAfter) {
-          console.log('✅ MIDI functions now available');
-        } else {
-          console.warn('⚠️ MIDI functions still not available');
-          console.warn('   MIDI modifiers (.midi(), .midiport()) are pattern methods from @strudel/webaudio');
-          console.warn('   They should be available when midiOutput is passed to initStrudel');
-          console.warn('   This may indicate a Strudel version compatibility issue');
-          console.warn('   Try updating @strudel/webaudio to the latest version');
-        }
-      } else {
-        console.log('✅ MIDI functions verified and available');
+      try {
+        const testPattern = noteFn('c');
+        return !!testPattern && typeof testPattern.midi === 'function';
+      } catch (error) {
+        return false;
       }
-    } catch (error) {
-      console.warn('⚠️ Error checking MIDI functions:', error);
+    };
+
+    if (!testMidiAvailability()) {
+      this.ensurePatternMidiMethodsRegistered('ensureMIDIFunctionsAvailable');
+    }
+
+    if (testMidiAvailability()) {
+      console.log('✅ MIDI pattern modifiers are available');
+    } else {
+      console.warn('⚠️ MIDI pattern modifiers (.midi(), .midiport()) are still unavailable');
+      console.warn('   Patterns using .midi() will fail until the modifiers are registered');
+      console.warn('   Please verify that WebMidi is enabled and try selecting a MIDI output again');
     }
   }
 
