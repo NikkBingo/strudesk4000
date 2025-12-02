@@ -4148,33 +4148,10 @@ class SoundManager {
                     }
                   }
                   
-                  // If still not found, try to create webaudio using the stored factory
-                  if (!webaudio && this.strudelOutputFactory && scheduler) {
-                    console.log('   ⚠️ webaudio not found, attempting to create using webaudioOutput factory...');
-                    try {
-                      // The webaudioOutput factory might need to be called with the scheduler and audioContext
-                      const createdOutput = this.strudelOutputFactory({
-                        scheduler: scheduler,
-                        audioContext: this.audioContext,
-                        getTime: () => this.audioContext ? this.audioContext.currentTime : 0,
-                        midiOutput: (message) => {
-                          if (this.midiEnabled && this.selectedMidiOutput) {
-                            this.sendMIDIMessage(message);
-                          }
-                        }
-                      });
-                      if (createdOutput && typeof createdOutput.midiOutput === 'function') {
-                        console.log('   ✅ Created webaudio output using factory');
-                        webaudio = createdOutput;
-                        window.strudel.webaudio = webaudio;
-                        // Try to attach it to scheduler
-                        if (scheduler && !scheduler.webaudio) {
-                          scheduler.webaudio = webaudio;
-                        }
-                      }
-                    } catch (factoryError) {
-                      console.warn('   ⚠️ Failed to create webaudio using factory:', factoryError);
-                    }
+                  // Skip trying to create webaudio using factory - it's causing errors
+                  // We don't actually need webaudio since we're using soundManager fallback for MIDI
+                  if (!webaudio) {
+                    console.log('   ℹ️ webaudio not found, but MIDI will work via soundManager fallback');
                   }
                   
                   console.log('🔍 Checking for scheduler/webaudio after delay:', {
@@ -4182,191 +4159,33 @@ class SoundManager {
                     hasWebaudio: !!webaudio,
                     midiOutputType: webaudio ? typeof webaudio.midiOutput : 'N/A',
                     schedulerKeys: scheduler ? Object.keys(scheduler).slice(0, 10) : [],
-                    strudelContextKeys: strudelContext ? Object.keys(strudelContext).slice(0, 10) : []
+                    strudelContextKeys: strudelContext ? Object.keys(strudelContext).slice(0, 10) : [],
+                    hasSoundManager: !!window.soundManager,
+                    hasMidiOutputs: !!(window.soundManager && window.soundManager.midiOutputs),
+                    midiOutputsCount: window.soundManager && window.soundManager.midiOutputs ? window.soundManager.midiOutputs.size : 0
                   });
                   
-                  // Expose webaudio module to REPL and try to ensure MIDI methods are registered
+                  // Verify MIDI methods are registered in REPL context
+                  // Note: They should already be registered early (before initStrudel), but verify here
                   await replInstance.evaluate(`
                   (function() {
                     // Verify MIDI methods are available on Pattern.prototype
                     if (typeof Pattern !== 'undefined' && Pattern.prototype) {
                       const hasMidi = typeof Pattern.prototype.midi === 'function';
                       const hasMidiport = typeof Pattern.prototype.midiport === 'function';
-                      console.log('MIDI methods on Pattern.prototype:', { midi: hasMidi, midiport: hasMidiport });
+                      console.log('🔍 MIDI methods on Pattern.prototype:', { midi: hasMidi, midiport: hasMidiport });
                       
-                      if (!hasMidi || !hasMidiport) {
-                        console.warn('⚠️ MIDI methods not found on Pattern.prototype.');
-                        console.warn('   Attempting to manually register MIDI methods...');
-                        
-                        // Check if webaudio is available and has midiOutput
-                        const scheduler = window.strudel?.scheduler;
-                        const webaudio = scheduler?.webaudio || window.strudel?.webaudio;
-                        console.log('   Checking webaudio:', {
-                          hasScheduler: !!scheduler,
-                          hasWebaudio: !!webaudio,
-                          midiOutputType: webaudio ? typeof webaudio.midiOutput : 'N/A'
-                        });
-                        
-                        // Always register MIDI methods directly on Pattern.prototype
-                        // We'll use the midiOutput handler we set up, even if webaudio isn't directly accessible
-                        console.log('   Registering MIDI methods directly on Pattern.prototype...');
-                        try {
-                          if (!Pattern.prototype.midi) {
-                            Pattern.prototype.midi = function(portName) {
-                              // Return a new pattern that sends MIDI messages to the specified port
-                              // portName can be a string like 'IAC Driver' or undefined to use default
-                              return this.fmap((value, { time, context }) => {
-                                // Get the MIDI port name from arguments or context
-                                const targetPort = portName || context?.midiport || null;
-                                
-                                // Try to get midiOutput from various sources
-                                let midiOutput = null;
-                                
-                                // First try webaudio if available
-                                const scheduler = window.strudel?.scheduler;
-                                const webaudio = scheduler?.webaudio || window.strudel?.webaudio;
-                                if (webaudio && typeof webaudio.midiOutput === 'function') {
-                                  midiOutput = webaudio.midiOutput;
-                                } 
-                                // Fallback to soundManager's sendMIDIMessage with port selection
-                                else if (window.soundManager && typeof window.soundManager.sendMIDIMessage === 'function') {
-                                  // Get the MIDI output for the specified port
-                                  let outputToUse = null;
-                                  if (targetPort && window.soundManager.midiOutputs) {
-                                    outputToUse = window.soundManager.midiOutputs.get(targetPort);
-                                  } else if (window.soundManager.selectedMidiOutput) {
-                                    outputToUse = window.soundManager.selectedMidiOutput;
-                                  }
-                                  
-                                  if (outputToUse) {
-                                    midiOutput = (message) => {
-                                      if (window.soundManager.midiEnabled) {
-                                        // Use sendMIDIMessageToPort to send to specific port
-                                        window.soundManager.sendMIDIMessageToPort(message, targetPort);
-                                      }
-                                    };
-                                  } else if (window.soundManager.selectedMidiOutput) {
-                                    // Fallback to default output
-                                    midiOutput = (message) => {
-                                      if (window.soundManager.midiEnabled) {
-                                        window.soundManager.sendMIDIMessage(message);
-                                      }
-                                    };
-                                  }
-                                }
-                                
-                                if (midiOutput && value) {
-                                  // Convert value to MIDI message format
-                                  let note = null;
-                                  let velocity = 127;
-                                  let channel = 0;
-                                  
-                                  // Handle different value types
-                                  if (typeof value === 'object') {
-                                    // Value is already a note object
-                                    if (value.note !== undefined) {
-                                      note = value.note;
-                                    } else if (value.number !== undefined) {
-                                      note = value.number;
-                                    }
-                                    if (value.velocity !== undefined) {
-                                      velocity = value.velocity;
-                                    }
-                                    if (value.channel !== undefined) {
-                                      channel = value.channel;
-                                    } else if (value.port !== undefined) {
-                                      channel = value.port;
-                                    }
-                                  } else if (typeof value === 'string') {
-                                    // Value is a note name like "C4" - convert to MIDI number
-                                    try {
-                                      // Try to use Tonal or similar library if available
-                                      if (window.Note && typeof window.Note.get === 'function') {
-                                        const noteInfo = window.Note.get(value);
-                                        if (noteInfo && typeof noteInfo.midi === 'number') {
-                                          note = noteInfo.midi;
-                                        }
-                                      } else if (window.note && typeof window.note === 'function') {
-                                        // Strudel's note() function might return a pattern
-                                        const notePattern = window.note(value);
-                                        if (notePattern && typeof notePattern.queryArc === 'function') {
-                                          const events = notePattern.queryArc(0, 1);
-                                          if (events && events.length > 0 && events[0].value) {
-                                            const firstEvent = events[0].value;
-                                            if (typeof firstEvent === 'object' && firstEvent.note !== undefined) {
-                                              note = firstEvent.note;
-                                            } else if (typeof firstEvent === 'number') {
-                                              note = firstEvent;
-                                            }
-                                          }
-                                        }
-                                      }
-                                    } catch (e) {
-                                      // Ignore conversion errors
-                                    }
-                                  } else if (typeof value === 'number') {
-                                    // Value is already a MIDI note number
-                                    note = value;
-                                  }
-                                  
-                                  // Send MIDI message if we have a note
-                                  if (note !== null) {
-                                    try {
-                                      midiOutput({
-                                        type: 'noteOn',
-                                        note: note,
-                                        velocity: Math.max(1, Math.min(127, velocity)),
-                                        channel: Math.max(0, Math.min(15, channel)),
-                                        time: time
-                                      });
-                                    } catch (e) {
-                                      // Ignore MIDI errors
-                                      if (Math.random() < 0.01) console.warn('⚠️ MIDI send error:', e);
-                                    }
-                                  }
-                                }
-                                return value;
-                              });
-                            };
-                            console.log('✅ Manually registered Pattern.prototype.midi()');
-                          }
-                          
-                          if (!Pattern.prototype.midiport) {
-                            Pattern.prototype.midiport = function(port) {
-                              // Return a new pattern that uses the specified MIDI port
-                              return this.fmap((value, { time, context }) => {
-                                if (value && typeof value === 'object') {
-                                  value.midiport = port;
-                                }
-                                return value;
-                              });
-                            };
-                            console.log('✅ Manually registered Pattern.prototype.midiport()');
-                          }
-                          
-                          // Verify they're now available
-                          const hasMidiNow = typeof Pattern.prototype.midi === 'function';
-                          const hasMidiportNow = typeof Pattern.prototype.midiport === 'function';
-                          console.log('   Verification after registration:', { midi: hasMidiNow, midiport: hasMidiportNow });
-                          if (hasMidiNow && hasMidiportNow) {
-                            console.log('✅ MIDI methods (.midi(), .midiport()) are now available on patterns');
-                          } else {
-                            console.warn('⚠️ Failed to manually register MIDI methods - methods not found after assignment');
-                          }
-                        } catch (regError) {
-                          console.error('❌ Error during manual MIDI method registration:', regError);
-                        }
-                        
-                        if (!webaudio) {
-                          console.warn('   webaudio not found or midiOutput not available');
-                          console.warn('   scheduler:', !!scheduler);
-                          console.warn('   webaudio:', !!webaudio);
-                          if (webaudio) {
-                            console.warn('   webaudio.midiOutput type:', typeof webaudio.midiOutput);
-                          }
+                      if (hasMidi && hasMidiport) {
+                        console.log('✅ MIDI methods (.midi(), .midiport()) are available on patterns');
+                        console.log('   MIDI will work via soundManager fallback even without webaudio');
+                        if (window.soundManager && window.soundManager.midiOutputs) {
+                          const ports = Array.from(window.soundManager.midiOutputs.keys());
+                          console.log('   Available MIDI ports:', ports.length > 0 ? ports.join(', ') : 'none');
                         }
                       } else {
-                        console.log('✅ MIDI methods (.midi(), .midiport()) are available on patterns');
+                        console.warn('⚠️ MIDI methods not found on Pattern.prototype.');
+                        console.warn('   They should have been registered early (before initStrudel).');
+                        console.warn('   This may indicate a registration timing issue.');
                       }
                     } else {
                       console.warn('⚠️ Pattern class not found in REPL context');
