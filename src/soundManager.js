@@ -3835,9 +3835,13 @@ class SoundManager {
           const Pattern = coreModule.Pattern;
           if (Pattern && Pattern.prototype) {
             if (!Pattern.prototype.midi) {
-              Pattern.prototype.midi = function() {
-                // Return a new pattern that sends MIDI messages
+              Pattern.prototype.midi = function(portName) {
+                // Return a new pattern that sends MIDI messages to the specified port
+                // portName can be a string like 'IAC Driver' or undefined to use default
                 return this.fmap((value, { time, context }) => {
+                  // Get the MIDI port name from arguments or context
+                  const targetPort = portName || context?.midiport || null;
+                  
                   // Try to get midiOutput from various sources
                   let midiOutput = null;
                   
@@ -3847,33 +3851,111 @@ class SoundManager {
                   if (webaudio && typeof webaudio.midiOutput === 'function') {
                     midiOutput = webaudio.midiOutput;
                   } 
-                  // Fallback to soundManager's sendMIDIMessage
+                  // Fallback to soundManager's sendMIDIMessage with port selection
                   else if (window.soundManager && typeof window.soundManager.sendMIDIMessage === 'function') {
-                    midiOutput = (message) => {
-                      if (window.soundManager.midiEnabled && window.soundManager.selectedMidiOutput) {
-                        window.soundManager.sendMIDIMessage(message);
-                      }
-                    };
+                    // Get the MIDI output for the specified port
+                    let outputToUse = null;
+                    if (targetPort && window.soundManager.midiOutputs) {
+                      outputToUse = window.soundManager.midiOutputs.get(targetPort);
+                    } else if (window.soundManager.selectedMidiOutput) {
+                      outputToUse = window.soundManager.selectedMidiOutput;
+                    }
+                    
+                                  if (outputToUse) {
+                                    midiOutput = (message) => {
+                                      if (window.soundManager.midiEnabled) {
+                                        // Use sendMIDIMessageToPort to send to specific port
+                                        window.soundManager.sendMIDIMessageToPort(message, targetPort);
+                                      }
+                                    };
+                                  } else if (window.soundManager.selectedMidiOutput) {
+                                    // Fallback to default output
+                                    midiOutput = (message) => {
+                                      if (window.soundManager.midiEnabled) {
+                                        window.soundManager.sendMIDIMessage(message);
+                                      }
+                                    };
+                                  }
                   }
                   
-                  if (midiOutput && value && typeof value === 'object') {
-                    // Extract MIDI note from value if it's a note pattern
-                    if (value.note !== undefined) {
-                      const note = value.note;
-                      const velocity = value.velocity || 127;
-                      const channel = value.channel || 0;
+                  if (midiOutput && value) {
+                    // Convert value to MIDI message format
+                    let note = null;
+                    let velocity = 127;
+                    let channel = 0;
+                    
+                    // Handle different value types
+                    if (typeof value === 'object' && value !== null) {
+                      // Value is already a note object
+                      if (value.note !== undefined) {
+                        note = value.note;
+                      } else if (value.number !== undefined) {
+                        note = value.number;
+                      } else if (value.midi !== undefined) {
+                        note = value.midi;
+                      }
+                      if (value.velocity !== undefined) {
+                        velocity = value.velocity;
+                      }
+                      if (value.channel !== undefined) {
+                        channel = value.channel;
+                      } else if (value.port !== undefined) {
+                        channel = value.port;
+                      }
+                    } else if (typeof value === 'string') {
+                      // Value is a note name like "C4" - convert to MIDI number
                       try {
-                        midiOutput({
+                        // Try to use Tonal or similar library if available
+                        if (window.Note && typeof window.Note.get === 'function') {
+                          const noteInfo = window.Note.get(value);
+                          if (noteInfo && typeof noteInfo.midi === 'number') {
+                            note = noteInfo.midi;
+                          }
+                        } else if (window.note && typeof window.note === 'function') {
+                          // Strudel's note() function might return a pattern
+                          const notePattern = window.note(value);
+                          if (notePattern && typeof notePattern.queryArc === 'function') {
+                            const events = notePattern.queryArc(0, 1);
+                            if (events && events.length > 0 && events[0].value) {
+                              const firstEvent = events[0].value;
+                              if (typeof firstEvent === 'object' && firstEvent.note !== undefined) {
+                                note = firstEvent.note;
+                              } else if (typeof firstEvent === 'number') {
+                                note = firstEvent;
+                              }
+                            }
+                          }
+                        }
+                      } catch (e) {
+                        // Ignore conversion errors
+                      }
+                    } else if (typeof value === 'number') {
+                      // Value is already a MIDI note number
+                      note = value;
+                    }
+                    
+                    // Send MIDI message if we have a note
+                    if (note !== null && typeof note === 'number') {
+                      try {
+                        const midiMessage = {
                           type: 'noteOn',
                           note: note,
-                          velocity: velocity,
-                          channel: channel,
+                          velocity: Math.max(1, Math.min(127, velocity)),
+                          channel: Math.max(0, Math.min(15, channel)),
                           time: time
-                        });
+                        };
+                        midiOutput(midiMessage);
+                        if (Math.random() < 0.05) {
+                          console.log(`🎹 MIDI sent: note=${note}, port=${targetPort || 'default'}, channel=${midiMessage.channel}`);
+                        }
                       } catch (e) {
-                        // Ignore MIDI errors
+                        console.warn('⚠️ MIDI send error:', e, { note, port: targetPort, value });
                       }
+                    } else if (value && Math.random() < 0.01) {
+                      console.log('🔍 MIDI: value not converted to note:', { value, type: typeof value, hasNote: value?.note, hasNumber: value?.number });
                     }
+                  } else if (Math.random() < 0.01) {
+                    console.log('🔍 MIDI: midiOutput or value missing:', { hasMidiOutput: !!midiOutput, hasValue: !!value, port: targetPort });
                   }
                   return value;
                 });
@@ -4130,10 +4212,13 @@ class SoundManager {
                         console.log('   Registering MIDI methods directly on Pattern.prototype...');
                         try {
                           if (!Pattern.prototype.midi) {
-                            Pattern.prototype.midi = function() {
-                              // Return a new pattern that sends MIDI messages
-                              // Use the midiOutput handler we set up via window.soundManager
+                            Pattern.prototype.midi = function(portName) {
+                              // Return a new pattern that sends MIDI messages to the specified port
+                              // portName can be a string like 'IAC Driver' or undefined to use default
                               return this.fmap((value, { time, context }) => {
+                                // Get the MIDI port name from arguments or context
+                                const targetPort = portName || context?.midiport || null;
+                                
                                 // Try to get midiOutput from various sources
                                 let midiOutput = null;
                                 
@@ -4143,31 +4228,100 @@ class SoundManager {
                                 if (webaudio && typeof webaudio.midiOutput === 'function') {
                                   midiOutput = webaudio.midiOutput;
                                 } 
-                                // Fallback to soundManager's sendMIDIMessage
+                                // Fallback to soundManager's sendMIDIMessage with port selection
                                 else if (window.soundManager && typeof window.soundManager.sendMIDIMessage === 'function') {
-                                  midiOutput = (message) => {
-                                    if (window.soundManager.midiEnabled && window.soundManager.selectedMidiOutput) {
-                                      window.soundManager.sendMIDIMessage(message);
-                                    }
-                                  };
+                                  // Get the MIDI output for the specified port
+                                  let outputToUse = null;
+                                  if (targetPort && window.soundManager.midiOutputs) {
+                                    outputToUse = window.soundManager.midiOutputs.get(targetPort);
+                                  } else if (window.soundManager.selectedMidiOutput) {
+                                    outputToUse = window.soundManager.selectedMidiOutput;
+                                  }
+                                  
+                                  if (outputToUse) {
+                                    midiOutput = (message) => {
+                                      if (window.soundManager.midiEnabled) {
+                                        // Use sendMIDIMessageToPort to send to specific port
+                                        window.soundManager.sendMIDIMessageToPort(message, targetPort);
+                                      }
+                                    };
+                                  } else if (window.soundManager.selectedMidiOutput) {
+                                    // Fallback to default output
+                                    midiOutput = (message) => {
+                                      if (window.soundManager.midiEnabled) {
+                                        window.soundManager.sendMIDIMessage(message);
+                                      }
+                                    };
+                                  }
                                 }
                                 
-                                if (midiOutput && value && typeof value === 'object') {
-                                  // Extract MIDI note from value if it's a note pattern
-                                  if (value.note !== undefined) {
-                                    const note = value.note;
-                                    const velocity = value.velocity || 127;
-                                    const channel = value.channel || 0;
+                                if (midiOutput && value) {
+                                  // Convert value to MIDI message format
+                                  let note = null;
+                                  let velocity = 127;
+                                  let channel = 0;
+                                  
+                                  // Handle different value types
+                                  if (typeof value === 'object') {
+                                    // Value is already a note object
+                                    if (value.note !== undefined) {
+                                      note = value.note;
+                                    } else if (value.number !== undefined) {
+                                      note = value.number;
+                                    }
+                                    if (value.velocity !== undefined) {
+                                      velocity = value.velocity;
+                                    }
+                                    if (value.channel !== undefined) {
+                                      channel = value.channel;
+                                    } else if (value.port !== undefined) {
+                                      channel = value.port;
+                                    }
+                                  } else if (typeof value === 'string') {
+                                    // Value is a note name like "C4" - convert to MIDI number
+                                    try {
+                                      // Try to use Tonal or similar library if available
+                                      if (window.Note && typeof window.Note.get === 'function') {
+                                        const noteInfo = window.Note.get(value);
+                                        if (noteInfo && typeof noteInfo.midi === 'number') {
+                                          note = noteInfo.midi;
+                                        }
+                                      } else if (window.note && typeof window.note === 'function') {
+                                        // Strudel's note() function might return a pattern
+                                        const notePattern = window.note(value);
+                                        if (notePattern && typeof notePattern.queryArc === 'function') {
+                                          const events = notePattern.queryArc(0, 1);
+                                          if (events && events.length > 0 && events[0].value) {
+                                            const firstEvent = events[0].value;
+                                            if (typeof firstEvent === 'object' && firstEvent.note !== undefined) {
+                                              note = firstEvent.note;
+                                            } else if (typeof firstEvent === 'number') {
+                                              note = firstEvent;
+                                            }
+                                          }
+                                        }
+                                      }
+                                    } catch (e) {
+                                      // Ignore conversion errors
+                                    }
+                                  } else if (typeof value === 'number') {
+                                    // Value is already a MIDI note number
+                                    note = value;
+                                  }
+                                  
+                                  // Send MIDI message if we have a note
+                                  if (note !== null) {
                                     try {
                                       midiOutput({
                                         type: 'noteOn',
                                         note: note,
-                                        velocity: velocity,
-                                        channel: channel,
+                                        velocity: Math.max(1, Math.min(127, velocity)),
+                                        channel: Math.max(0, Math.min(15, channel)),
                                         time: time
                                       });
                                     } catch (e) {
                                       // Ignore MIDI errors
+                                      if (Math.random() < 0.01) console.warn('⚠️ MIDI send error:', e);
                                     }
                                   }
                                 }
@@ -7495,6 +7649,43 @@ class SoundManager {
    * Send MIDI message to selected output
    * @param {Object} message - MIDI message object with type, channel, note, velocity, etc.
    */
+  /**
+   * Send MIDI message to a specific port
+   * @param {Object} message - MIDI message object
+   * @param {string} portName - Optional port name, uses selectedMidiOutput if not provided
+   */
+  sendMIDIMessageToPort(message, portName = null) {
+    if (!this.midiEnabled) {
+      return;
+    }
+    
+    // Get the output to use
+    let outputToUse = null;
+    if (portName && this.midiOutputs && this.midiOutputs.has(portName)) {
+      outputToUse = this.midiOutputs.get(portName);
+    } else if (this.selectedMidiOutput) {
+      outputToUse = this.selectedMidiOutput;
+    }
+    
+    if (!outputToUse) {
+      if (!this._midiFallbackLogged) {
+        console.log('ℹ️ MIDI message received but no hardware output is configured yet. Message will be ignored until a MIDI port is selected.');
+        this._midiFallbackLogged = true;
+      }
+      return;
+    }
+    this._midiFallbackLogged = false;
+    
+    // Use the specific output
+    const originalOutput = this.selectedMidiOutput;
+    this.selectedMidiOutput = outputToUse;
+    try {
+      this.sendMIDIMessage(message);
+    } finally {
+      this.selectedMidiOutput = originalOutput;
+    }
+  }
+
   sendMIDIMessage(message) {
     if (!this.midiEnabled || !this.selectedMidiOutput) {
       if (!this._midiFallbackLogged) {
