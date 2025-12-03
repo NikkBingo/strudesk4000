@@ -3368,11 +3368,17 @@ class InteractiveSoundApp {
     this.lastCutoffUpdate = null;
     this.currentResonanceValue = null;
     this.lastResonanceUpdate = null;
+    this.currentVolumeValue = null;
+    this.lastVolumeUpdate = null;
+    this.currentPanValue = null;
+    this.lastPanUpdate = null;
     this.chaospadSettings = {
       minFrequency: soundManager.masterFilterMinHz || 80,
       maxFrequency: soundManager.masterFilterMaxHz || 8000,
       minResonance: soundManager.masterFilterMinQ || 0.1,
-      maxResonance: soundManager.masterFilterMaxQ || 5
+      maxResonance: soundManager.masterFilterMaxQ || 5,
+      xAxis: { effect: 'cutoff', min: soundManager.masterFilterMinHz || 80, max: soundManager.masterFilterMaxHz || 8000 },
+      yAxis: { effect: 'resonance', min: soundManager.masterFilterMinQ || 0.1, max: soundManager.masterFilterMaxQ || 5 }
     };
     this.chaospadDefaults = {
       cutoff: Math.min(this.chaospadSettings.maxFrequency, Math.max(this.chaospadSettings.minFrequency, soundManager.masterFilterFrequency || 4040)),
@@ -6164,45 +6170,159 @@ class InteractiveSoundApp {
     const clampedHorizontal = Math.max(0, Math.min(1, Number.isFinite(horizontalPercentage) ? horizontalPercentage : 0));
     const clampedVertical = Math.max(0, Math.min(1, Number.isFinite(verticalPercentage) ? verticalPercentage : 0));
 
-    const {
-      minFrequency,
-      maxFrequency,
-      minResonance,
-      maxResonance
-    } = this.chaospadSettings;
-    
-    const cutoffValue = Math.round(minFrequency + (maxFrequency - minFrequency) * clampedHorizontal);
+    // Get axis configurations from settings
+    const xAxis = this.chaospadSettings.xAxis || { effect: 'cutoff', min: 80, max: 8000 };
+    const yAxis = this.chaospadSettings.yAxis || { effect: 'resonance', min: 0.1, max: 5 };
 
-    // Throttle updates: only update if value changed significantly (more than 50 Hz)
-    // or if it's been more than 100ms since last update
+    // Calculate value for X axis based on configured effect
+    const xValue = xAxis.min + (xAxis.max - xAxis.min) * clampedHorizontal;
     const now = Date.now();
-    const shouldUpdate = 
-      this.currentCutoffValue === null ||
-      Math.abs(this.currentCutoffValue - cutoffValue) > 50 ||
-      (this.lastCutoffUpdate && (now - this.lastCutoffUpdate) > 100);
 
-    if (shouldUpdate) {
-      console.log(`🎛️ Chaospad [${source}]: Horizontal ${(clampedHorizontal * 100).toFixed(1)}% → ${cutoffValue} Hz`);
-      this.currentCutoffValue = cutoffValue;
-      this.lastCutoffUpdate = now;
-      soundManager.setMasterFilterFrequency(cutoffValue);
+    // Apply X axis effect
+    switch (xAxis.effect) {
+      case 'cutoff': {
+        const cutoffValue = Math.round(xValue);
+        const shouldUpdate = 
+          this.currentCutoffValue === null ||
+          Math.abs(this.currentCutoffValue - cutoffValue) > 50 ||
+          (this.lastCutoffUpdate && (now - this.lastCutoffUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Horizontal ${(clampedHorizontal * 100).toFixed(1)}% → ${cutoffValue} Hz`);
+          this.currentCutoffValue = cutoffValue;
+          this.lastCutoffUpdate = now;
+          soundManager.setMasterFilterFrequency(cutoffValue);
+        }
+        break;
+      }
+      case 'resonance': {
+        const resonanceValue = Math.round(xValue * 10) / 10;
+        const shouldUpdate =
+          this.currentResonanceValue === null ||
+          Math.abs(this.currentResonanceValue - resonanceValue) > 0.2 ||
+          (this.lastResonanceUpdate && (now - this.lastResonanceUpdate) > 120);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Horizontal ${(clampedHorizontal * 100).toFixed(1)}% → Q ${resonanceValue}`);
+          this.currentResonanceValue = resonanceValue;
+          this.lastResonanceUpdate = now;
+          soundManager.setMasterFilterResonance(resonanceValue);
+        }
+        break;
+      }
+      case 'volume': {
+        const volumeValue = Math.max(0, Math.min(1, xValue));
+        const shouldUpdate =
+          this.currentVolumeValue === null ||
+          Math.abs(this.currentVolumeValue - volumeValue) > 0.02 ||
+          (this.lastVolumeUpdate && (now - this.lastVolumeUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Horizontal ${(clampedHorizontal * 100).toFixed(1)}% → Volume ${(volumeValue * 100).toFixed(1)}%`);
+          this.currentVolumeValue = volumeValue;
+          this.lastVolumeUpdate = now;
+          soundManager.masterVolume = volumeValue;
+          if (soundManager.masterGainNode) {
+            soundManager.masterGainNode.gain.value = volumeValue;
+          }
+        }
+        break;
+      }
+      case 'pan': {
+        const panValue = Math.max(-1, Math.min(1, xValue));
+        const shouldUpdate =
+          this.currentPanValue === null ||
+          Math.abs(this.currentPanValue - panValue) > 0.05 ||
+          (this.lastPanUpdate && (now - this.lastPanUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Horizontal ${(clampedHorizontal * 100).toFixed(1)}% → Pan ${panValue.toFixed(2)}`);
+          this.currentPanValue = panValue;
+          this.lastPanUpdate = now;
+          soundManager.masterPan = panValue;
+          if (soundManager.masterPanNode) {
+            soundManager.masterPanNode.pan.value = panValue;
+          }
+        }
+        break;
+      }
     }
 
-    const resonanceValueRaw = minResonance + (maxResonance - minResonance) * clampedVertical;
-    let resonanceValue = Math.round(resonanceValueRaw * 10) / 10;
-    if (cutoffValue < 250) {
-      resonanceValue = Math.min(resonanceValue, 2.5);
-    }
-    const shouldUpdateResonance =
-      this.currentResonanceValue === null ||
-      Math.abs(this.currentResonanceValue - resonanceValue) > 0.2 ||
-      (this.lastResonanceUpdate && (now - this.lastResonanceUpdate) > 120);
+    // Calculate value for Y axis based on configured effect
+    const yValue = yAxis.min + (yAxis.max - yAxis.min) * clampedVertical;
 
-    if (shouldUpdateResonance) {
-      console.log(`🎛️ Chaospad [${source}]: Vertical ${(clampedVertical * 100).toFixed(1)}% → Q ${resonanceValue}`);
-      this.currentResonanceValue = resonanceValue;
-      this.lastResonanceUpdate = now;
-      soundManager.setMasterFilterResonance(resonanceValue);
+    // Apply Y axis effect
+    switch (yAxis.effect) {
+      case 'cutoff': {
+        const cutoffValue = Math.round(yValue);
+        const shouldUpdate = 
+          this.currentCutoffValue === null ||
+          Math.abs(this.currentCutoffValue - cutoffValue) > 50 ||
+          (this.lastCutoffUpdate && (now - this.lastCutoffUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Vertical ${(clampedVertical * 100).toFixed(1)}% → ${cutoffValue} Hz`);
+          this.currentCutoffValue = cutoffValue;
+          this.lastCutoffUpdate = now;
+          soundManager.setMasterFilterFrequency(cutoffValue);
+        }
+        break;
+      }
+      case 'resonance': {
+        let resonanceValue = Math.round(yValue * 10) / 10;
+        // Apply resonance limit if cutoff is low (legacy behavior)
+        if (this.currentCutoffValue !== null && this.currentCutoffValue < 250) {
+          resonanceValue = Math.min(resonanceValue, 2.5);
+        }
+        const shouldUpdate =
+          this.currentResonanceValue === null ||
+          Math.abs(this.currentResonanceValue - resonanceValue) > 0.2 ||
+          (this.lastResonanceUpdate && (now - this.lastResonanceUpdate) > 120);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Vertical ${(clampedVertical * 100).toFixed(1)}% → Q ${resonanceValue}`);
+          this.currentResonanceValue = resonanceValue;
+          this.lastResonanceUpdate = now;
+          soundManager.setMasterFilterResonance(resonanceValue);
+        }
+        break;
+      }
+      case 'volume': {
+        const volumeValue = Math.max(0, Math.min(1, yValue));
+        const shouldUpdate =
+          this.currentVolumeValue === null ||
+          Math.abs(this.currentVolumeValue - volumeValue) > 0.02 ||
+          (this.lastVolumeUpdate && (now - this.lastVolumeUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Vertical ${(clampedVertical * 100).toFixed(1)}% → Volume ${(volumeValue * 100).toFixed(1)}%`);
+          this.currentVolumeValue = volumeValue;
+          this.lastVolumeUpdate = now;
+          soundManager.masterVolume = volumeValue;
+          if (soundManager.masterGainNode) {
+            soundManager.masterGainNode.gain.value = volumeValue;
+          }
+        }
+        break;
+      }
+      case 'pan': {
+        const panValue = Math.max(-1, Math.min(1, yValue));
+        const shouldUpdate =
+          this.currentPanValue === null ||
+          Math.abs(this.currentPanValue - panValue) > 0.05 ||
+          (this.lastPanUpdate && (now - this.lastPanUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Vertical ${(clampedVertical * 100).toFixed(1)}% → Pan ${panValue.toFixed(2)}`);
+          this.currentPanValue = panValue;
+          this.lastPanUpdate = now;
+          soundManager.masterPan = panValue;
+          if (soundManager.masterPanNode) {
+            soundManager.masterPanNode.pan.value = panValue;
+          }
+        }
+        break;
+      }
     }
 
     this.updateChaospadVirtualGravity(clampedHorizontal, clampedVertical, source);
@@ -14940,10 +15060,20 @@ function applyChaospadSettings() {
   const xAxis = axes.x;
   const yAxis = axes.y;
   
-  // X axis controls horizontal movement (typically cutoff/frequency)
-  // Y axis controls vertical movement (typically resonance/Q)
-  // Map effects to the appropriate chaospad settings
+  // Store axis configurations so applyChaospadInputFromPercentages can use them
+  interactiveSoundAppInstance.chaospadSettings.xAxis = {
+    effect: xAxis.effect,
+    min: xAxis.min,
+    max: xAxis.max
+  };
   
+  interactiveSoundAppInstance.chaospadSettings.yAxis = {
+    effect: yAxis.effect,
+    min: yAxis.min,
+    max: yAxis.max
+  };
+  
+  // Also update legacy min/max for backward compatibility
   if (xAxis.effect === 'cutoff') {
     interactiveSoundAppInstance.chaospadSettings.minFrequency = xAxis.min;
     interactiveSoundAppInstance.chaospadSettings.maxFrequency = xAxis.max;
@@ -14953,9 +15083,6 @@ function applyChaospadSettings() {
     interactiveSoundAppInstance.chaospadSettings.minResonance = yAxis.min;
     interactiveSoundAppInstance.chaospadSettings.maxResonance = yAxis.max;
   }
-  
-  // Note: Other effects (volume, pan) would require additional implementation
-  // For now, we only support cutoff on X and resonance on Y
   
   console.log('🎛️ Chaospad settings applied:', {
     xAxis: xAxis.effect,
