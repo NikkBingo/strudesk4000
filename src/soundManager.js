@@ -9812,6 +9812,25 @@ class SoundManager {
       console.log('  scheduler.superdough:', !!scheduler.superdough);
       console.log('  scheduler keys:', Object.keys(scheduler).slice(0, 20));
       
+      // Check for webaudio property
+      if (scheduler.webaudio) {
+        console.log('  ✅ Found scheduler.webaudio!');
+        console.log('    webaudio type:', scheduler.webaudio?.constructor?.name);
+        console.log('    webaudio keys:', Object.keys(scheduler.webaudio || {}).slice(0, 20));
+        
+        // Check if webaudio has an output node
+        if (scheduler.webaudio.node && this.masterPanNode) {
+          console.log('  🎯 Found scheduler.webaudio.node (the REAL output!)');
+          try {
+            scheduler.webaudio.node.disconnect();
+            scheduler.webaudio.node.connect(this.masterPanNode);
+            console.log('✅ [PLAY-TIME CHECK] Connected scheduler.webaudio.node to masterPanNode - THIS IS THE KEY!');
+          } catch (e) {
+            console.warn('⚠️ [PLAY-TIME CHECK] Could not connect scheduler.webaudio.node:', e);
+          }
+        }
+      }
+      
       if (scheduler.superdough?.output && this.masterPanNode) {
         console.log('  ✅ Found scheduler.superdough.output');
         try {
@@ -9821,8 +9840,8 @@ class SoundManager {
         } catch (e) {
           console.warn('⚠️ [PLAY-TIME CHECK] Could not connect scheduler.superdough.output:', e);
         }
-      } else {
-        console.log('  ℹ️ scheduler.superdough.output not found - scheduler.output should already be connected');
+      } else if (!scheduler.webaudio) {
+        console.log('  ℹ️ No scheduler.superdough.output or scheduler.webaudio found');
       }
     } else {
       console.log('  ⚠️ No scheduler found at window.strudel.scheduler');
