@@ -4224,21 +4224,10 @@ class SoundManager {
           fallbackOutput.connect(this.masterPanNode);
           console.log('✅ Created fallback output (GainNode) connected to masterPanNode');
           
-          // CRITICAL: Temporarily restore real destination so initStrudel can create output
-          // initStrudel checks if destination is AudioDestinationNode to decide whether to create output
-          const realDestination = this._realDestination;
-          let destinationRestored = false;
-          
-          // Temporarily restore real destination if we've overridden it
-          if (this.audioContext.destination !== realDestination) {
-            console.log('🔄 Temporarily restoring real destination for initStrudel...');
-            Object.defineProperty(this.audioContext, 'destination', {
-              get: () => realDestination,
-              configurable: true,
-              enumerable: true
-            });
-            destinationRestored = true;
-          }
+          // CRITICAL: DO NOT restore real destination!
+          // If we do, Strudel will cache it and all audio will bypass our master chain
+          // Instead, keep masterPanNode as the destination so Strudel naturally routes through it
+          console.log('🎯 Keeping destination override active - Strudel will see masterPanNode as destination');
           
           const initOptions = {
             audioContext: this.audioContext,
@@ -4255,56 +4244,19 @@ class SoundManager {
           };
           console.log('🎚️ initStrudel options:', Object.keys(initOptions));
           console.log('📍 withLoc enabled for code highlighting');
-          console.log('🎚️ audioContext.destination (temporarily real):', this.audioContext.destination?.constructor?.name || typeof this.audioContext.destination);
+          console.log('🎚️ audioContext.destination (overridden to masterPanNode):', this.audioContext.destination?.constructor?.name || typeof this.audioContext.destination);
           
           const strudelContext = await initStrudel(initOptions);
           
-          // Restore destination override after initStrudel completes
-          if (destinationRestored) {
-            console.log('🔄 Restoring destination override to masterPanNode...');
-            Object.defineProperty(this.audioContext, 'destination', {
-              get: () => this.masterPanNode,
-              configurable: true,
-              enumerable: true
-            });
-            console.log('✅ Destination override restored');
-            
-            // If output was NOT created by initStrudel, use our fallback
-            if (!strudelContext.scheduler?.output) {
-              console.log('🔧 initStrudel did not create output, using fallback');
-              strudelContext.scheduler.output = fallbackOutput;
-              console.log('✅ Assigned fallback output to scheduler.output');
-            } else if (strudelContext.scheduler?.output) {
-              // If output was created, we need to reconnect it to masterPanNode
-              // The output might connect through our AudioNode.prototype.connect hijacking,
-              // but if it was already connected during initStrudel, we need to reconnect it
-              const output = strudelContext.scheduler.output;
-              // Try multiple ways to find the actual AudioNode
-              const outputNode = output.output || output.outputNode || 
-                                (typeof output.connect === 'function' ? output : null);
-              
-              if (outputNode && typeof outputNode.disconnect === 'function') {
-                try {
-                  // Disconnect from real destination and connect to masterPanNode
-                  outputNode.disconnect();
-                  // Use __originalConnect to bypass our hijacking and connect directly
-                  // This ensures it connects to masterPanNode even if our hijacking routes it
-                  if (outputNode.__originalConnect) {
-                    outputNode.__originalConnect(this.masterPanNode);
-                  } else {
-                    outputNode.connect(this.masterPanNode);
-                  }
-                  console.log('✅ Reconnected scheduler.output to masterPanNode');
-                } catch (e) {
-                  console.warn('⚠️ Could not reconnect scheduler.output:', e);
-                  // If reconnection fails, the output might still work through our connect hijacking
-                  console.log('ℹ️ Output will route through masterPanNode via connect hijacking');
-                }
-              } else {
-                console.log('ℹ️ scheduler.output structure:', typeof output, output?.constructor?.name);
-                console.log('ℹ️ Output will route through masterPanNode via connect hijacking');
-              }
-            }
+          // Since we kept the destination override active, Strudel should have automatically
+          // created nodes that connect to masterPanNode (which it sees as the destination)
+          // Just ensure scheduler has output
+          if (!strudelContext.scheduler?.output) {
+            console.log('🔧 initStrudel did not create output, using fallback');
+            strudelContext.scheduler.output = fallbackOutput;
+            console.log('✅ Assigned fallback output to scheduler.output');
+          } else {
+            console.log('✅ Strudel created scheduler.output, and it should route through masterPanNode naturally');
           }
           
           replInstance = strudelContext.repl || strudelContext;
