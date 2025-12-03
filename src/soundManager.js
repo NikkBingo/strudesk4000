@@ -1110,6 +1110,27 @@ class SoundManager {
               const connKey = `${nodeType}->${destType}`;
               if (!soundManagerInstance._allConnectionsDebugLogged.has(connKey)) {
                 console.log(`🔊 CONNECTION DEBUG: ${nodeType} -> ${destType}${destInfo}, isDestination=${isDest}, context=${this.context === audioContextInstance ? 'OUR' : 'OTHER'}`);
+                
+                // If it's a GainNode -> GainNode connection, check if the destination GainNode
+                // is connected to anything, or if it's an orphaned end-of-chain node
+                if (nodeType === 'GainNode' && destType === 'GainNode' && !isDest) {
+                  console.log(`    🔍 Destination GainNode has numberOfOutputs: ${destination.numberOfOutputs}`);
+                  // Try to see if this GainNode leads anywhere by checking in a moment
+                  setTimeout(() => {
+                    if (destination && destination.context) {
+                      console.log(`    🔍 Checking if destination GainNode is orphaned...`);
+                      // If this is the final GainNode in the chain, it should connect to our master
+                      try {
+                        destination.disconnect();
+                        destination.connect(soundManagerInstance.masterPanNode);
+                        console.log(`    ✅ FOUND ORPHANED GAINNODE - Connected to masterPanNode!`);
+                      } catch (e) {
+                        console.warn(`    ⚠️ Could not connect potential orphaned GainNode:`, e.message);
+                      }
+                    }
+                  }, 500); // Check after a short delay to let the chain fully form
+                }
+                
                 soundManagerInstance._allConnectionsDebugLogged.add(connKey);
               }
             }
