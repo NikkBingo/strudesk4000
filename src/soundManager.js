@@ -597,6 +597,58 @@ class SoundManager {
     // Debug flags
     this.debugAudioRouting = false; // set true to see detailed routing logs
     this._logRoute = (...args) => { if (this.debugAudioRouting) console.log(...args); };
+    
+    /**
+     * Verify that the master chain is properly connected
+     * This is critical for audio output
+     */
+    this._verifyMasterChainConnection = () => {
+      if (!this.masterGainNode || !this._realDestination) {
+        console.error('❌ CRITICAL: Master chain incomplete - masterGainNode or _realDestination missing');
+        return false;
+      }
+      
+      // Check if masterGainNode is connected to destination
+      // We can't directly check connections, but we can verify the nodes exist and gain is set
+      const gainValue = this.masterGainNode.gain.value;
+      const isMuted = this.masterMuted;
+      
+      if (gainValue === 0 && !isMuted) {
+        console.warn('⚠️ Master gain is 0 - audio will be silent');
+      }
+      
+      if (isMuted) {
+        console.warn('⚠️ Master is muted - audio will be silent');
+      }
+      
+      // Verify chain nodes exist
+      const chainStatus = {
+        masterPanNode: !!this.masterPanNode,
+        masterFilterNode: !!this.masterFilterNode,
+        masterDryGainNode: !!this.masterDryGainNode,
+        masterGainNode: !!this.masterGainNode,
+        realDestination: !!this._realDestination,
+        gain: gainValue,
+        muted: isMuted
+      };
+      
+      console.log('🎚️ Master chain verification:', chainStatus);
+      
+      // Try to ensure connection (will fail silently if already connected)
+      try {
+        this.masterGainNode.connect(this._realDestination);
+        console.log('✅ Verified masterGainNode -> destination connection');
+      } catch (e) {
+        if (e.message && e.message.includes('already connected')) {
+          console.log('✅ masterGainNode -> destination already connected');
+        } else {
+          console.error('❌ Failed to connect masterGainNode -> destination:', e.message);
+          return false;
+        }
+      }
+      
+      return true;
+    };
     // Route all Strudel AudioNodes through master chain by default
     this._routingBypass = false;
     
@@ -932,6 +984,9 @@ class SoundManager {
         this.masterGainNode.gain.value = this.masterVolume;
         this.masterPanNode.pan.value = this.masterPan;
         
+        // CRITICAL: Verify master chain connection immediately after setup
+        this._verifyMasterChainConnection();
+        
         // Keep old gainNode for backward compatibility (now routes through master)
         // Use masterVolume, not this.volume, since master controls the output
         this.gainNode = this.masterGainNode;
@@ -1027,10 +1082,13 @@ class SoundManager {
             // Only intercept connections to destinations, not internal GainNode->GainNode connections
             // Intercepting internal routing causes feedback loops
             // Check if connecting to the actual audio destination (NOT intermediate nodes like masterPanNode/masterGainNode)
-            // Only intercept connections to the real destination, not internal routing nodes
+            // CRITICAL: When we override audioContext.destination to return masterPanNode, 
+            // audioContextInstance.destination will be masterPanNode, not the real destination
+            // So we need to check both the real destination AND if destination is masterPanNode
             const isMasterDestination = (
               destination === realDestination ||
-              destination === audioContextInstance.destination
+              destination === audioContextInstance.destination ||
+              (soundManagerInstance && destination === soundManagerInstance.masterPanNode)
             );
             
             // Also check if destination is ANY AudioContext's destination (Strudel might use its own context)
@@ -1644,6 +1702,9 @@ class SoundManager {
         }
         
         __safeRouteLog(this, `🎚️ Master values set: volume=${(this.masterVolume * 100).toFixed(0)}%, pan=${this.masterPan.toFixed(2)}`);
+        
+        // Verify master chain connection after setting values
+        this._verifyMasterChainConnection();
         
         // Initialize Strudel and load sound banks
         // Note: ensureDefaultSoundBanks() is called inside initializeStrudelAndSounds() after Strudel is loaded
