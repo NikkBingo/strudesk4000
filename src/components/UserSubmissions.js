@@ -396,7 +396,7 @@ export class UserSubmissions {
     }
 
     const title = titleEl.value.trim();
-    const patternCode = codeEl.value.trim();
+    let patternCode = codeEl.value.trim();
     const isPublic = isPublicEl.value === 'true';
     const genre = genreEl ? genreEl.value.trim() : null;
 
@@ -404,6 +404,35 @@ export class UserSubmissions {
       alert('Pattern code cannot be empty');
       return;
     }
+
+    // Strip existing metadata comments before adding new ones
+    // Remove old format comments (// "Title" @by, // @version, // @copyright, etc.)
+    const lines = patternCode.split('\n');
+    let codeStart = 0;
+    let codeEnd = lines.length;
+    
+    // Find where actual code starts (after comments)
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      // Skip comment lines and empty lines at the start
+      if (line.startsWith('//') || line === '') {
+        continue;
+      }
+      // Found code start
+      codeStart = i;
+      break;
+    }
+    
+    // Find where code ends (before footer comment)
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].includes('Made with Strudesk 4000')) {
+        codeEnd = i;
+        break;
+      }
+    }
+    
+    // Extract just the pattern code without comments
+    patternCode = lines.slice(codeStart, codeEnd).join('\n').trim();
 
     try {
       // Format pattern code with metadata (similar to SavePatternDialog)
