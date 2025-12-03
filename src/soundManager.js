@@ -1179,6 +1179,21 @@ class SoundManager {
             const masterPlaybackActive = soundManagerInstance.masterActive && soundManagerInstance.trackedPatterns.size > 0;
             const isMultiChannelMaster = masterPlaybackActive;
             
+            // DEBUG: Log why interception might not be happening
+            if (destination && destination.constructor && destination.constructor.name === 'StereoPannerNode') {
+              if (!soundManagerInstance._debugStereoPanConnectionLogged) {
+                console.log(`🔍 DEBUG: ${this.constructor.name} -> StereoPannerNode connection attempt`);
+                console.log(`  isMasterDestination: ${isMasterDestination}`);
+                console.log(`  isAnyAudioContextDestination: ${isAnyAudioContextDestination}`);
+                console.log(`  isAnalyserNode: ${isAnalyserNode}`);
+                console.log(`  shouldIntercept: ${shouldIntercept}`);
+                console.log(`  destination === realDestination: ${destination === realDestination}`);
+                console.log(`  destination === audioContextInstance.destination: ${destination === audioContextInstance.destination}`);
+                console.log(`  destination === soundManagerInstance.masterPanNode: ${destination === soundManagerInstance.masterPanNode}`);
+                soundManagerInstance._debugStereoPanConnectionLogged = true;
+              }
+            }
+            
             if (shouldIntercept) {
               // ALWAYS route through master chain when connecting to destination
               // This ensures audio flows through masterPan -> masterFilter -> masterDryGain -> masterGain -> destination
