@@ -1188,6 +1188,14 @@ class SoundManager {
               }
             }
             
+            // SPECIAL CASE: If connecting to masterPanNode (which is audioContext.destination)
+            // and it's NOT the real destination, just let it connect naturally
+            // The master chain is already set up, so the audio will flow through naturally
+            if (shouldIntercept && destination === soundManagerInstance.masterPanNode && destination !== realDestination) {
+              console.log(`🎚️ ✅ Allowing ${this.constructor.name} to connect naturally to masterPanNode (master chain will handle routing)`);
+              return this.__originalConnect.call(this, destination, outputIndex, inputIndex);
+            }
+            
             if (shouldIntercept) {
               // ALWAYS route through master chain when connecting to destination
               // This ensures audio flows through masterPan -> masterFilter -> masterDryGain -> masterGain -> destination
