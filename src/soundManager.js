@@ -1048,14 +1048,8 @@ class SoundManager {
         
         console.log('💡 Master channel ready - will route Strudel through it during init');
 
-        // NOW load Strudel - it will use our hijacked AudioContext
-        // CRITICAL: Load Strudel AFTER hijacking AudioContext AND after master nodes exist
-        // so we can pass masterPanNode as destination
-        if (!this.strudelLoaded) {
-          __safeRouteLog(this, '🎚️ Loading Strudel after hijacking AudioContext (master nodes ready for destination)...');
-          await this.loadStrudelFromCDN();
-        }
-
+        // CRITICAL: Patch AudioNode.prototype.connect BEFORE loading Strudel
+        // This ensures scheduler.output connections are intercepted when they're made
         // Patch AudioNode.prototype.connect to intercept connections to destination
         // This ensures ALL audio nodes (including Strudel's) route through element gain nodes or master
         if (!AudioNode.prototype.__originalConnect) {
@@ -1752,6 +1746,14 @@ class SoundManager {
         this.audioContext.__masterPanNode = this.masterPanNode;
         
         console.log('Audio context created with master channel, state:', this.audioContext.state);
+
+        // NOW load Strudel - it will use our hijacked AudioContext and hijacked connect()
+        // CRITICAL: Load Strudel AFTER hijacking AudioContext AND AudioNode.prototype.connect
+        // so scheduler.output connections are intercepted
+        if (!this.strudelLoaded) {
+          __safeRouteLog(this, '🎚️ Loading Strudel after hijacking AudioContext and connect() (master nodes ready)...');
+          await this.loadStrudelFromCDN();
+        }
         __safeRouteLog(this, `🎚️ Master initialized: volume=${(this.masterVolume * 100).toFixed(0)}%, pan=${this.masterPan.toFixed(2)}`);
       }
 
