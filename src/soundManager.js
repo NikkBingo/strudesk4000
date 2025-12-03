@@ -4120,13 +4120,10 @@ class SoundManager {
           
           // Set up MIDI output handler before initStrudel
           // Always set midiOutput even if MIDI isn't enabled yet - it will be connected when MIDI is enabled
-          // CRITICAL: Pass webaudioOutput factory to initStrudel so scheduler gets audio output
+          // Note: We don't pass 'output' to initStrudel - it creates its own output from audioContext
           // Since we've overridden audioContext.destination to return masterPanNode, Strudel will route through it
-          // Use stored webaudioOutput factory or fallback to local variable
-          const outputFactory = this.strudelOutputFactory || webaudioOutput;
           const initOptions = {
             audioContext: this.audioContext,
-            output: outputFactory ? outputFactory(this.audioContext) : this.audioContext.destination,
             getTime: () => this.audioContext ? this.audioContext.currentTime : 0,
             editPattern: () => {},
             setUrl: () => {},
@@ -4140,8 +4137,7 @@ class SoundManager {
           };
           console.log('🎚️ initStrudel options:', Object.keys(initOptions));
           console.log('📍 withLoc enabled for code highlighting');
-          console.log('🎚️ initStrudel output:', initOptions.output ? initOptions.output.constructor?.name || typeof initOptions.output : 'N/A');
-          console.log('🎚️ initStrudel outputFactory available:', !!outputFactory);
+          console.log('🎚️ audioContext.destination:', this.audioContext.destination?.constructor?.name || typeof this.audioContext.destination);
           const strudelContext = await initStrudel(initOptions);
           
           replInstance = strudelContext.repl || strudelContext;
@@ -4152,6 +4148,27 @@ class SoundManager {
           if (strudelContext.scheduler) {
             window.strudel.scheduler = strudelContext.scheduler;
             console.log('✅ Stored scheduler in window.strudel');
+            
+            // CRITICAL: Ensure scheduler has output set up
+            // Since we've overridden audioContext.destination, Strudel should have created output automatically
+            // But if it didn't, we need to set it up manually
+            if (!strudelContext.scheduler.output) {
+              console.log('⚠️ scheduler.output is missing, setting it up...');
+              const outputFactory = this.strudelOutputFactory || webaudioOutput;
+              if (outputFactory && typeof outputFactory === 'function') {
+                try {
+                  const output = outputFactory(this.audioContext);
+                  strudelContext.scheduler.output = output;
+                  console.log('✅ Created and set scheduler.output:', output?.constructor?.name || typeof output);
+                } catch (e) {
+                  console.error('❌ Failed to create scheduler output:', e.message);
+                }
+              } else {
+                console.warn('⚠️ No webaudioOutput factory available to create scheduler output');
+              }
+            } else {
+              console.log('✅ scheduler.output already exists:', strudelContext.scheduler.output?.constructor?.name || typeof strudelContext.scheduler.output);
+            }
           }
           
           // Store soundManager instance on window for REPL access
