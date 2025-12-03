@@ -4341,8 +4341,13 @@ class SoundManager {
                           }
                         };
                         
+                        // Assign to both strudelContext.scheduler and window.strudel.scheduler
                         strudelContext.scheduler.output = minimalOutput;
+                        if (window.strudel && window.strudel.scheduler) {
+                          window.strudel.scheduler.output = minimalOutput;
+                        }
                         console.log('✅ Created minimal output wrapper connected to masterPanNode');
+                        console.log('✅ Assigned to strudelContext.scheduler.output and window.strudel.scheduler.output');
                       } catch (wrapperError) {
                         console.error('❌ Failed to create minimal output wrapper:', wrapperError);
                       }
