@@ -4178,6 +4178,14 @@ class SoundManager {
           
           // Set up MIDI output handler before initStrudel
           // Always set midiOutput even if MIDI isn't enabled yet - it will be connected when MIDI is enabled
+          // CRITICAL: Create a minimal output before initStrudel so it's available when Strudel initializes
+          // If initStrudel doesn't create its own output, our output will be used
+          // Create it BEFORE temporarily restoring destination so it connects to masterPanNode
+          console.log('🔧 Creating fallback scheduler.output before initStrudel...');
+          const fallbackOutput = this.audioContext.createGainNode();
+          fallbackOutput.connect(this.masterPanNode);
+          console.log('✅ Created fallback output (GainNode) connected to masterPanNode');
+          
           // CRITICAL: Temporarily restore real destination so initStrudel can create output
           // initStrudel checks if destination is AudioDestinationNode to decide whether to create output
           const realDestination = this._realDestination;
@@ -4223,10 +4231,15 @@ class SoundManager {
             });
             console.log('✅ Destination override restored');
             
-            // If output was created, we need to reconnect it to masterPanNode
-            // The output might connect through our AudioNode.prototype.connect hijacking,
-            // but if it was already connected during initStrudel, we need to reconnect it
-            if (strudelContext.scheduler?.output) {
+            // If output was NOT created by initStrudel, use our fallback
+            if (!strudelContext.scheduler?.output) {
+              console.log('🔧 initStrudel did not create output, using fallback');
+              strudelContext.scheduler.output = fallbackOutput;
+              console.log('✅ Assigned fallback output to scheduler.output');
+            } else if (strudelContext.scheduler?.output) {
+              // If output was created, we need to reconnect it to masterPanNode
+              // The output might connect through our AudioNode.prototype.connect hijacking,
+              // but if it was already connected during initStrudel, we need to reconnect it
               const output = strudelContext.scheduler.output;
               // Try multiple ways to find the actual AudioNode
               const outputNode = output.output || output.outputNode || 
