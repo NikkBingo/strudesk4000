@@ -3372,6 +3372,14 @@ class InteractiveSoundApp {
     this.lastVolumeUpdate = null;
     this.currentPanValue = null;
     this.lastPanUpdate = null;
+    this.currentDelayAmountValue = null;
+    this.lastDelayAmountUpdate = null;
+    this.currentDelayFeedbackValue = null;
+    this.lastDelayFeedbackUpdate = null;
+    this.currentReverbAmountValue = null;
+    this.lastReverbAmountUpdate = null;
+    this.currentReverbRoomSizeValue = null;
+    this.lastReverbRoomSizeUpdate = null;
     this.chaospadSettings = {
       minFrequency: soundManager.masterFilterMinHz || 80,
       maxFrequency: soundManager.masterFilterMaxHz || 8000,
@@ -3385,7 +3393,11 @@ class InteractiveSoundApp {
       cutoff: Math.min(this.chaospadSettings.maxFrequency, Math.max(this.chaospadSettings.minFrequency, soundManager.masterFilterFrequency || 4040)),
       resonance: Math.min(this.chaospadSettings.maxResonance, Math.max(this.chaospadSettings.minResonance, soundManager.masterFilterResonance || 0.7)),
       volume: soundManager.masterVolume || 0.7,
-      pan: soundManager.masterPan || 0
+      pan: soundManager.masterPan || 0,
+      delayAmount: soundManager.masterDelayAmount || 0,
+      delayFeedback: soundManager.masterDelayFeedback || 0.5,
+      reverbAmount: soundManager.masterReverbAmount || 0,
+      reverbRoomSize: soundManager.masterReverbRoomSize || 0.5
     };
     this.chaospadOrientationActive = false;
     this.chaospadOrientationPermission = 'unknown';
@@ -6254,6 +6266,66 @@ class InteractiveSoundApp {
         }
         break;
       }
+      case 'delayAmount': {
+        const delayAmountValue = Math.max(0, Math.min(1, xValue));
+        const shouldUpdate =
+          this.currentDelayAmountValue === null ||
+          Math.abs(this.currentDelayAmountValue - delayAmountValue) > 0.02 ||
+          (this.lastDelayAmountUpdate && (now - this.lastDelayAmountUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Horizontal ${(clampedHorizontal * 100).toFixed(1)}% → Delay Amount ${(delayAmountValue * 100).toFixed(1)}%`);
+          this.currentDelayAmountValue = delayAmountValue;
+          this.lastDelayAmountUpdate = now;
+          soundManager.setMasterDelayAmount(delayAmountValue);
+        }
+        break;
+      }
+      case 'delayFeedback': {
+        const delayFeedbackValue = Math.max(0, Math.min(1, xValue));
+        const shouldUpdate =
+          this.currentDelayFeedbackValue === null ||
+          Math.abs(this.currentDelayFeedbackValue - delayFeedbackValue) > 0.02 ||
+          (this.lastDelayFeedbackUpdate && (now - this.lastDelayFeedbackUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Horizontal ${(clampedHorizontal * 100).toFixed(1)}% → Delay Feedback ${(delayFeedbackValue * 100).toFixed(1)}%`);
+          this.currentDelayFeedbackValue = delayFeedbackValue;
+          this.lastDelayFeedbackUpdate = now;
+          soundManager.setMasterDelayFeedback(delayFeedbackValue);
+        }
+        break;
+      }
+      case 'reverbAmount': {
+        const reverbAmountValue = Math.max(0, Math.min(5, xValue));
+        const shouldUpdate =
+          this.currentReverbAmountValue === null ||
+          Math.abs(this.currentReverbAmountValue - reverbAmountValue) > 0.1 ||
+          (this.lastReverbAmountUpdate && (now - this.lastReverbAmountUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Horizontal ${(clampedHorizontal * 100).toFixed(1)}% → Reverb Amount ${reverbAmountValue.toFixed(2)}`);
+          this.currentReverbAmountValue = reverbAmountValue;
+          this.lastReverbAmountUpdate = now;
+          soundManager.setMasterReverbAmount(reverbAmountValue);
+        }
+        break;
+      }
+      case 'reverbRoomSize': {
+        const reverbRoomSizeValue = Math.max(0, Math.min(4, xValue));
+        const shouldUpdate =
+          this.currentReverbRoomSizeValue === null ||
+          Math.abs(this.currentReverbRoomSizeValue - reverbRoomSizeValue) > 0.1 ||
+          (this.lastReverbRoomSizeUpdate && (now - this.lastReverbRoomSizeUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Horizontal ${(clampedHorizontal * 100).toFixed(1)}% → Reverb Room Size ${reverbRoomSizeValue.toFixed(2)}`);
+          this.currentReverbRoomSizeValue = reverbRoomSizeValue;
+          this.lastReverbRoomSizeUpdate = now;
+          soundManager.setMasterReverbRoomSize(reverbRoomSizeValue);
+        }
+        break;
+      }
     }
 
     // Calculate value for Y axis based on configured effect
@@ -6328,6 +6400,66 @@ class InteractiveSoundApp {
           if (soundManager.masterPanNode) {
             soundManager.masterPanNode.pan.value = panValue;
           }
+        }
+        break;
+      }
+      case 'delayAmount': {
+        const delayAmountValue = Math.max(0, Math.min(1, yValue));
+        const shouldUpdate =
+          this.currentDelayAmountValue === null ||
+          Math.abs(this.currentDelayAmountValue - delayAmountValue) > 0.02 ||
+          (this.lastDelayAmountUpdate && (now - this.lastDelayAmountUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Vertical ${(clampedVertical * 100).toFixed(1)}% → Delay Amount ${(delayAmountValue * 100).toFixed(1)}%`);
+          this.currentDelayAmountValue = delayAmountValue;
+          this.lastDelayAmountUpdate = now;
+          soundManager.setMasterDelayAmount(delayAmountValue);
+        }
+        break;
+      }
+      case 'delayFeedback': {
+        const delayFeedbackValue = Math.max(0, Math.min(1, yValue));
+        const shouldUpdate =
+          this.currentDelayFeedbackValue === null ||
+          Math.abs(this.currentDelayFeedbackValue - delayFeedbackValue) > 0.02 ||
+          (this.lastDelayFeedbackUpdate && (now - this.lastDelayFeedbackUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Vertical ${(clampedVertical * 100).toFixed(1)}% → Delay Feedback ${(delayFeedbackValue * 100).toFixed(1)}%`);
+          this.currentDelayFeedbackValue = delayFeedbackValue;
+          this.lastDelayFeedbackUpdate = now;
+          soundManager.setMasterDelayFeedback(delayFeedbackValue);
+        }
+        break;
+      }
+      case 'reverbAmount': {
+        const reverbAmountValue = Math.max(0, Math.min(5, yValue));
+        const shouldUpdate =
+          this.currentReverbAmountValue === null ||
+          Math.abs(this.currentReverbAmountValue - reverbAmountValue) > 0.1 ||
+          (this.lastReverbAmountUpdate && (now - this.lastReverbAmountUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Vertical ${(clampedVertical * 100).toFixed(1)}% → Reverb Amount ${reverbAmountValue.toFixed(2)}`);
+          this.currentReverbAmountValue = reverbAmountValue;
+          this.lastReverbAmountUpdate = now;
+          soundManager.setMasterReverbAmount(reverbAmountValue);
+        }
+        break;
+      }
+      case 'reverbRoomSize': {
+        const reverbRoomSizeValue = Math.max(0, Math.min(4, yValue));
+        const shouldUpdate =
+          this.currentReverbRoomSizeValue === null ||
+          Math.abs(this.currentReverbRoomSizeValue - reverbRoomSizeValue) > 0.1 ||
+          (this.lastReverbRoomSizeUpdate && (now - this.lastReverbRoomSizeUpdate) > 100);
+
+        if (shouldUpdate) {
+          console.log(`🎛️ Chaospad [${source}]: Vertical ${(clampedVertical * 100).toFixed(1)}% → Reverb Room Size ${reverbRoomSizeValue.toFixed(2)}`);
+          this.currentReverbRoomSizeValue = reverbRoomSizeValue;
+          this.lastReverbRoomSizeUpdate = now;
+          soundManager.setMasterReverbRoomSize(reverbRoomSizeValue);
         }
         break;
       }
@@ -6451,6 +6583,10 @@ class InteractiveSoundApp {
     this.chaospadDefaults.resonance = soundManager.masterFilterResonance || this.chaospadDefaults.resonance;
     this.chaospadDefaults.volume = soundManager.masterVolume || this.chaospadDefaults.volume;
     this.chaospadDefaults.pan = soundManager.masterPan || this.chaospadDefaults.pan;
+    this.chaospadDefaults.delayAmount = soundManager.masterDelayAmount || this.chaospadDefaults.delayAmount;
+    this.chaospadDefaults.delayFeedback = soundManager.masterDelayFeedback || this.chaospadDefaults.delayFeedback;
+    this.chaospadDefaults.reverbAmount = soundManager.masterReverbAmount || this.chaospadDefaults.reverbAmount;
+    this.chaospadDefaults.reverbRoomSize = soundManager.masterReverbRoomSize || this.chaospadDefaults.reverbRoomSize;
   }
 
   resetChaospadToDefaults(immediate = false) {
@@ -6503,6 +6639,22 @@ class InteractiveSoundApp {
         }
         this.currentPanValue = this.chaospadDefaults.pan;
         break;
+      case 'delayAmount':
+        soundManager.setMasterDelayAmount(this.chaospadDefaults.delayAmount);
+        this.currentDelayAmountValue = this.chaospadDefaults.delayAmount;
+        break;
+      case 'delayFeedback':
+        soundManager.setMasterDelayFeedback(this.chaospadDefaults.delayFeedback);
+        this.currentDelayFeedbackValue = this.chaospadDefaults.delayFeedback;
+        break;
+      case 'reverbAmount':
+        soundManager.setMasterReverbAmount(this.chaospadDefaults.reverbAmount);
+        this.currentReverbAmountValue = this.chaospadDefaults.reverbAmount;
+        break;
+      case 'reverbRoomSize':
+        soundManager.setMasterReverbRoomSize(this.chaospadDefaults.reverbRoomSize);
+        this.currentReverbRoomSizeValue = this.chaospadDefaults.reverbRoomSize;
+        break;
     }
 
     // Restore Y axis effect
@@ -6528,6 +6680,64 @@ class InteractiveSoundApp {
           soundManager.masterPanNode.pan.value = this.chaospadDefaults.pan;
         }
         this.currentPanValue = this.chaospadDefaults.pan;
+        break;
+      case 'delayAmount':
+        soundManager.setMasterDelayAmount(this.chaospadDefaults.delayAmount);
+        this.currentDelayAmountValue = this.chaospadDefaults.delayAmount;
+        break;
+      case 'delayFeedback':
+        soundManager.setMasterDelayFeedback(this.chaospadDefaults.delayFeedback);
+        this.currentDelayFeedbackValue = this.chaospadDefaults.delayFeedback;
+        break;
+      case 'reverbAmount':
+        soundManager.setMasterReverbAmount(this.chaospadDefaults.reverbAmount);
+        this.currentReverbAmountValue = this.chaospadDefaults.reverbAmount;
+        break;
+      case 'reverbRoomSize':
+        soundManager.setMasterReverbRoomSize(this.chaospadDefaults.reverbRoomSize);
+        this.currentReverbRoomSizeValue = this.chaospadDefaults.reverbRoomSize;
+        break;
+    }
+
+    // Restore Y axis effect
+    switch (yAxis.effect) {
+      case 'cutoff':
+        soundManager.setMasterFilterFrequency(this.chaospadDefaults.cutoff, true);
+        this.currentCutoffValue = this.chaospadDefaults.cutoff;
+        break;
+      case 'resonance':
+        soundManager.setMasterFilterResonance(this.chaospadDefaults.resonance, true);
+        this.currentResonanceValue = this.chaospadDefaults.resonance;
+        break;
+      case 'volume':
+        soundManager.masterVolume = this.chaospadDefaults.volume;
+        if (soundManager.masterGainNode) {
+          soundManager.masterGainNode.gain.value = this.chaospadDefaults.volume;
+        }
+        this.currentVolumeValue = this.chaospadDefaults.volume;
+        break;
+      case 'pan':
+        soundManager.masterPan = this.chaospadDefaults.pan;
+        if (soundManager.masterPanNode) {
+          soundManager.masterPanNode.pan.value = this.chaospadDefaults.pan;
+        }
+        this.currentPanValue = this.chaospadDefaults.pan;
+        break;
+      case 'delayAmount':
+        soundManager.setMasterDelayAmount(this.chaospadDefaults.delayAmount);
+        this.currentDelayAmountValue = this.chaospadDefaults.delayAmount;
+        break;
+      case 'delayFeedback':
+        soundManager.setMasterDelayFeedback(this.chaospadDefaults.delayFeedback);
+        this.currentDelayFeedbackValue = this.chaospadDefaults.delayFeedback;
+        break;
+      case 'reverbAmount':
+        soundManager.setMasterReverbAmount(this.chaospadDefaults.reverbAmount);
+        this.currentReverbAmountValue = this.chaospadDefaults.reverbAmount;
+        break;
+      case 'reverbRoomSize':
+        soundManager.setMasterReverbRoomSize(this.chaospadDefaults.reverbRoomSize);
+        this.currentReverbRoomSizeValue = this.chaospadDefaults.reverbRoomSize;
         break;
     }
 

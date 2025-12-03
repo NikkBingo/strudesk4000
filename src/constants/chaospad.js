@@ -38,6 +38,46 @@ export const CHAOSPAD_EFFECTS = {
     defaultValue: 0,
     unit: '',
     step: 0.01
+  },
+  delayAmount: {
+    id: 'delayAmount',
+    label: 'Delay Amount',
+    description: 'Controls the amount/wet level of the delay effect.',
+    defaultMin: 0,
+    defaultMax: 1,
+    defaultValue: 0,
+    unit: '',
+    step: 0.01
+  },
+  delayFeedback: {
+    id: 'delayFeedback',
+    label: 'Delay Feedback',
+    description: 'Controls the feedback level of the delay effect.',
+    defaultMin: 0,
+    defaultMax: 1,
+    defaultValue: 0.5,
+    unit: '',
+    step: 0.01
+  },
+  reverbAmount: {
+    id: 'reverbAmount',
+    label: 'Reverb Amount',
+    description: 'Controls the amount/wet level of the reverb effect.',
+    defaultMin: 0,
+    defaultMax: 5,
+    defaultValue: 0,
+    unit: '',
+    step: 0.01
+  },
+  reverbRoomSize: {
+    id: 'reverbRoomSize',
+    label: 'Reverb Room Size',
+    description: 'Controls the room size of the reverb effect.',
+    defaultMin: 0,
+    defaultMax: 4,
+    defaultValue: 0.5,
+    unit: '',
+    step: 0.01
   }
 };
 
