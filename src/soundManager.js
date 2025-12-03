@@ -4897,16 +4897,17 @@ class SoundManager {
           }
           
           // Check for superdough output (Strudel's audio engine)
-          if (scheduler.superdough || scheduler.output || scheduler.audioOutput) {
-            const output = scheduler.superdough || scheduler.audioOutput || scheduler.output;
-            console.log('  Found superdough/audioOutput:', output ? output.constructor.name : 'null');
+          // superdough is the audio engine, but we need superdough.output (the actual GainNode)
+          if (scheduler.superdough?.output) {
+            const output = scheduler.superdough.output;
+            console.log('  Found superdough.output:', output ? output.constructor.name : 'null');
             if (output && typeof output.connect === 'function') {
               try {
                 output.disconnect();
                 output.connect(this.masterPanNode);
-                console.log('✅ Connected superdough/audioOutput to masterPanNode');
+                console.log('✅ Connected superdough.output to masterPanNode');
               } catch (e) {
-                console.warn('⚠️ Could not connect superdough/audioOutput:', e);
+                console.warn('⚠️ Could not connect superdough.output:', e);
               }
             }
           }
