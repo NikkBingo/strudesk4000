@@ -4935,6 +4935,29 @@ class SoundManager {
       // Scheduler start is moved to after pattern slot initialization
       if (replInstance && replInstance.scheduler) {
         console.log('⏸️ REPL scheduler found (will be started after pattern slots are initialized)...');
+        
+        // CRITICAL: Check for superdough.output after a delay
+        // Superdough loads its AudioWorklets asynchronously, so we need to wait for it
+        setTimeout(() => {
+          const scheduler = replInstance.scheduler;
+          if (scheduler.superdough?.output && this.masterPanNode) {
+            console.log('🔍 [DELAYED CHECK] Found superdough.output after initialization');
+            console.log('  superdough.output type:', scheduler.superdough.output.constructor.name);
+            try {
+              // Disconnect from wherever it's currently connected
+              scheduler.superdough.output.disconnect();
+              // Connect to our master chain
+              scheduler.superdough.output.connect(this.masterPanNode);
+              console.log('✅ [DELAYED CHECK] Connected superdough.output to masterPanNode');
+            } catch (e) {
+              console.warn('⚠️ [DELAYED CHECK] Could not connect superdough.output:', e);
+            }
+          } else {
+            console.log('ℹ️ [DELAYED CHECK] superdough.output not found yet');
+            console.log('  scheduler.superdough:', !!scheduler.superdough);
+            console.log('  scheduler.superdough?.output:', !!scheduler.superdough?.output);
+          }
+        }, 1000); // Wait 1 second for superdough to load
       }
       
       // Wrap evaluate with proper error handling
