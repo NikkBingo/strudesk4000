@@ -4186,31 +4186,41 @@ class SoundManager {
             // Since we've overridden audioContext.destination, Strudel should have created output automatically
             if (strudelContext.scheduler.output) {
               console.log('✅ scheduler.output exists:', strudelContext.scheduler.output?.constructor?.name || typeof strudelContext.scheduler.output);
+            } else if (strudelContext.output) {
+              // initStrudel might have created output in strudelContext.output instead of scheduler.output
+              console.log('✅ Found output in strudelContext.output, assigning to scheduler.output');
+              strudelContext.scheduler.output = strudelContext.output;
+              console.log('✅ Assigned strudelContext.output to scheduler.output');
             } else {
-              console.warn('⚠️ scheduler.output is missing - creating it manually...');
-              // Manually create the output using the webaudioOutput factory
-              // Since we've overridden audioContext.destination, it will route through masterPanNode
-              if (this.strudelOutputFactory && typeof this.strudelOutputFactory === 'function') {
-                try {
-                  // Create output with audioContext and destination
-                  // The destination will be masterPanNode due to our override
-                  const output = this.strudelOutputFactory({
-                    audioContext: this.audioContext,
-                    destination: this.audioContext.destination
-                  });
-                  if (output) {
-                    strudelContext.scheduler.output = output;
-                    console.log('✅ Manually created scheduler.output:', output?.constructor?.name || typeof output);
-                  } else {
-                    console.error('❌ Failed to create scheduler.output - factory returned null/undefined');
-                  }
-                } catch (error) {
-                  console.error('❌ Failed to create scheduler.output manually:', error);
-                  console.error('   Error details:', error.message, error.stack);
+              console.warn('⚠️ scheduler.output is missing - Strudel should create it automatically from audioContext');
+              console.warn('⚠️ Audio may not play if scheduler.output is not set up');
+              console.warn('⚠️ Note: Manual creation requires internal Strudel functions that are not available');
+              
+              // Try to find output after a delay (webaudio setup might happen asynchronously)
+              setTimeout(() => {
+                // Check strudelContext.output again (might be set up asynchronously)
+                if (strudelContext.output && !strudelContext.scheduler.output) {
+                  console.log('✅ Found output in strudelContext.output (delayed check), assigning to scheduler.output');
+                  strudelContext.scheduler.output = strudelContext.output;
                 }
-              } else {
-                console.error('❌ Cannot create scheduler.output - strudelOutputFactory not available');
-              }
+                
+                // Check if webaudio has an output property
+                const webaudio = window.strudel?.webaudio || strudelContext?.webaudio || strudelContext?.scheduler?.webaudio;
+                if (webaudio && !strudelContext.scheduler.output) {
+                  const output = webaudio.output || webaudio.outputNode;
+                  if (output) {
+                    console.log('✅ Found output in webaudio, assigning to scheduler.output');
+                    strudelContext.scheduler.output = output;
+                  }
+                }
+                
+                // Final check
+                if (strudelContext.scheduler.output) {
+                  console.log('✅ scheduler.output is now set:', strudelContext.scheduler.output?.constructor?.name || typeof strudelContext.scheduler.output);
+                } else {
+                  console.warn('⚠️ scheduler.output still missing after delayed check');
+                }
+              }, 500);
             }
           }
           
