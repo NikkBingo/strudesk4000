@@ -560,6 +560,11 @@ class SoundManager {
     this._manualStrudelOutputDisabled = false; // Set true if factory throws ensureObjectValue error
     this.masterPanNode = null; // Master pan node
     this.masterFilterNode = null; // Optional master filter node (for Chaospad / master FX)
+    this.masterDelayNode = null; // Master delay node
+    this.masterReverbNode = null; // Master reverb (convolver) node
+    this.masterDelayGainNode = null; // Delay wet/dry mix gain
+    this.masterDelayFeedbackGainNode = null; // Delay feedback gain
+    this.masterReverbGainNode = null; // Reverb wet/dry mix gain
     this.editorHighlightingEnabled = false;
     this.masterVolume = 0.7; // Master volume (0-1)
     this.masterPan = 0; // Master pan (-1 to 1)
@@ -577,6 +582,13 @@ class SoundManager {
     this.masterFilterMinUpdateMs = 16; // throttle filter automation to avoid unstable states
     this._lastMasterFilterUpdateTime = 0;
     this._masterFilterUpdateTimeout = null;
+    // Master delay settings
+    this.masterDelayAmount = 0; // Delay wet level (0-1)
+    this.masterDelayFeedback = 0.5; // Delay feedback (0-1)
+    this.masterDelayTime = 0.25; // Delay time in seconds (0-1)
+    // Master reverb settings
+    this.masterReverbAmount = 0; // Reverb wet level (0-5)
+    this.masterReverbRoomSize = 0.5; // Reverb room size (0-4)
     this.visualizerAnalyser = null;
     this.visualizerAnalyserTapGain = null;
     this.visualizerAnalyserTapGainConnected = false;
@@ -854,18 +866,41 @@ class SoundManager {
         this.masterFilterNode.type = 'lowpass';
         this.masterFilterNode.frequency.value = this.masterFilterFrequency;
         this.masterFilterNode.Q.value = this.masterFilterResonance;
+        
+        // Create delay nodes
+        this.masterDelayNode = this.audioContext.createDelay(1.0); // Max 1 second delay
+        this.masterDelayNode.delayTime.value = this.masterDelayTime;
+        this.masterDelayGainNode = this.audioContext.createGain();
+        this.masterDelayGainNode.gain.value = this.masterDelayAmount;
+        this.masterDelayFeedbackGainNode = this.audioContext.createGain();
+        this.masterDelayFeedbackGainNode.gain.value = this.masterDelayFeedback;
+        
+        // Create reverb node (using convolver with impulse response)
+        this.masterReverbNode = this.audioContext.createConvolver();
+        this.masterReverbGainNode = this.audioContext.createGain();
+        this.masterReverbGainNode.gain.value = this.masterReverbAmount;
+        this._createReverbImpulseResponse();
+        
         this.masterGainNode = this.audioContext.createGain();
         
         // Store the real destination BEFORE overriding
         this._realDestination = this.audioContext.destination;
         
         // REMOVED: masterAnalyser - no longer needed, visualizer uses its own analyser
-        // Simplified chain: element gain -> element pan -> master pan -> master gain -> destination
+        // Simplified chain: element gain -> element pan -> master pan -> master filter -> master delay -> master reverb -> master gain -> destination
         // Visualizer analyser connects in parallel to master gain
 
-        // Connect: masterPan -> masterFilter -> masterGain -> REAL destination
+        // Connect: masterPan -> masterFilter -> masterDelay -> masterReverb -> masterGain -> REAL destination
+        // Delay routing: input -> delay -> delayGain -> output, and delay -> delayFeedbackGain -> delay (feedback loop)
         this.masterPanNode.connect(this.masterFilterNode);
-        this.masterFilterNode.connect(this.masterGainNode);
+        this.masterFilterNode.connect(this.masterDelayNode);
+        this.masterDelayNode.connect(this.masterDelayGainNode);
+        this.masterDelayGainNode.connect(this.masterReverbNode);
+        this.masterReverbNode.connect(this.masterReverbGainNode);
+        this.masterReverbGainNode.connect(this.masterGainNode);
+        // Delay feedback loop
+        this.masterDelayNode.connect(this.masterDelayFeedbackGainNode);
+        this.masterDelayFeedbackGainNode.connect(this.masterDelayNode);
         // CRITICAL: Connect masterGainNode to destination - this is the final output
         // Store this connection so we can verify it later
         this.masterGainNode.connect(this._realDestination);
@@ -1693,6 +1728,65 @@ class SoundManager {
       this.masterFilterResonance = clamped;
       this._requestMasterFilterUpdate(immediate);
     }
+  }
+
+  setMasterDelayAmount(value) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && this.masterDelayGainNode) {
+      const clamped = Math.max(0, Math.min(1, numeric));
+      this.masterDelayAmount = clamped;
+      this.masterDelayGainNode.gain.value = clamped;
+    }
+  }
+
+  setMasterDelayFeedback(value) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && this.masterDelayFeedbackGainNode) {
+      const clamped = Math.max(0, Math.min(1, numeric));
+      this.masterDelayFeedback = clamped;
+      this.masterDelayFeedbackGainNode.gain.value = clamped;
+    }
+  }
+
+  setMasterReverbAmount(value) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && this.masterReverbGainNode) {
+      const clamped = Math.max(0, Math.min(5, numeric));
+      this.masterReverbAmount = clamped;
+      this.masterReverbGainNode.gain.value = clamped;
+    }
+  }
+
+  setMasterReverbRoomSize(value) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      const clamped = Math.max(0, Math.min(4, numeric));
+      this.masterReverbRoomSize = clamped;
+      // Room size affects the impulse response - regenerate it
+      this._createReverbImpulseResponse();
+    }
+  }
+
+  _createReverbImpulseResponse() {
+    if (!this.audioContext || !this.masterReverbNode) return;
+    
+    const sampleRate = this.audioContext.sampleRate;
+    const length = sampleRate * 2; // 2 seconds
+    const impulse = this.audioContext.createBuffer(2, length, sampleRate);
+    const roomSize = this.masterReverbRoomSize;
+    
+    // Generate impulse response based on room size
+    for (let channel = 0; channel < 2; channel++) {
+      const channelData = impulse.getChannelData(channel);
+      for (let i = 0; i < length; i++) {
+        const n = length - i;
+        const decay = Math.pow(1 - n / length, 2);
+        const roomDecay = Math.pow(decay, 1 + roomSize);
+        channelData[i] = (Math.random() * 2 - 1) * roomDecay;
+      }
+    }
+    
+    this.masterReverbNode.buffer = impulse;
   }
 
   _requestMasterFilterUpdate(immediate = false) {
@@ -10206,7 +10300,7 @@ class SoundManager {
           console.log(`      masterGainNode: ${this.masterGainNode ? 'EXISTS' : 'MISSING'} (gain=${this.masterGainNode?.gain?.value?.toFixed(3) || 'N/A'})`);
           console.log(`      destination: ${this._realDestination ? 'EXISTS' : 'MISSING'}`);
           
-        // Verify masterPan -> masterFilterNode -> masterGainNode connection
+        // Verify masterPan -> masterFilterNode -> masterDelayNode -> masterReverbNode -> masterGainNode connection
         if (this.masterPanNode && this.masterFilterNode) {
             try {
             this.masterPanNode.connect(this.masterFilterNode);
@@ -10219,15 +10313,27 @@ class SoundManager {
               }
             }
           }
-        if (this.masterFilterNode && this.masterGainNode) {
+        if (this.masterFilterNode && this.masterDelayNode) {
           try {
-            this.masterFilterNode.connect(this.masterGainNode);
-            console.log(`   ✅ VERIFIED: masterFilterNode -> masterGainNode`);
+            this.masterFilterNode.connect(this.masterDelayNode);
+            console.log(`   ✅ VERIFIED: masterFilterNode -> masterDelayNode`);
           } catch (e) {
             if (e.message.includes('already connected') || e.message.includes('already been connected')) {
-              console.log(`   ✅ VERIFIED: masterFilterNode -> masterGainNode (already connected)`);
+              console.log(`   ✅ VERIFIED: masterFilterNode -> masterDelayNode (already connected)`);
             } else {
-              console.warn(`   ⚠️ Could not verify masterFilterNode -> masterGainNode: ${e.message}`);
+              console.warn(`   ⚠️ Could not verify masterFilterNode -> masterDelayNode: ${e.message}`);
+            }
+          }
+        }
+        if (this.masterReverbGainNode && this.masterGainNode) {
+          try {
+            this.masterReverbGainNode.connect(this.masterGainNode);
+            console.log(`   ✅ VERIFIED: masterReverbGainNode -> masterGainNode`);
+          } catch (e) {
+            if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+              console.log(`   ✅ VERIFIED: masterReverbGainNode -> masterGainNode (already connected)`);
+            } else {
+              console.warn(`   ⚠️ Could not verify masterReverbGainNode -> masterGainNode: ${e.message}`);
             }
           }
         }
@@ -10294,8 +10400,21 @@ class SoundManager {
         }
         if (this.masterFilterNode && this.masterGainNode) {
           try {
-            this.masterFilterNode.connect(this.masterGainNode);
-            console.log(`   ✅ VERIFIED: masterFilterNode -> masterGainNode (reconnected)`);
+            // Reconnect through delay and reverb chain
+            if (this.masterDelayNode && this.masterReverbNode) {
+              this.masterFilterNode.connect(this.masterDelayNode);
+              this.masterDelayNode.connect(this.masterDelayGainNode);
+              this.masterDelayGainNode.connect(this.masterReverbNode);
+              this.masterReverbNode.connect(this.masterReverbGainNode);
+              this.masterReverbGainNode.connect(this.masterGainNode);
+              // Reconnect delay feedback loop
+              this.masterDelayNode.connect(this.masterDelayFeedbackGainNode);
+              this.masterDelayFeedbackGainNode.connect(this.masterDelayNode);
+              console.log(`   ✅ VERIFIED: masterFilterNode -> masterDelayNode -> masterReverbNode -> masterGainNode (reconnected)`);
+            } else {
+              this.masterFilterNode.connect(this.masterGainNode);
+              console.log(`   ✅ VERIFIED: masterFilterNode -> masterGainNode (reconnected, delay/reverb not available)`);
+            }
           } catch (e) {
             if (e.message.includes('already connected') || e.message.includes('already been connected')) {
               console.log(`   ✅ VERIFIED: masterFilterNode -> masterGainNode (already connected)`);
