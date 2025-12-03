@@ -4120,8 +4120,13 @@ class SoundManager {
           
           // Set up MIDI output handler before initStrudel
           // Always set midiOutput even if MIDI isn't enabled yet - it will be connected when MIDI is enabled
+          // CRITICAL: Pass webaudioOutput factory to initStrudel so scheduler gets audio output
+          // Since we've overridden audioContext.destination to return masterPanNode, Strudel will route through it
+          // Use stored webaudioOutput factory or fallback to local variable
+          const outputFactory = this.strudelOutputFactory || webaudioOutput;
           const initOptions = {
             audioContext: this.audioContext,
+            output: outputFactory ? outputFactory(this.audioContext) : this.audioContext.destination,
             getTime: () => this.audioContext ? this.audioContext.currentTime : 0,
             editPattern: () => {},
             setUrl: () => {},
@@ -4135,6 +4140,8 @@ class SoundManager {
           };
           console.log('🎚️ initStrudel options:', Object.keys(initOptions));
           console.log('📍 withLoc enabled for code highlighting');
+          console.log('🎚️ initStrudel output:', initOptions.output ? initOptions.output.constructor?.name || typeof initOptions.output : 'N/A');
+          console.log('🎚️ initStrudel outputFactory available:', !!outputFactory);
           const strudelContext = await initStrudel(initOptions);
           
           replInstance = strudelContext.repl || strudelContext;
