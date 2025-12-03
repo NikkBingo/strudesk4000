@@ -5548,7 +5548,6 @@ header h1 {
   transform: translateY(-2px);
 }
 
-@media (max-width: 480px) {
 /* User Submissions Modal Styles */
 .user-submissions-modal-overlay {
   position: fixed;
@@ -5918,6 +5917,8 @@ header h1 {
   background: #e2e8f0;
   color: #0f172a;
 }
+
+@media (max-width: 480px) {
 
 @media (max-width: 768px) {
   .user-submissions-modal {
