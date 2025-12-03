@@ -21,6 +21,7 @@ export class SettingsPanel {
     this.overlay = null;
     this.unsubscribe = null;
     this.isOpen = false;
+    this.saveStatusTimeout = null;
   }
 
   init() {
@@ -95,6 +96,12 @@ export class SettingsPanel {
                   <small>Used only when “Background image” mode is active.</small>
                 </div>
               </section>
+            </div>
+            <div class="settings-panel-footer">
+              <div class="settings-save-status" id="settings-save-status">
+                <span class="settings-save-icon">✓</span>
+                <span class="settings-save-text">Settings saved automatically</span>
+              </div>
             </div>
           </div>
         </div>
@@ -206,6 +213,7 @@ export class SettingsPanel {
       checkbox.addEventListener('change', (event) => {
         const value = event.target.dataset.bankValue;
         toggleBankVisibility(value, event.target.checked);
+        this.showSaveStatus();
       });
     });
 
@@ -225,15 +233,22 @@ export class SettingsPanel {
             }
           }
         });
+        this.showSaveStatus();
       });
     });
 
     this.overlay.querySelectorAll('[data-chaospad-min]').forEach((input) => {
-      input.addEventListener('change', (event) => this.handleChaospadRangeChange(event, 'min'));
+      input.addEventListener('change', (event) => {
+        this.handleChaospadRangeChange(event, 'min');
+        this.showSaveStatus();
+      });
     });
 
     this.overlay.querySelectorAll('[data-chaospad-max]').forEach((input) => {
-      input.addEventListener('change', (event) => this.handleChaospadRangeChange(event, 'max'));
+      input.addEventListener('change', (event) => {
+        this.handleChaospadRangeChange(event, 'max');
+        this.showSaveStatus();
+      });
     });
 
     this.overlay.querySelectorAll('input[name="settings-bg-mode"]').forEach((input) => {
@@ -244,6 +259,7 @@ export class SettingsPanel {
             backgroundType: event.target.value
           }
         });
+        this.showSaveStatus();
       });
     });
 
@@ -254,6 +270,7 @@ export class SettingsPanel {
           backgroundColor: event.target.value || getDefaultSettings().styling.backgroundColor
         }
       });
+      this.showSaveStatus();
     });
 
     const bgImageInput = this.overlay.querySelector('#settings-bg-image');
@@ -263,11 +280,13 @@ export class SettingsPanel {
           backgroundImage: (event.target.value || '').trim()
         }
       });
+      this.showSaveStatus();
     });
 
     const resetButton = this.overlay.querySelector('#settings-reset-btn');
     resetButton?.addEventListener('click', () => {
       resetSettings();
+      this.showSaveStatus();
     });
   }
 
@@ -369,7 +388,31 @@ export class SettingsPanel {
     this.isOpen = false;
   }
 
+  showSaveStatus() {
+    const saveStatus = this.overlay?.querySelector('#settings-save-status');
+    if (!saveStatus) return;
+
+    // Clear any existing timeout
+    if (this.saveStatusTimeout) {
+      clearTimeout(this.saveStatusTimeout);
+    }
+
+    // Show "Saved" animation
+    saveStatus.classList.add('settings-save-status--saved');
+    saveStatus.querySelector('.settings-save-text').textContent = 'Saved!';
+
+    // Reset after 2 seconds
+    this.saveStatusTimeout = setTimeout(() => {
+      saveStatus.classList.remove('settings-save-status--saved');
+      saveStatus.querySelector('.settings-save-text').textContent = 'Settings saved automatically';
+    }, 2000);
+  }
+
   destroy() {
+    if (this.saveStatusTimeout) {
+      clearTimeout(this.saveStatusTimeout);
+      this.saveStatusTimeout = null;
+    }
     if (this.unsubscribe) {
       this.unsubscribe();
       this.unsubscribe = null;
