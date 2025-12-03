@@ -4182,7 +4182,7 @@ class SoundManager {
           // If initStrudel doesn't create its own output, our output will be used
           // Create it BEFORE temporarily restoring destination so it connects to masterPanNode
           console.log('🔧 Creating fallback scheduler.output before initStrudel...');
-          const fallbackOutput = this.audioContext.createGainNode();
+          const fallbackOutput = this.audioContext.createGain();
           fallbackOutput.connect(this.masterPanNode);
           console.log('✅ Created fallback output (GainNode) connected to masterPanNode');
           
