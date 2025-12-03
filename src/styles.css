@@ -1559,6 +1559,28 @@ header h1 {
   background: rgba(79, 70, 229, 0.08);
 }
 
+.settings-save-btn {
+  background: #4f46e5;
+  border: none;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.settings-save-btn:hover {
+  background: #4338ca;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+}
+
+.settings-save-btn:active {
+  transform: translateY(0);
+}
+
 @media (max-width: 640px) {
   .settings-panel {
     width: 100%;

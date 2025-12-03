@@ -43,6 +43,7 @@ export class SettingsPanel {
               </div>
               <div class="settings-panel-actions">
                 <button type="button" class="settings-link" id="settings-reset-btn" aria-label="Reset settings to defaults">Reset</button>
+                <button type="button" class="settings-save-btn" id="settings-save-btn" aria-label="Save and apply settings">Save</button>
                 <button type="button" class="settings-panel-close" id="settings-panel-close" aria-label="Close settings">&times;</button>
               </div>
             </div>
@@ -287,6 +288,13 @@ export class SettingsPanel {
     resetButton?.addEventListener('click', () => {
       resetSettings();
       this.showSaveStatus();
+      this.applySettings();
+    });
+
+    const saveButton = this.overlay.querySelector('#settings-save-btn');
+    saveButton?.addEventListener('click', () => {
+      this.applySettings();
+      this.showSaveStatus();
     });
   }
 
@@ -386,6 +394,14 @@ export class SettingsPanel {
     this.overlay.style.display = 'none';
     unlockScroll('settings-panel');
     this.isOpen = false;
+  }
+
+  applySettings() {
+    // Trigger settings application by dispatching a custom event
+    // This will be caught by the main app's settings subscription
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('settings-apply-requested'));
+    }
   }
 
   showSaveStatus() {

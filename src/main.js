@@ -26,7 +26,8 @@ import { getTheoryControlsTemplate, updateTheoryControlsVisibility } from './com
 import { SYNTH_BANK_ALIASES, OSCILLATOR_SYNTHS, SAMPLE_SYNTHS, LEGACY_SAMPLE_SYNTHS, DRUM_BANK_VALUES, VCSL_OPTION_PREFIX, parseBankSelectionValue } from './constants/banks.js';
 import { initPianoSections } from './pianoKeyboard.js';
 import { resolveAssetUrl } from './utils/assetUrls.js';
-import { getStylingSettings, subscribeToSettings, isBankVisible } from './utils/settingsStore.js';
+import { getStylingSettings, subscribeToSettings, isBankVisible, getChaospadAxes } from './utils/settingsStore.js';
+import { CHAOSPAD_EFFECTS } from './constants/chaospad.js';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -9423,6 +9424,33 @@ class InteractiveSoundApp {
         drumsGroup.appendChild(option);
       });
 
+      // Filter waveforms and synths groups based on visibility
+      if (waveformsGroup) {
+        Array.from(waveformsGroup.querySelectorAll('option')).forEach((option) => {
+          const bankValue = option.value;
+          if (bankValue && !isBankVisible(bankValue)) {
+            option.style.display = 'none';
+            option.hidden = true;
+          } else if (bankValue) {
+            option.style.display = '';
+            option.hidden = false;
+          }
+        });
+      }
+
+      if (synthsGroup) {
+        Array.from(synthsGroup.querySelectorAll('option')).forEach((option) => {
+          const bankValue = option.value;
+          if (bankValue && !isBankVisible(bankValue)) {
+            option.style.display = 'none';
+            option.hidden = true;
+          } else if (bankValue) {
+            option.style.display = '';
+            option.hidden = false;
+          }
+        });
+      }
+
       // Populate specialty/world/vocal sample banks (base entries)
       specialtyGroup.innerHTML = '';
       vcslGroup.innerHTML = '';
@@ -14840,11 +14868,24 @@ async function initUserAuth() {
   // Apply styling settings to the page
   applyPageStyling();
   
-  // Subscribe to settings changes to update page styling and refresh bank dropdowns
+  // Apply chaospad settings
+  applyChaospadSettings();
+  
+  // Subscribe to settings changes to update page styling, chaospad, and refresh bank dropdowns
   subscribeToSettings(() => {
     applyPageStyling();
+    applyChaospadSettings();
     refreshBankDropdowns();
   });
+  
+  // Listen for explicit save button clicks
+  if (typeof window !== 'undefined') {
+    window.addEventListener('settings-apply-requested', () => {
+      applyPageStyling();
+      applyChaospadSettings();
+      refreshBankDropdowns();
+    });
+  }
   
   // Initial refresh of bank dropdowns to filter hidden banks
   refreshBankDropdowns();
@@ -14887,35 +14928,71 @@ function applyPageStyling() {
   }
 }
 
+function applyChaospadSettings() {
+  if (!interactiveSoundAppInstance || !interactiveSoundAppInstance.chaospadSettings) {
+    // App not initialized yet, will be applied when it's ready
+    return;
+  }
+  
+  const axes = getChaospadAxes();
+  
+  // Update chaospad settings based on axis configurations
+  const xAxis = axes.x;
+  const yAxis = axes.y;
+  
+  // X axis controls horizontal movement (typically cutoff/frequency)
+  // Y axis controls vertical movement (typically resonance/Q)
+  // Map effects to the appropriate chaospad settings
+  
+  if (xAxis.effect === 'cutoff') {
+    interactiveSoundAppInstance.chaospadSettings.minFrequency = xAxis.min;
+    interactiveSoundAppInstance.chaospadSettings.maxFrequency = xAxis.max;
+  }
+  
+  if (yAxis.effect === 'resonance') {
+    interactiveSoundAppInstance.chaospadSettings.minResonance = yAxis.min;
+    interactiveSoundAppInstance.chaospadSettings.maxResonance = yAxis.max;
+  }
+  
+  // Note: Other effects (volume, pan) would require additional implementation
+  // For now, we only support cutoff on X and resonance on Y
+  
+  console.log('🎛️ Chaospad settings applied:', {
+    xAxis: xAxis.effect,
+    yAxis: yAxis.effect,
+    settings: interactiveSoundAppInstance.chaospadSettings
+  });
+}
+
 function refreshBankDropdowns() {
   const bankSelect = document.getElementById('modal-pattern-bank');
   if (!bankSelect) return;
 
   const currentValue = bankSelect.value;
 
-  // If ensurePatternBankOptions is available, call it to refresh (it will filter drums)
+  // If ensurePatternBankOptions is available, call it to refresh (it will filter all banks)
   if (window.refreshBankOptions && typeof window.refreshBankOptions === 'function') {
     window.refreshBankOptions(currentValue);
-  }
-
-  // Filter all options in all optgroups based on visibility (for waveforms, synths, etc.)
-  Array.from(bankSelect.querySelectorAll('optgroup')).forEach((group) => {
-    Array.from(group.querySelectorAll('option')).forEach((option) => {
-      const bankValue = option.value;
-      if (bankValue && isBankVisible(bankValue)) {
-        option.style.display = '';
-        option.hidden = false;
-      } else if (bankValue) {
-        option.style.display = 'none';
-        option.hidden = true;
-      }
-      // Keep default/empty value options visible
-      if (!bankValue) {
-        option.style.display = '';
-        option.hidden = false;
-      }
+  } else {
+    // Fallback: Filter all options in all optgroups based on visibility
+    Array.from(bankSelect.querySelectorAll('optgroup')).forEach((group) => {
+      Array.from(group.querySelectorAll('option')).forEach((option) => {
+        const bankValue = option.value;
+        if (bankValue && isBankVisible(bankValue)) {
+          option.style.display = '';
+          option.hidden = false;
+        } else if (bankValue) {
+          option.style.display = 'none';
+          option.hidden = true;
+        }
+        // Keep default/empty value options visible
+        if (!bankValue) {
+          option.style.display = '';
+          option.hidden = false;
+        }
+      });
     });
-  });
+  }
 }
 
 function updateLoadSaveButtonsVisibility(isLoggedIn) {
