@@ -9801,6 +9801,33 @@ class SoundManager {
       return { success: false, error: 'No pattern to play' };
     }
 
+    // CRITICAL: Check and connect superdough.output if it exists
+    // Superdough loads asynchronously, so it might be ready now even if it wasn't earlier
+    console.log('🔍 [PLAY-TIME CHECK] Searching for superdough output...');
+    
+    // Try multiple possible locations
+    const scheduler = window.strudel?.scheduler;
+    if (scheduler) {
+      console.log('  scheduler.output type:', scheduler.output?.constructor?.name);
+      console.log('  scheduler.superdough:', !!scheduler.superdough);
+      console.log('  scheduler keys:', Object.keys(scheduler).slice(0, 20));
+      
+      if (scheduler.superdough?.output && this.masterPanNode) {
+        console.log('  ✅ Found scheduler.superdough.output');
+        try {
+          scheduler.superdough.output.disconnect();
+          scheduler.superdough.output.connect(this.masterPanNode);
+          console.log('✅ [PLAY-TIME CHECK] Connected scheduler.superdough.output to masterPanNode');
+        } catch (e) {
+          console.warn('⚠️ [PLAY-TIME CHECK] Could not connect scheduler.superdough.output:', e);
+        }
+      } else {
+        console.log('  ℹ️ scheduler.superdough.output not found - scheduler.output should already be connected');
+      }
+    } else {
+      console.log('  ⚠️ No scheduler found at window.strudel.scheduler');
+    }
+
     await this.initialize();
     if (!this.strudelLoaded) {
       await this.initializeStrudelAndSounds();
