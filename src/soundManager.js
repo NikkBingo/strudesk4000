@@ -621,18 +621,26 @@ class SoundManager {
         console.warn('⚠️ Master is muted - audio will be silent');
       }
       
-      // Verify chain nodes exist
+      // Verify chain nodes exist and check all gain values
       const chainStatus = {
         masterPanNode: !!this.masterPanNode,
         masterFilterNode: !!this.masterFilterNode,
         masterDryGainNode: !!this.masterDryGainNode,
         masterGainNode: !!this.masterGainNode,
         realDestination: !!this._realDestination,
-        gain: gainValue,
+        masterGain: gainValue,
+        masterDryGain: this.masterDryGainNode?.gain?.value ?? 'N/A',
+        masterPan: this.masterPanNode?.pan?.value ?? 'N/A',
+        masterFilterFreq: this.masterFilterNode?.frequency?.value ?? 'N/A',
         muted: isMuted
       };
       
       console.log('🎚️ Master chain verification:', chainStatus);
+      
+      // Check if dry gain is 0 (would mute audio)
+      if (this.masterDryGainNode && this.masterDryGainNode.gain.value === 0) {
+        console.warn('⚠️ Master dry gain is 0 - audio will be silent!');
+      }
       
       // Try to ensure connection (will fail silently if already connected)
       try {
@@ -1478,10 +1486,25 @@ class SoundManager {
                 if (isStackPattern) {
                   if (!soundManagerInstance._stackMasterRoutingLogged) {
                     console.log(`🎚️ Stack() pattern: Routing through master chain (${soundManagerInstance.trackedPatterns.size} elements)`);
+                    console.log(`🎚️ Stack() routing: masterPanNode=${!!masterPanNode}, masterFilterNode=${!!masterFilterNode}, masterGainNode=${!!masterGainNode}, gain=${masterGainNode?.gain?.value?.toFixed(3) || 'N/A'}, muted=${soundManagerInstance.masterMuted}`);
                     soundManagerInstance._stackMasterRoutingLogged = true;
                   }
                   const masterNode = masterPanNode || masterFilterNode || masterGainNode;
                   if (masterNode) {
+                    // CRITICAL: Verify master chain is connected before routing
+                    if (masterGainNode && soundManagerInstance._realDestination) {
+                      try {
+                        masterGainNode.connect(soundManagerInstance._realDestination);
+                        if (!soundManagerInstance._stackRoutingVerified) {
+                          console.log(`🎚️ ✅ Stack() routing: Verified masterGainNode -> destination connection (gain=${masterGainNode.gain.value.toFixed(3)})`);
+                          soundManagerInstance._stackRoutingVerified = true;
+                        }
+                      } catch (e) {
+                        if (e.message && !e.message.includes('already connected')) {
+                          console.error(`❌ Stack() routing: Failed to connect masterGainNode -> destination:`, e.message);
+                        }
+                      }
+                    }
                     return this.__originalConnect.call(this, masterNode, outputIndex, inputIndex);
                   }
                 }
