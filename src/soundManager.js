@@ -4272,11 +4272,59 @@ class SoundManager {
                   }
                 }
                 
-                // Final check
+                // Final check - if still missing, create a minimal output wrapper
                 if (strudelContext.scheduler.output) {
                   console.log('✅ scheduler.output is now set:', strudelContext.scheduler.output?.constructor?.name || typeof strudelContext.scheduler.output);
                 } else {
                   console.warn('⚠️ scheduler.output still missing after delayed check');
+                  console.log('🔧 Attempting to create output using webaudioOutput factory...');
+                  
+                  // Try to create output using the webaudioOutput factory
+                  // Note: This might fail with ensureObjectValue error, but we'll try anyway
+                  if (this.strudelOutputFactory && typeof this.strudelOutputFactory === 'function') {
+                    try {
+                      // Try creating output with audioContext and destination
+                      // The destination will be masterPanNode due to our override
+                      const output = this.strudelOutputFactory({
+                        audioContext: this.audioContext,
+                        destination: this.audioContext.destination
+                      });
+                      if (output) {
+                        strudelContext.scheduler.output = output;
+                        console.log('✅ Created scheduler.output using webaudioOutput factory');
+                      } else {
+                        throw new Error('Factory returned null/undefined');
+                      }
+                    } catch (factoryError) {
+                      console.warn('⚠️ Factory creation failed, creating minimal wrapper:', factoryError.message);
+                      
+                      // Fallback: Create a minimal output using a GainNode
+                      try {
+                        const outputGain = this.audioContext.createGain();
+                        outputGain.connect(this.masterPanNode);
+                        
+                        // Create minimal output object
+                        const minimalOutput = {
+                          output: outputGain,
+                          outputNode: outputGain,
+                          connect: (destination) => {
+                            outputGain.disconnect();
+                            outputGain.connect(this.masterPanNode);
+                          },
+                          disconnect: () => {
+                            outputGain.disconnect();
+                          }
+                        };
+                        
+                        strudelContext.scheduler.output = minimalOutput;
+                        console.log('✅ Created minimal output wrapper connected to masterPanNode');
+                      } catch (wrapperError) {
+                        console.error('❌ Failed to create minimal output wrapper:', wrapperError);
+                      }
+                    }
+                  } else {
+                    console.error('❌ Cannot create output - strudelOutputFactory not available');
+                  }
                 }
               }, 500);
             }
