@@ -1123,11 +1123,14 @@ class SoundManager {
             // Check if connecting to the actual audio destination (NOT intermediate nodes like masterPanNode/masterGainNode)
             // CRITICAL: When we override audioContext.destination to return masterPanNode, 
             // audioContextInstance.destination will be masterPanNode, not the real destination
-            // So we need to check both the real destination AND if destination is masterPanNode
+            // CRITICAL: If destination is masterPanNode directly, don't intercept - let it connect
+            // masterPanNode is part of the master chain, so connections to it will flow through the chain
+            // We only intercept connections to audioContext.destination (which is overridden to masterPanNode)
+            // or the real AudioDestinationNode
+            const isConnectingToMasterPanNodeDirectly = (soundManagerInstance && destination === soundManagerInstance.masterPanNode);
             const isMasterDestination = (
               destination === realDestination ||
-              destination === audioContextInstance.destination ||
-              (soundManagerInstance && destination === soundManagerInstance.masterPanNode)
+              destination === audioContextInstance.destination
             );
             
             // Also check if destination is ANY AudioContext's destination (Strudel might use its own context)
@@ -1175,7 +1178,9 @@ class SoundManager {
             // This ensures we catch Strudel's output even if it connects before trackedPatterns is set
             // CRITICAL: Always intercept destination connections, not just when master is active
             // This ensures audio always flows through the master chain (dry path + effects)
-            const shouldIntercept = (isMasterDestination || isAnyAudioContextDestination) && !isAnalyserNode;
+            // BUT: Don't intercept connections directly to masterPanNode - let them pass through
+            // masterPanNode is part of the master chain, so connections to it will naturally flow to destination
+            const shouldIntercept = (isMasterDestination || isAnyAudioContextDestination) && !isAnalyserNode && !isConnectingToMasterPanNodeDirectly;
             const masterPlaybackActive = soundManagerInstance.masterActive && soundManagerInstance.trackedPatterns.size > 0;
             const isMultiChannelMaster = masterPlaybackActive;
             
