@@ -26,6 +26,7 @@ import { getTheoryControlsTemplate, updateTheoryControlsVisibility } from './com
 import { SYNTH_BANK_ALIASES, OSCILLATOR_SYNTHS, SAMPLE_SYNTHS, LEGACY_SAMPLE_SYNTHS, DRUM_BANK_VALUES, VCSL_OPTION_PREFIX, parseBankSelectionValue } from './constants/banks.js';
 import { initPianoSections } from './pianoKeyboard.js';
 import { resolveAssetUrl } from './utils/assetUrls.js';
+import { getStylingSettings, subscribeToSettings, isBankVisible } from './utils/settingsStore.js';
 
 // Drum abbreviation mapping
 const DRUM_ABBREVIATIONS = {
@@ -9415,6 +9416,7 @@ class InteractiveSoundApp {
       );
 
       sortedBanks.forEach((bank) => {
+        if (!isBankVisible(bank)) return;
         const option = document.createElement('option');
         option.value = bank;
         option.textContent = getDrumBankDisplayName(bank);
@@ -9503,6 +9505,9 @@ class InteractiveSoundApp {
         bankSelect.value = '';
       }
     };
+
+    // Make ensurePatternBankOptions accessible globally for settings refresh
+    window.refreshBankOptions = ensurePatternBankOptions;
 
     ensurePatternBankOptions();
     
@@ -14831,6 +14836,86 @@ async function initUserAuth() {
     settingsPanel.init();
     window.settingsPanel = settingsPanel;
   }
+
+  // Apply styling settings to the page
+  applyPageStyling();
+  
+  // Subscribe to settings changes to update page styling and refresh bank dropdowns
+  subscribeToSettings(() => {
+    applyPageStyling();
+    refreshBankDropdowns();
+  });
+  
+  // Initial refresh of bank dropdowns to filter hidden banks
+  refreshBankDropdowns();
+}
+
+function applyPageStyling() {
+  const styling = getStylingSettings();
+  const body = document.body;
+  const bubbleBackground = document.querySelector('.bubble-background');
+  const root = document.documentElement;
+
+  // Remove all page-style classes
+  body.classList.remove('page-style-animated', 'page-style-solid', 'page-style-image');
+
+  // Apply the appropriate class based on backgroundType
+  if (styling.backgroundType === 'solid') {
+    body.classList.add('page-style-solid');
+    if (bubbleBackground) {
+      bubbleBackground.setAttribute('data-hidden', 'true');
+    }
+  } else if (styling.backgroundType === 'image') {
+    body.classList.add('page-style-image');
+    if (bubbleBackground) {
+      bubbleBackground.setAttribute('data-hidden', 'true');
+    }
+  } else {
+    // animated (default)
+    body.classList.add('page-style-animated');
+    if (bubbleBackground) {
+      bubbleBackground.removeAttribute('data-hidden');
+    }
+  }
+
+  // Set CSS custom properties
+  root.style.setProperty('--page-solid-color', styling.backgroundColor || '#05060a');
+  if (styling.backgroundImage) {
+    root.style.setProperty('--page-bg-image', `url(${styling.backgroundImage})`);
+  } else {
+    root.style.setProperty('--page-bg-image', 'none');
+  }
+}
+
+function refreshBankDropdowns() {
+  const bankSelect = document.getElementById('modal-pattern-bank');
+  if (!bankSelect) return;
+
+  const currentValue = bankSelect.value;
+
+  // If ensurePatternBankOptions is available, call it to refresh (it will filter drums)
+  if (window.refreshBankOptions && typeof window.refreshBankOptions === 'function') {
+    window.refreshBankOptions(currentValue);
+  }
+
+  // Filter all options in all optgroups based on visibility (for waveforms, synths, etc.)
+  Array.from(bankSelect.querySelectorAll('optgroup')).forEach((group) => {
+    Array.from(group.querySelectorAll('option')).forEach((option) => {
+      const bankValue = option.value;
+      if (bankValue && isBankVisible(bankValue)) {
+        option.style.display = '';
+        option.hidden = false;
+      } else if (bankValue) {
+        option.style.display = 'none';
+        option.hidden = true;
+      }
+      // Keep default/empty value options visible
+      if (!bankValue) {
+        option.style.display = '';
+        option.hidden = false;
+      }
+    });
+  });
 }
 
 function updateLoadSaveButtonsVisibility(isLoggedIn) {
