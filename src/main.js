@@ -236,7 +236,7 @@ let cachedNormalizedVcslManifest = null;
 const SPECIAL_SAMPLE_BANKS = [
   { value: 'mridangam', label: 'Mridangam Percussion Set' }
 ];
-const SPECIAL_SAMPLE_BANK_VALUES = new Set(SPECIAL_SAMPLE_BANKS.map(bank => bank.value.toLowerCase()));
+const SPECIAL_SAMPLE_BANK_VALUES = new Set(SPECIAL_SAMPLE_BANKS.map(bank => (bank.value || '').toLowerCase()).filter(Boolean));
 
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1']);
 const isServerDeployment = typeof window !== 'undefined'
@@ -9450,15 +9450,15 @@ class InteractiveSoundApp {
 
       // Find or create all optgroups, preserving their order
       let drumsGroup = Array.from(bankSelect.children).find(
-        (child) => child.tagName === 'OPTGROUP' && child.label && child.label.toLowerCase() === 'drums'
+        (child) => child.tagName === 'OPTGROUP' && child.label && (child.label || '').toLowerCase() === 'drums'
       );
       
       let waveformsGroup = Array.from(bankSelect.children).find(
-        (child) => child.tagName === 'OPTGROUP' && child.label && child.label.toLowerCase().includes('waveform')
+        (child) => child.tagName === 'OPTGROUP' && child.label && (child.label || '').toLowerCase().includes('waveform')
       );
       
       let synthsGroup = Array.from(bankSelect.children).find(
-        (child) => child.tagName === 'OPTGROUP' && child.label && child.label.toLowerCase().includes('synth')
+        (child) => child.tagName === 'OPTGROUP' && child.label && (child.label || '').toLowerCase().includes('synth')
       );
       
       let specialtyGroup = Array.from(bankSelect.children).find(
@@ -9578,7 +9578,7 @@ class InteractiveSoundApp {
         const option = document.createElement('option');
         option.value = value;
         option.textContent = label;
-        if (value.toLowerCase() === 'vcsl') {
+        if (value && value.toLowerCase() === 'vcsl') {
           vcslGroup.appendChild(option);
         } else {
           specialtyGroup.appendChild(option);
@@ -12574,10 +12574,10 @@ class InteractiveSoundApp {
         return { type: 'drum', value: bankMatch[1] };
       }
       if (soundMatch) {
-        const extraBank = bankMatch && bankMatch[1].toLowerCase() === 'vcsl' ? 'vcsl' : null;
+        const extraBank = bankMatch && bankMatch[1] && bankMatch[1].toLowerCase() === 'vcsl' ? 'vcsl' : null;
         return { type: 'synth', value: soundMatch[1], extraBank };
       }
-      if (bankMatch && bankMatch[1].toLowerCase() === 'vcsl') {
+      if (bankMatch && bankMatch[1] && bankMatch[1].toLowerCase() === 'vcsl') {
         return { type: 'synth', value: null, extraBank: 'vcsl' };
       }
       return null;
@@ -12590,7 +12590,7 @@ class InteractiveSoundApp {
       if (DRUM_BANK_VALUES.has(selection.bankValue)) {
         return { type: 'drum', value: selection.bankValue };
       }
-      const normalized = selection.bankValue.toLowerCase();
+      const normalized = (selection.bankValue || '').toLowerCase();
       const canonicalSynth = SYNTH_BANK_ALIASES[normalized] || selection.bankValue;
       const soundName = selection.isVcslInstrument ? (selection.vcslInstrument || canonicalSynth) : canonicalSynth;
       const extraBank = selection.isVcslInstrument ? 'vcsl' : null;
