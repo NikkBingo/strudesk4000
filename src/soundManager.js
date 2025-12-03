@@ -963,9 +963,13 @@ class SoundManager {
         // Visualizer analyser connects in parallel to master gain
 
         // Connect dry path: masterPan -> masterFilter -> masterDryGain -> masterGain -> destination
+        // CRITICAL: Dry path must always be connected and audible
         this.masterPanNode.connect(this.masterFilterNode);
         this.masterFilterNode.connect(this.masterDryGainNode);
         this.masterDryGainNode.connect(this.masterGainNode);
+        
+        // Verify dry path setup
+        console.log(`🎚️ Dry path: masterPan -> masterFilter (freq=${this.masterFilterNode.frequency.value}Hz) -> masterDryGain (gain=${this.masterDryGainNode.gain.value}) -> masterGain -> destination`);
         
         // Delay routing: masterFilter -> delay -> delayGain (wet) -> masterGain, with feedback loop
         this.masterFilterNode.connect(this.masterDelayNode);
@@ -982,7 +986,13 @@ class SoundManager {
         
         // CRITICAL: Connect masterGainNode to destination - this is the final output
         // Store this connection so we can verify it later
-        this.masterGainNode.connect(this._realDestination);
+        // Note: This happens before AudioNode.prototype.connect is hijacked, so regular connect is fine
+        try {
+          this.masterGainNode.connect(this._realDestination);
+          console.log('✅ Connected masterGainNode -> _realDestination (initial setup)');
+        } catch (e) {
+          console.error('❌ Failed to connect masterGainNode -> _realDestination:', e);
+        }
         
         // CRITICAL: Override audioContext.destination to route through master chain
         // This ensures Strudel's webaudio output connects to masterPanNode instead of real destination
@@ -991,7 +1001,22 @@ class SoundManager {
           configurable: true,
           enumerable: true
         });
-        __safeRouteLog(this, `🎚️ ✅ INITIAL: Connected masterPan -> masterFilter -> masterGain -> destination (gain=${this.masterGainNode.gain.value.toFixed(3)})`);
+        __safeRouteLog(this, `🎚️ ✅ INITIAL: Connected masterPan -> masterFilter -> masterDryGain -> masterGain -> destination (gain=${this.masterGainNode.gain.value.toFixed(3)})`);
+        
+        // CRITICAL: Ensure dry path is always audible
+        // Dry gain should always be 1 to preserve original signal
+        if (this.masterDryGainNode) {
+          this.masterDryGainNode.gain.value = 1;
+          console.log(`🎚️ Dry path gain set to 1.0 (always audible)`);
+        }
+        
+        // CRITICAL: Ensure filter isn't blocking audio
+        // Filter frequency should be reasonable (not 0 or too low)
+        if (this.masterFilterNode && this.masterFilterNode.frequency.value < 20) {
+          console.warn(`⚠️ Filter frequency is very low (${this.masterFilterNode.frequency.value}Hz), might block audio. Setting to 2000Hz.`);
+          this.masterFilterNode.frequency.value = 2000;
+        }
+        
         this._requestMasterFilterUpdate(true);
         
         // Set master values (use stored masterVolume, not this.volume)
