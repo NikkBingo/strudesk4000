@@ -14,6 +14,7 @@ import { Scale, Note, Progression } from '@tonaljs/tonal';
 import { LoginModal } from './components/LoginModal.js';
 import { UserProfile } from './components/UserProfile.js';
 import { UserProfilesListing } from './components/UserProfilesListing.js';
+import { UserSubmissions } from './components/UserSubmissions.js';
 import { SavePatternDialog } from './components/SavePatternDialog.js';
 import { SettingsPanel } from './components/SettingsPanel.js';
 import { ProfileOnboardingModal } from './components/ProfileOnboardingModal.js';
@@ -15089,6 +15090,7 @@ let currentUser = null;
 let loginModal = null;
 let userProfile = null;
 let userProfilesListing = null;
+let userSubmissions = null;
 let savePatternDialog = null;
 let profileOnboardingModal = null;
 let adminUserManager = null;
@@ -15209,6 +15211,28 @@ async function initUserAuth() {
     });
   }
 
+  // Setup submissions link
+  const submissionsLink = document.getElementById('user-submissions-link');
+  if (submissionsLink) {
+    submissionsLink.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (!currentUser) {
+        alert('Please log in to view your submissions.');
+        if (loginModal) {
+          loginModal.show();
+        } else {
+          showLoginButton();
+        }
+        userMenuDropdown?.classList.remove('active');
+        return;
+      }
+      if (userSubmissions) {
+        await userSubmissions.show(currentUser);
+      }
+      userMenuDropdown?.classList.remove('active');
+    });
+  }
+
   const collabLink = document.getElementById('user-collab-link');
   if (collabLink) {
     collabLink.addEventListener('click', (e) => {
@@ -15238,6 +15262,10 @@ async function initUserAuth() {
   // Initialize user profiles listing
   userProfilesListing = new UserProfilesListing();
   userProfilesListing.init();
+
+  // Initialize user submissions
+  userSubmissions = new UserSubmissions();
+  userSubmissions.init();
 
   // Setup profiles link
   const profilesLink = document.getElementById('user-profiles-link');
