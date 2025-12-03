@@ -560,6 +560,7 @@ class SoundManager {
     this._manualStrudelOutputDisabled = false; // Set true if factory throws ensureObjectValue error
     this.masterPanNode = null; // Master pan node
     this.masterFilterNode = null; // Optional master filter node (for Chaospad / master FX)
+    this.masterDryGainNode = null; // Dry path gain node to preserve original signal
     this.masterDelayNode = null; // Master delay node
     this.masterReverbNode = null; // Master reverb (convolver) node
     this.masterDelayGainNode = null; // Delay wet/dry mix gain
@@ -867,6 +868,10 @@ class SoundManager {
         this.masterFilterNode.frequency.value = this.masterFilterFrequency;
         this.masterFilterNode.Q.value = this.masterFilterResonance;
         
+        // Create dry path gain
+        this.masterDryGainNode = this.audioContext.createGain();
+        this.masterDryGainNode.gain.value = 1; // Always keep dry path audible
+        
         // Create delay nodes
         this.masterDelayNode = this.audioContext.createDelay(1.0); // Max 1 second delay
         this.masterDelayNode.delayTime.value = this.masterDelayTime;
@@ -887,23 +892,39 @@ class SoundManager {
         this._realDestination = this.audioContext.destination;
         
         // REMOVED: masterAnalyser - no longer needed, visualizer uses its own analyser
-        // Simplified chain: element gain -> element pan -> master pan -> master filter -> master delay -> master reverb -> master gain -> destination
+        // Simplified chain: element gain -> element pan -> master pan -> master filter
+        // Then split into dry path and wet paths (delay/reverb) before mixing into master gain -> destination
         // Visualizer analyser connects in parallel to master gain
 
-        // Connect: masterPan -> masterFilter -> masterDelay -> masterReverb -> masterGain -> REAL destination
-        // Delay routing: input -> delay -> delayGain -> output, and delay -> delayFeedbackGain -> delay (feedback loop)
+        // Connect dry path: masterPan -> masterFilter -> masterDryGain -> masterGain -> destination
         this.masterPanNode.connect(this.masterFilterNode);
+        this.masterFilterNode.connect(this.masterDryGainNode);
+        this.masterDryGainNode.connect(this.masterGainNode);
+        
+        // Delay routing: masterFilter -> delay -> delayGain (wet) -> masterGain, with feedback loop
         this.masterFilterNode.connect(this.masterDelayNode);
         this.masterDelayNode.connect(this.masterDelayGainNode);
-        this.masterDelayGainNode.connect(this.masterReverbNode);
-        this.masterReverbNode.connect(this.masterReverbGainNode);
-        this.masterReverbGainNode.connect(this.masterGainNode);
+        this.masterDelayGainNode.connect(this.masterGainNode);
         // Delay feedback loop
         this.masterDelayNode.connect(this.masterDelayFeedbackGainNode);
         this.masterDelayFeedbackGainNode.connect(this.masterDelayNode);
+        
+        // Reverb routing: masterFilter -> reverb -> reverbGain (wet) -> masterGain
+        this.masterFilterNode.connect(this.masterReverbNode);
+        this.masterReverbNode.connect(this.masterReverbGainNode);
+        this.masterReverbGainNode.connect(this.masterGainNode);
+        
         // CRITICAL: Connect masterGainNode to destination - this is the final output
         // Store this connection so we can verify it later
         this.masterGainNode.connect(this._realDestination);
+        
+        // CRITICAL: Override audioContext.destination to route through master chain
+        // This ensures Strudel's webaudio output connects to masterPanNode instead of real destination
+        Object.defineProperty(this.audioContext, 'destination', {
+          get: () => this.masterPanNode,
+          configurable: true,
+          enumerable: true
+        });
         __safeRouteLog(this, `🎚️ ✅ INITIAL: Connected masterPan -> masterFilter -> masterGain -> destination (gain=${this.masterGainNode.gain.value.toFixed(3)})`);
         this._requestMasterFilterUpdate(true);
         
@@ -916,8 +937,21 @@ class SoundManager {
         this.gainNode = this.masterGainNode;
         // Don't override master gain - it's already set to masterVolume above
         
-        // Don't override destination - it breaks Strudel
-        // Instead, we'll manually call webaudioOutput with masterPanNode
+        // CRITICAL: Override audioContext.destination to route through master chain
+        // This ensures Strudel's webaudio output connects to masterPanNode instead of real destination
+        // We use Object.defineProperty to override the getter, which is safer than direct assignment
+        try {
+          Object.defineProperty(this.audioContext, 'destination', {
+            get: () => this.masterPanNode,
+            configurable: true,
+            enumerable: true
+          });
+          console.log('✅ Overrode audioContext.destination to route through masterPanNode');
+        } catch (e) {
+          console.warn('⚠️ Could not override audioContext.destination:', e.message);
+          console.log('💡 Will rely on AudioNode.prototype.connect hijacking instead');
+        }
+        
         console.log('💡 Master channel ready - will route Strudel through it during init');
 
         // NOW load Strudel - it will use our hijacked AudioContext
@@ -1010,9 +1044,9 @@ class SoundManager {
             // We now only intercept connections to destinations, not internal routing
 
             // If connecting to the master destination OR any AudioContext destination, check for element routing first
-            // Only intercept when master is active (playing)
-            // CRITICAL: Also intercept connections to ANY AudioContext destination when master is active
+            // CRITICAL: Intercept connections to ANY AudioContext destination ALWAYS (not just when master is active)
             // This ensures we catch Strudel nodes even if they're connecting to Strudel's own destination
+            // We need to intercept even when master is not active, because patterns might be pre-evaluated
             // SKIP AnalyserNodes - they're audio readers, not sources. We want to intercept audio SOURCE nodes.
             
             // Log ALL connection attempts to destination (regardless of masterActive) for debugging
@@ -1042,11 +1076,17 @@ class SoundManager {
             // Intercept ALL connections to destination (even during initialization)
             // Route through master chain if element routing not available
             // This ensures we catch Strudel's output even if it connects before trackedPatterns is set
+            // CRITICAL: Always intercept destination connections, not just when master is active
+            // This ensures audio always flows through the master chain (dry path + effects)
             const shouldIntercept = (isMasterDestination || isAnyAudioContextDestination) && !isAnalyserNode;
             const masterPlaybackActive = soundManagerInstance.masterActive && soundManagerInstance.trackedPatterns.size > 0;
             const isMultiChannelMaster = masterPlaybackActive;
             
             if (shouldIntercept) {
+              // ALWAYS route through master chain when connecting to destination
+              // This ensures audio flows through masterPan -> masterFilter -> masterDryGain -> masterGain -> destination
+              // Even if master is not "active" (playing), we still want audio to flow through the chain
+              // so that effects (delay/reverb) can be applied when enabled
               // Debug logging for master destination connections
               if (!soundManagerInstance._masterDestinationConnectLogged) {
                 soundManagerInstance._logRoute(`🎚️ ✅ INTERCEPTING connection to destination: ${this.constructor.name} -> ${destination?.constructor?.name}, masterActive=${soundManagerInstance.masterActive}, trackedPatterns=${soundManagerInstance.trackedPatterns.size}`);
@@ -1065,16 +1105,11 @@ class SoundManager {
                 soundManagerInstance._nodeTypeConnectLogged.add(nodeType);
               }
               
-              // If master playback is active, always route through master chain
-              if (masterPlaybackActive) {
-                const masterNode = masterPanNode || masterFilterNode || masterGainNode;
-                if (masterNode) {
-                  this.__punchcardMasterRouted = true;
-                  this.__punchcardMasterConnectionNode = masterNode;
-                  return this.__originalConnect.call(this, masterNode, outputIndex, inputIndex);
-                }
-              }
-              
+              // CRITICAL: Always route through master chain when connecting to destination
+              // This ensures audio flows through masterPan -> masterFilter -> masterDryGain -> masterGain -> destination
+              // Even if master is not "active" (playing), we still want audio to flow through the chain
+              // so that effects (delay/reverb) can be applied when enabled
+              // First, try to route through element chain if we can identify the element
               let elementId = null;
               
               // Only attempt to route through element gain nodes when we can uniquely identify the element
@@ -1402,10 +1437,22 @@ class SoundManager {
                 }
               }
               
-              // Fallback: route through master chain if no element found
-              // CRITICAL: Only route when masterActive is true to prevent auto-playback
-              // For single-element masters, we MUST route through element chain, not master chain directly
-              // If we route directly to masterPanNode, we bypass element gain/pan controls
+              // CRITICAL FALLBACK: Always route through master chain when connecting to destination
+              // This ensures audio ALWAYS flows through masterPan -> masterFilter -> masterDryGain -> masterGain -> destination
+              // Even if no element is found, we must route through master chain to ensure audio is audible
+              // The master chain includes the dry path, so audio will always be audible even when effects are off
+              if (!elementId && masterPanNode) {
+                // No element found - route directly through master chain
+                if (!soundManagerInstance._masterFallbackRoutingLogged) {
+                  soundManagerInstance._logRoute(`🎚️ ⚠️ FALLBACK: No element found, routing through master chain: ${this.constructor.name} -> masterPanNode`);
+                  soundManagerInstance._masterFallbackRoutingLogged = true;
+                }
+                this.__punchcardMasterRouted = true;
+                this.__punchcardMasterConnectionNode = masterPanNode;
+                return this.__originalConnect.call(this, masterPanNode, outputIndex, inputIndex);
+              }
+              
+              // Legacy fallback logic (kept for backward compatibility but should not be reached)
               if (soundManagerInstance.masterActive && soundManagerInstance.trackedPatterns.size === 1 && !elementId) {
                 // Single element but couldn't find elementId - try harder to find it
                 const trackedElementIds = Array.from(soundManagerInstance.trackedPatterns.keys());
@@ -1458,11 +1505,12 @@ class SoundManager {
                 console.log(`🎚️ 🔍 FALLBACK ROUTING SKIP: elementId is null, will route through master chain`);
               }
               
-              // Final fallback: only allow routing through master chain when no element routing is possible
-              // Limit this to cases where there are no tracked patterns yet (e.g., initialization) or master is inactive
-              const allowMasterFallback = masterPlaybackActive || (soundManagerInstance.trackedPatterns.size === 0) || !soundManagerInstance.masterActive;
-              const masterNode = allowMasterFallback ? (masterPanNode || masterFilterNode || masterGainNode) : null;
-              if (masterNode) {
+              // CRITICAL FINAL FALLBACK: Always route through master chain when connecting to destination
+              // This ensures audio ALWAYS flows through masterPan -> masterFilter -> masterDryGain -> masterGain -> destination
+              // Even if element routing failed or isn't available, we must route through master chain
+              // The master chain includes the dry path, so audio will always be audible even when effects are off
+              const masterNode = masterPanNode || masterFilterNode || masterGainNode;
+              if (masterNode && !elementId) {
                 // Skip fallback if this source is already routed through an element chain
                 if (this.__punchcardElementRouted) {
                   console.log(`🎚️ Skipping master fallback for ${this.constructor.name} (already routed through element chain)`);
@@ -10313,6 +10361,30 @@ class SoundManager {
               }
             }
           }
+        if (this.masterFilterNode && this.masterDryGainNode) {
+          try {
+            this.masterFilterNode.connect(this.masterDryGainNode);
+            console.log(`   ✅ VERIFIED: masterFilterNode -> masterDryGainNode`);
+          } catch (e) {
+            if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+              console.log(`   ✅ VERIFIED: masterFilterNode -> masterDryGainNode (already connected)`);
+            } else {
+              console.warn(`   ⚠️ Could not verify masterFilterNode -> masterDryGainNode: ${e.message}`);
+            }
+          }
+        }
+        if (this.masterDryGainNode && this.masterGainNode) {
+          try {
+            this.masterDryGainNode.connect(this.masterGainNode);
+            console.log(`   ✅ VERIFIED: masterDryGainNode -> masterGainNode`);
+          } catch (e) {
+            if (e.message.includes('already connected') || e.message.includes('already been connected')) {
+              console.log(`   ✅ VERIFIED: masterDryGainNode -> masterGainNode (already connected)`);
+            } else {
+              console.warn(`   ⚠️ Could not verify masterDryGainNode -> masterGainNode: ${e.message}`);
+            }
+          }
+        }
         if (this.masterFilterNode && this.masterDelayNode) {
           try {
             this.masterFilterNode.connect(this.masterDelayNode);
