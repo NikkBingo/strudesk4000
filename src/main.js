@@ -3380,9 +3380,12 @@ class InteractiveSoundApp {
       xAxis: { effect: 'cutoff', min: soundManager.masterFilterMinHz || 80, max: soundManager.masterFilterMaxHz || 8000 },
       yAxis: { effect: 'resonance', min: soundManager.masterFilterMinQ || 0.1, max: soundManager.masterFilterMaxQ || 5 }
     };
+    // Store default values that will be restored when chaospad is disabled or mouse leaves
     this.chaospadDefaults = {
       cutoff: Math.min(this.chaospadSettings.maxFrequency, Math.max(this.chaospadSettings.minFrequency, soundManager.masterFilterFrequency || 4040)),
-      resonance: Math.min(this.chaospadSettings.maxResonance, Math.max(this.chaospadSettings.minResonance, soundManager.masterFilterResonance || 0.7))
+      resonance: Math.min(this.chaospadSettings.maxResonance, Math.max(this.chaospadSettings.minResonance, soundManager.masterFilterResonance || 0.7)),
+      volume: soundManager.masterVolume || 0.7,
+      pan: soundManager.masterPan || 0
     };
     this.chaospadOrientationActive = false;
     this.chaospadOrientationPermission = 'unknown';
@@ -4682,6 +4685,7 @@ class InteractiveSoundApp {
     const chaospadCheckbox = document.getElementById('chaospad-checkbox');
     if (chaospadCheckbox) {
       chaospadCheckbox.addEventListener('change', async (e) => {
+        const wasEnabled = this.chaospadEnabled;
         this.chaospadEnabled = e.target.checked;
         console.log(`🎛️ Chaospad ${this.chaospadEnabled ? 'enabled' : 'disabled'}`);
         this.updateMobileOrientationLock();
@@ -4693,12 +4697,16 @@ class InteractiveSoundApp {
         }
         
         if (!this.chaospadEnabled) {
-          console.log('🎛️ Chaospad: Disabled - bypassing master filter');
-          this.currentCutoffValue = null;
-          this.currentResonanceValue = null;
+          console.log('🎛️ Chaospad: Disabled - restoring defaults');
+          // Restore all values to defaults
+          this.restoreChaospadDefaults();
           soundManager.enableMasterFilter(false);
         } else {
           console.log('🎛️ Chaospad: Enabled - activating master filter with defaults');
+          // Store current values as defaults before enabling (only if not already enabled)
+          if (!wasEnabled) {
+            this.updateChaospadDefaultsFromCurrent();
+          }
           soundManager.enableMasterFilter(true);
           this.resetChaospadToDefaults(true);
           
@@ -4756,7 +4764,7 @@ class InteractiveSoundApp {
       });
       this.masterPunchcardCanvas.addEventListener('mouseleave', () => {
         if (this.chaospadEnabled) {
-          this.resetChaospadToDefaults();
+          this.restoreChaospadDefaults();
         }
       });
       
@@ -6437,6 +6445,14 @@ class InteractiveSoundApp {
   /**
    * Reset Chaospad-controlled modifiers back to defaults
    */
+  updateChaospadDefaultsFromCurrent() {
+    // Store current values as defaults before chaospad interaction
+    this.chaospadDefaults.cutoff = soundManager.masterFilterFrequency || this.chaospadDefaults.cutoff;
+    this.chaospadDefaults.resonance = soundManager.masterFilterResonance || this.chaospadDefaults.resonance;
+    this.chaospadDefaults.volume = soundManager.masterVolume || this.chaospadDefaults.volume;
+    this.chaospadDefaults.pan = soundManager.masterPan || this.chaospadDefaults.pan;
+  }
+
   resetChaospadToDefaults(immediate = false) {
     if (!this.chaospadEnabled) return;
     this.currentCutoffValue = this.chaospadDefaults.cutoff;
@@ -6456,6 +6472,69 @@ class InteractiveSoundApp {
       Math.max(0, Math.min(1, verticalPercentage)),
       'reset'
     );
+  }
+
+  restoreChaospadDefaults() {
+    // Restore all values to defaults based on configured effects
+    const xAxis = this.chaospadSettings.xAxis || { effect: 'cutoff', min: 80, max: 8000 };
+    const yAxis = this.chaospadSettings.yAxis || { effect: 'resonance', min: 0.1, max: 5 };
+
+    // Restore X axis effect
+    switch (xAxis.effect) {
+      case 'cutoff':
+        soundManager.setMasterFilterFrequency(this.chaospadDefaults.cutoff, true);
+        this.currentCutoffValue = this.chaospadDefaults.cutoff;
+        break;
+      case 'resonance':
+        soundManager.setMasterFilterResonance(this.chaospadDefaults.resonance, true);
+        this.currentResonanceValue = this.chaospadDefaults.resonance;
+        break;
+      case 'volume':
+        soundManager.masterVolume = this.chaospadDefaults.volume;
+        if (soundManager.masterGainNode) {
+          soundManager.masterGainNode.gain.value = this.chaospadDefaults.volume;
+        }
+        this.currentVolumeValue = this.chaospadDefaults.volume;
+        break;
+      case 'pan':
+        soundManager.masterPan = this.chaospadDefaults.pan;
+        if (soundManager.masterPanNode) {
+          soundManager.masterPanNode.pan.value = this.chaospadDefaults.pan;
+        }
+        this.currentPanValue = this.chaospadDefaults.pan;
+        break;
+    }
+
+    // Restore Y axis effect
+    switch (yAxis.effect) {
+      case 'cutoff':
+        soundManager.setMasterFilterFrequency(this.chaospadDefaults.cutoff, true);
+        this.currentCutoffValue = this.chaospadDefaults.cutoff;
+        break;
+      case 'resonance':
+        soundManager.setMasterFilterResonance(this.chaospadDefaults.resonance, true);
+        this.currentResonanceValue = this.chaospadDefaults.resonance;
+        break;
+      case 'volume':
+        soundManager.masterVolume = this.chaospadDefaults.volume;
+        if (soundManager.masterGainNode) {
+          soundManager.masterGainNode.gain.value = this.chaospadDefaults.volume;
+        }
+        this.currentVolumeValue = this.chaospadDefaults.volume;
+        break;
+      case 'pan':
+        soundManager.masterPan = this.chaospadDefaults.pan;
+        if (soundManager.masterPanNode) {
+          soundManager.masterPanNode.pan.value = this.chaospadDefaults.pan;
+        }
+        this.currentPanValue = this.chaospadDefaults.pan;
+        break;
+    }
+
+    // Reset virtual gravity to center
+    this.updateChaospadVirtualGravity(0.5, 0.5, 'restore');
+    
+    console.log('🎛️ Chaospad: Restored defaults', this.chaospadDefaults);
   }
 
   async getMasterPatternWithoutVisualizer() {
