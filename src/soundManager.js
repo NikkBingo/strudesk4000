@@ -1192,7 +1192,15 @@ class SoundManager {
             // and it's NOT the real destination, just let it connect naturally
             // The master chain is already set up, so the audio will flow through naturally
             if (shouldIntercept && destination === soundManagerInstance.masterPanNode && destination !== realDestination) {
-              console.log(`🎚️ ✅ Allowing ${this.constructor.name} to connect naturally to masterPanNode (master chain will handle routing)`);
+              if (!soundManagerInstance._masterPanConnectionsLogged) {
+                soundManagerInstance._masterPanConnectionsLogged = new Set();
+              }
+              const connKey = `${this.constructor.name}->${destination.constructor.name}`;
+              if (!soundManagerInstance._masterPanConnectionsLogged.has(connKey)) {
+                console.log(`🎚️ ✅ Allowing ${this.constructor.name} to connect naturally to masterPanNode (master chain will handle routing)`);
+                console.log(`🎚️ ✅ Master chain: masterPan(${soundManagerInstance.masterPanNode?.pan?.value || 'N/A'}) -> masterFilter(${soundManagerInstance.masterFilterNode?.frequency?.value || 'N/A'}Hz) -> masterDryGain(${soundManagerInstance.masterDryGainNode?.gain?.value || 'N/A'}) -> masterGain(${soundManagerInstance.masterGainNode?.gain?.value || 'N/A'}) -> destination`);
+                soundManagerInstance._masterPanConnectionsLogged.add(connKey);
+              }
               return this.__originalConnect.call(this, destination, outputIndex, inputIndex);
             }
             
