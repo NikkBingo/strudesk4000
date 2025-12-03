@@ -4936,28 +4936,39 @@ class SoundManager {
       if (replInstance && replInstance.scheduler) {
         console.log('⏸️ REPL scheduler found (will be started after pattern slots are initialized)...');
         
-        // CRITICAL: Check for superdough.output after a delay
+        // CRITICAL: Check for superdough.output after delays
         // Superdough loads its AudioWorklets asynchronously, so we need to wait for it
-        setTimeout(() => {
-          const scheduler = replInstance.scheduler;
-          if (scheduler.superdough?.output && this.masterPanNode) {
-            console.log('🔍 [DELAYED CHECK] Found superdough.output after initialization');
-            console.log('  superdough.output type:', scheduler.superdough.output.constructor.name);
-            try {
-              // Disconnect from wherever it's currently connected
-              scheduler.superdough.output.disconnect();
-              // Connect to our master chain
-              scheduler.superdough.output.connect(this.masterPanNode);
-              console.log('✅ [DELAYED CHECK] Connected superdough.output to masterPanNode');
-            } catch (e) {
-              console.warn('⚠️ [DELAYED CHECK] Could not connect superdough.output:', e);
+        // Try multiple times with increasing delays
+        const checkSuperdoughOutput = (attempt = 1, delay = 1000) => {
+          setTimeout(() => {
+            const scheduler = replInstance.scheduler;
+            if (scheduler.superdough?.output && this.masterPanNode) {
+              console.log(`🔍 [DELAYED CHECK ${attempt}] Found superdough.output after initialization`);
+              console.log('  superdough.output type:', scheduler.superdough.output.constructor.name);
+              try {
+                // Disconnect from wherever it's currently connected
+                scheduler.superdough.output.disconnect();
+                // Connect to our master chain
+                scheduler.superdough.output.connect(this.masterPanNode);
+                console.log(`✅ [DELAYED CHECK ${attempt}] Connected superdough.output to masterPanNode`);
+              } catch (e) {
+                console.warn(`⚠️ [DELAYED CHECK ${attempt}] Could not connect superdough.output:`, e);
+              }
+            } else {
+              console.log(`ℹ️ [DELAYED CHECK ${attempt}] superdough.output not found yet (waited ${delay}ms)`);
+              console.log('  scheduler.superdough:', !!scheduler.superdough);
+              console.log('  scheduler.superdough?.output:', !!scheduler.superdough?.output);
+              
+              // Try again if we haven't tried too many times
+              if (attempt < 5) {
+                checkSuperdoughOutput(attempt + 1, delay + 1000); // Increase delay each time
+              }
             }
-          } else {
-            console.log('ℹ️ [DELAYED CHECK] superdough.output not found yet');
-            console.log('  scheduler.superdough:', !!scheduler.superdough);
-            console.log('  scheduler.superdough?.output:', !!scheduler.superdough?.output);
-          }
-        }, 1000); // Wait 1 second for superdough to load
+          }, delay);
+        };
+        
+        // Start checking
+        checkSuperdoughOutput(1, 1000);
       }
       
       // Wrap evaluate with proper error handling
@@ -9863,6 +9874,26 @@ class SoundManager {
 
     try {
       console.log(`▶️ Playing master pattern...`);
+      
+      // CRITICAL: Check and connect superdough.output if it exists
+      // Superdough loads asynchronously, so it might be ready now even if it wasn't earlier
+      if (window.strudel?.scheduler?.superdough?.output && this.masterPanNode) {
+        console.log('🔍 [PLAY-TIME CHECK] Found superdough.output, ensuring it\'s connected');
+        try {
+          window.strudel.scheduler.superdough.output.disconnect();
+          window.strudel.scheduler.superdough.output.connect(this.masterPanNode);
+          console.log('✅ [PLAY-TIME CHECK] Connected superdough.output to masterPanNode');
+        } catch (e) {
+          console.warn('⚠️ [PLAY-TIME CHECK] Could not connect superdough.output:', e);
+        }
+      } else {
+        console.log('ℹ️ [PLAY-TIME CHECK] superdough.output not available:', {
+          'window.strudel': !!window.strudel,
+          'scheduler': !!window.strudel?.scheduler,
+          'superdough': !!window.strudel?.scheduler?.superdough,
+          'output': !!window.strudel?.scheduler?.superdough?.output
+        });
+      }
       
       // CRITICAL: Set masterActive BEFORE evaluation so audio routing can find elements
       // Always set to true when playMasterPattern is called (this function is only called from play button)
