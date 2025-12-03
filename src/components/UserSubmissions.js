@@ -406,14 +406,18 @@ export class UserSubmissions {
     }
 
     // Strip existing metadata comments before adding new ones
-    // Remove old format comments (// "Title" @by, // @version, // @copyright, etc.)
-    const lines = patternCode.split('\n');
+    // Remove ALL metadata formats:
+    // - Old format: // "Title" @by Artist, // @version, // @copyright
+    // - New format: // Title:, // Artist:, // Version:
+    // - Pattern code marker: // Pattern code:
+    // - Footer: // Made with Strudesk 4000
+    const allLines = patternCode.split('\n');
     let codeStart = 0;
-    let codeEnd = lines.length;
+    let codeEnd = allLines.length;
     
-    // Find where actual code starts (after comments)
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
+    // Find where actual code starts (skip ALL comment/empty lines at start)
+    for (let i = 0; i < allLines.length; i++) {
+      const line = allLines[i].trim();
       // Skip comment lines and empty lines at the start
       if (line.startsWith('//') || line === '') {
         continue;
@@ -423,16 +427,21 @@ export class UserSubmissions {
       break;
     }
     
-    // Find where code ends (before footer comment)
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (lines[i].includes('Made with Strudesk 4000')) {
-        codeEnd = i;
-        break;
+    // Find where code ends (remove ALL footer comments at end)
+    // Work backwards and stop at last non-comment line
+    for (let i = allLines.length - 1; i >= codeStart; i--) {
+      const line = allLines[i].trim();
+      // Skip empty lines and comment lines at the end
+      if (line === '' || line.startsWith('//')) {
+        continue;
       }
+      // Found last line of actual code
+      codeEnd = i + 1;
+      break;
     }
     
-    // Extract just the pattern code without comments
-    patternCode = lines.slice(codeStart, codeEnd).join('\n').trim();
+    // Extract just the pattern code without ANY comments
+    patternCode = allLines.slice(codeStart, codeEnd).join('\n').trim();
 
     try {
       // Format pattern code with metadata (similar to SavePatternDialog)
@@ -489,21 +498,30 @@ export class UserSubmissions {
   formatPatternWithMetadata({ patternCode, title, artistName, version, versionName }) {
     const lines = [];
     
-    if (title) {
-      lines.push(`// Title: ${title}`);
-    }
-    if (artistName) {
-      lines.push(`// Artist: ${artistName}`);
-    }
-    if (version) {
-      lines.push(`// Version: ${version}`);
-    }
-    if (versionName) {
-      lines.push(`// Version Name: ${versionName}`);
+    // Add metadata header
+    if (title && artistName) {
+      lines.push(`// "${title}" @by ${artistName}`);
+    } else if (title) {
+      lines.push(`// "${title}"`);
     }
     
-    lines.push('// Pattern code:');
+    if (version) {
+      lines.push(`// @version ${version}`);
+    }
+    
+    if (artistName) {
+      lines.push(`// @copyright ${artistName}`);
+    }
+    
+    // Add blank line between metadata and code
+    lines.push('');
+    
+    // Add the pattern code (already cleaned)
     lines.push(patternCode);
+    
+    // Add footer
+    lines.push('');
+    lines.push('// Made with Strudesk 4000 by eKommissar.');
     
     return lines.join('\n');
   }
