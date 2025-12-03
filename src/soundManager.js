@@ -1098,13 +1098,18 @@ class SoundManager {
                            destination === audioContextInstance.destination ||
                            (destination?.constructor?.name === 'AudioDestinationNode');
               
+              // Check if destination is our scheduler.output or masterPanNode
+              const isOurOutput = destination === window.strudel?.scheduler?.output;
+              const isMasterPan = destination === soundManagerInstance?.masterPanNode;
+              const destInfo = isOurOutput ? '(scheduler.output!)' : isMasterPan ? '(masterPanNode!)' : '';
+              
               // Log ALL connections when master is active (not just destination connections)
               if (!soundManagerInstance._allConnectionsDebugLogged) {
                 soundManagerInstance._allConnectionsDebugLogged = new Set();
               }
               const connKey = `${nodeType}->${destType}`;
               if (!soundManagerInstance._allConnectionsDebugLogged.has(connKey)) {
-                console.log(`🔊 CONNECTION DEBUG: ${nodeType} -> ${destType}, isDestination=${isDest}, context=${this.context === audioContextInstance ? 'OUR' : 'OTHER'}`);
+                console.log(`🔊 CONNECTION DEBUG: ${nodeType} -> ${destType}${destInfo}, isDestination=${isDest}, context=${this.context === audioContextInstance ? 'OUR' : 'OTHER'}`);
                 soundManagerInstance._allConnectionsDebugLogged.add(connKey);
               }
             }
@@ -9828,6 +9833,24 @@ class SoundManager {
           } catch (e) {
             console.warn('⚠️ [PLAY-TIME CHECK] Could not connect scheduler.webaudio.node:', e);
           }
+        }
+      } else {
+        // webaudio doesn't exist - check if scheduler.output is actually being used
+        console.log('  ⚠️ scheduler.webaudio does NOT exist!');
+        console.log('  🔍 Checking if scheduler.output is connected to anything...');
+        
+        // Try to manually connect scheduler.output if it's not our masterPanNode
+        if (scheduler.output && scheduler.output !== this.masterPanNode) {
+          try {
+            console.log('  🔧 Attempting to connect scheduler.output to masterPanNode...');
+            scheduler.output.disconnect();
+            scheduler.output.connect(this.masterPanNode);
+            console.log('  ✅ Connected scheduler.output to masterPanNode!');
+          } catch (e) {
+            console.warn('  ⚠️ Could not connect scheduler.output:', e);
+          }
+        } else {
+          console.log('  ℹ️ scheduler.output is already masterPanNode or does not exist');
         }
       }
       
