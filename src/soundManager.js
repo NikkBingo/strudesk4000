@@ -4324,30 +4324,36 @@ class SoundManager {
                       console.warn('⚠️ Factory creation failed, creating minimal wrapper:', factoryError.message);
                       
                       // Fallback: Create a minimal output using a GainNode
+                      // The output itself should be an AudioNode that Strudel can connect to
                       try {
                         const outputGain = this.audioContext.createGain();
                         outputGain.connect(this.masterPanNode);
                         
-                        // Create minimal output object
-                        const minimalOutput = {
-                          output: outputGain,
-                          outputNode: outputGain,
-                          connect: (destination) => {
-                            outputGain.disconnect();
-                            outputGain.connect(this.masterPanNode);
-                          },
-                          disconnect: () => {
-                            outputGain.disconnect();
-                          }
-                        };
+                        // The output should be the GainNode itself, not a wrapper
+                        // Strudel expects scheduler.output to be an AudioNode it can connect to
+                        // We'll use the GainNode directly as the output
+                        const minimalOutput = outputGain;
+                        
+                        // Also create a wrapper object with additional properties for compatibility
+                        Object.defineProperty(minimalOutput, 'output', {
+                          value: outputGain,
+                          writable: false,
+                          enumerable: true
+                        });
+                        Object.defineProperty(minimalOutput, 'outputNode', {
+                          value: outputGain,
+                          writable: false,
+                          enumerable: true
+                        });
                         
                         // Assign to both strudelContext.scheduler and window.strudel.scheduler
                         strudelContext.scheduler.output = minimalOutput;
                         if (window.strudel && window.strudel.scheduler) {
                           window.strudel.scheduler.output = minimalOutput;
                         }
-                        console.log('✅ Created minimal output wrapper connected to masterPanNode');
+                        console.log('✅ Created minimal output (GainNode) connected to masterPanNode');
                         console.log('✅ Assigned to strudelContext.scheduler.output and window.strudel.scheduler.output');
+                        console.log('✅ Output type:', minimalOutput.constructor.name, 'is AudioNode:', minimalOutput instanceof AudioNode);
                       } catch (wrapperError) {
                         console.error('❌ Failed to create minimal output wrapper:', wrapperError);
                       }
