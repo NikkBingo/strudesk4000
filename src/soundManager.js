@@ -643,8 +643,14 @@ class SoundManager {
       }
       
       // Try to ensure connection (will fail silently if already connected)
+      // Use __originalConnect to bypass hijacking and prevent infinite recursion
       try {
-        this.masterGainNode.connect(this._realDestination);
+        if (this.masterGainNode.__originalConnect) {
+          this.masterGainNode.__originalConnect.call(this.masterGainNode, this._realDestination);
+        } else {
+          // Fallback if __originalConnect not available (shouldn't happen)
+          this.masterGainNode.connect(this._realDestination);
+        }
         console.log('✅ Verified masterGainNode -> destination connection');
       } catch (e) {
         if (e.message && e.message.includes('already connected')) {
@@ -1443,18 +1449,24 @@ class SoundManager {
                     // Mark as verified IMMEDIATELY to prevent repeated attempts
                     soundManagerInstance._masterGainDestVerifiedAfterRouting.add(elementId);
                     
-                    soundManagerInstance._logRoute(`🎚️ 🔍 VERIFYING: masterGainNode=${!!soundManagerInstance.masterGainNode}, _realDestination=${!!soundManagerInstance._realDestination}, gain=${soundManagerInstance.masterGainNode?.gain?.value?.toFixed(3) || 'N/A'}, muted=${soundManagerInstance.masterMuted}`);
-                    if (soundManagerInstance.masterGainNode && soundManagerInstance._realDestination) {
-                      try {
-                        soundManagerInstance.masterGainNode.connect(soundManagerInstance._realDestination);
-                        soundManagerInstance._logRoute(`🎚️ ✅ CRITICAL: Connected masterGainNode -> destination after routing ${elementId} (gain=${soundManagerInstance.masterGainNode.gain.value.toFixed(3)}, muted=${soundManagerInstance.masterMuted})`);
-                      } catch (e) {
-                        // Already connected - that's fine, but log it
-                        soundManagerInstance._logRoute(`🎚️ ✅ CRITICAL: masterGainNode -> destination already connected for ${elementId} (${e.message})`);
+                      soundManagerInstance._logRoute(`🎚️ 🔍 VERIFYING: masterGainNode=${!!soundManagerInstance.masterGainNode}, _realDestination=${!!soundManagerInstance._realDestination}, gain=${soundManagerInstance.masterGainNode?.gain?.value?.toFixed(3) || 'N/A'}, muted=${soundManagerInstance.masterMuted}`);
+                      if (soundManagerInstance.masterGainNode && soundManagerInstance._realDestination) {
+                        try {
+                          // Use original connect to bypass hijacking and prevent infinite recursion
+                          if (soundManagerInstance.masterGainNode.__originalConnect) {
+                            soundManagerInstance.masterGainNode.__originalConnect.call(soundManagerInstance.masterGainNode, soundManagerInstance._realDestination);
+                          } else {
+                            // Fallback if __originalConnect not available
+                            soundManagerInstance.masterGainNode.connect(soundManagerInstance._realDestination);
+                          }
+                          soundManagerInstance._logRoute(`🎚️ ✅ CRITICAL: Connected masterGainNode -> destination after routing ${elementId} (gain=${soundManagerInstance.masterGainNode.gain.value.toFixed(3)}, muted=${soundManagerInstance.masterMuted})`);
+                        } catch (e) {
+                          // Already connected - that's fine, but log it
+                          soundManagerInstance._logRoute(`🎚️ ✅ CRITICAL: masterGainNode -> destination already connected for ${elementId} (${e.message})`);
+                        }
+                      } else {
+                        console.error(`❌ CRITICAL: Cannot verify masterGainNode -> destination: masterGainNode=${!!soundManagerInstance.masterGainNode}, _realDestination=${!!soundManagerInstance._realDestination}`);
                       }
-                    } else {
-                      console.error(`❌ CRITICAL: Cannot verify masterGainNode -> destination: masterGainNode=${!!soundManagerInstance.masterGainNode}, _realDestination=${!!soundManagerInstance._realDestination}`);
-                    }
                   }
                   
                   // Verify connection was successful
@@ -1492,15 +1504,21 @@ class SoundManager {
                   const masterNode = masterPanNode || masterFilterNode || masterGainNode;
                   if (masterNode) {
                     // CRITICAL: Verify master chain is connected before routing
-                    if (masterGainNode && soundManagerInstance._realDestination) {
+                    // Use __originalConnect to bypass hijacking and prevent infinite loop
+                    if (masterGainNode && soundManagerInstance._realDestination && !soundManagerInstance._stackRoutingVerified) {
                       try {
-                        masterGainNode.connect(soundManagerInstance._realDestination);
-                        if (!soundManagerInstance._stackRoutingVerified) {
-                          console.log(`🎚️ ✅ Stack() routing: Verified masterGainNode -> destination connection (gain=${masterGainNode.gain.value.toFixed(3)})`);
-                          soundManagerInstance._stackRoutingVerified = true;
-                        }
+                        // Use original connect to bypass hijacking - this prevents infinite recursion
+                        masterGainNode.__originalConnect.call(masterGainNode, soundManagerInstance._realDestination);
+                        console.log(`🎚️ ✅ Stack() routing: Verified masterGainNode -> destination connection (gain=${masterGainNode.gain.value.toFixed(3)})`);
+                        soundManagerInstance._stackRoutingVerified = true;
                       } catch (e) {
-                        if (e.message && !e.message.includes('already connected')) {
+                        if (e.message && e.message.includes('already connected')) {
+                          // Already connected is fine
+                          if (!soundManagerInstance._stackRoutingVerified) {
+                            console.log(`🎚️ ✅ Stack() routing: masterGainNode -> destination already connected`);
+                            soundManagerInstance._stackRoutingVerified = true;
+                          }
+                        } else {
                           console.error(`❌ Stack() routing: Failed to connect masterGainNode -> destination:`, e.message);
                         }
                       }
@@ -1623,12 +1641,23 @@ class SoundManager {
                     }
                   }
                   // CRITICAL: Ensure masterGainNode is connected to destination when routing through master chain
+                  // Use __originalConnect to bypass hijacking and prevent infinite recursion
                   if (masterGainNode && soundManagerInstance._realDestination) {
                     try {
-                      masterGainNode.connect(soundManagerInstance._realDestination);
+                      // Use original connect to bypass hijacking
+                      if (masterGainNode.__originalConnect) {
+                        masterGainNode.__originalConnect.call(masterGainNode, soundManagerInstance._realDestination);
+                      } else {
+                        // Fallback if __originalConnect not available (shouldn't happen)
+                        masterGainNode.connect(soundManagerInstance._realDestination);
+                      }
                       console.log(`🎚️ ✅ FALLBACK: Ensured masterGainNode -> destination connection (gain=${masterGainNode.gain.value.toFixed(3)})`);
                     } catch (e) {
-                      console.log(`🎚️ ✅ FALLBACK: masterGainNode -> destination already connected (${e.message})`);
+                      if (e.message && e.message.includes('already connected')) {
+                        console.log(`🎚️ ✅ FALLBACK: masterGainNode -> destination already connected`);
+                      } else {
+                        console.warn(`⚠️ FALLBACK: Could not connect masterGainNode -> destination: ${e.message}`);
+                      }
                     }
                   }
                 }
@@ -1646,22 +1675,26 @@ class SoundManager {
               
               // CRITICAL: Ensure masterGainNode is always connected to destination
               // Even when routing through element chain, masterGainNode must connect to destination
-              // Only reconnect if not already connected (avoid unnecessary disconnects)
-              if (masterGainNode && realDestination) {
+              // Use __originalConnect to bypass hijacking and prevent infinite recursion
+              if (masterGainNode && realDestination && !soundManagerInstance._masterGainDestVerified) {
                 try {
-                  // Try to connect - if already connected, this will throw, which is fine
-                  masterGainNode.connect(realDestination);
-                  if (!soundManagerInstance._masterGainDestVerified) {
-                    console.log(`🎚️ ✅ Ensured masterGainNode -> destination connection (critical for audio output)`);
-                    soundManagerInstance._masterGainDestVerified = true;
+                  // Use original connect to bypass hijacking
+                  if (masterGainNode.__originalConnect) {
+                    masterGainNode.__originalConnect.call(masterGainNode, realDestination);
+                  } else {
+                    // Fallback if __originalConnect not available (shouldn't happen)
+                    masterGainNode.connect(realDestination);
                   }
+                  console.log(`🎚️ ✅ Ensured masterGainNode -> destination connection (critical for audio output)`);
+                  soundManagerInstance._masterGainDestVerified = true;
                 } catch (e) {
                   // Already connected or other error - that's fine, connection exists
-                  if (!soundManagerInstance._masterGainDestVerified && e.message && !e.message.includes('already connected')) {
-                    // Only log if it's not an "already connected" error
-                    console.log(`🎚️ masterGainNode -> destination: ${e.message.includes('already') ? 'already connected' : 'connection verified'}`);
-                    soundManagerInstance._masterGainDestVerified = true;
+                  if (e.message && e.message.includes('already connected')) {
+                    console.log(`🎚️ ✅ masterGainNode -> destination already connected`);
+                  } else {
+                    console.log(`🎚️ masterGainNode -> destination: ${e.message || 'connection verified'}`);
                   }
+                  soundManagerInstance._masterGainDestVerified = true;
                 }
               }
             }
@@ -4149,25 +4182,14 @@ class SoundManager {
             window.strudel.scheduler = strudelContext.scheduler;
             console.log('✅ Stored scheduler in window.strudel');
             
-            // CRITICAL: Ensure scheduler has output set up
+            // Check if scheduler has output set up
             // Since we've overridden audioContext.destination, Strudel should have created output automatically
-            // But if it didn't, we need to set it up manually
-            if (!strudelContext.scheduler.output) {
-              console.log('⚠️ scheduler.output is missing, setting it up...');
-              const outputFactory = this.strudelOutputFactory || webaudioOutput;
-              if (outputFactory && typeof outputFactory === 'function') {
-                try {
-                  const output = outputFactory(this.audioContext);
-                  strudelContext.scheduler.output = output;
-                  console.log('✅ Created and set scheduler.output:', output?.constructor?.name || typeof output);
-                } catch (e) {
-                  console.error('❌ Failed to create scheduler output:', e.message);
-                }
-              } else {
-                console.warn('⚠️ No webaudioOutput factory available to create scheduler output');
-              }
+            // We don't manually set it because webaudioOutput factory requires ensureObjectValue which isn't available
+            if (strudelContext.scheduler.output) {
+              console.log('✅ scheduler.output exists:', strudelContext.scheduler.output?.constructor?.name || typeof strudelContext.scheduler.output);
             } else {
-              console.log('✅ scheduler.output already exists:', strudelContext.scheduler.output?.constructor?.name || typeof strudelContext.scheduler.output);
+              console.warn('⚠️ scheduler.output is missing - Strudel should create it automatically from audioContext');
+              console.warn('⚠️ Audio may not play if scheduler.output is not set up');
             }
           }
           
