@@ -4184,12 +4184,33 @@ class SoundManager {
             
             // Check if scheduler has output set up
             // Since we've overridden audioContext.destination, Strudel should have created output automatically
-            // We don't manually set it because webaudioOutput factory requires ensureObjectValue which isn't available
             if (strudelContext.scheduler.output) {
               console.log('✅ scheduler.output exists:', strudelContext.scheduler.output?.constructor?.name || typeof strudelContext.scheduler.output);
             } else {
-              console.warn('⚠️ scheduler.output is missing - Strudel should create it automatically from audioContext');
-              console.warn('⚠️ Audio may not play if scheduler.output is not set up');
+              console.warn('⚠️ scheduler.output is missing - creating it manually...');
+              // Manually create the output using the webaudioOutput factory
+              // Since we've overridden audioContext.destination, it will route through masterPanNode
+              if (this.strudelOutputFactory && typeof this.strudelOutputFactory === 'function') {
+                try {
+                  // Create output with audioContext and destination
+                  // The destination will be masterPanNode due to our override
+                  const output = this.strudelOutputFactory({
+                    audioContext: this.audioContext,
+                    destination: this.audioContext.destination
+                  });
+                  if (output) {
+                    strudelContext.scheduler.output = output;
+                    console.log('✅ Manually created scheduler.output:', output?.constructor?.name || typeof output);
+                  } else {
+                    console.error('❌ Failed to create scheduler.output - factory returned null/undefined');
+                  }
+                } catch (error) {
+                  console.error('❌ Failed to create scheduler.output manually:', error);
+                  console.error('   Error details:', error.message, error.stack);
+                }
+              } else {
+                console.error('❌ Cannot create scheduler.output - strudelOutputFactory not available');
+              }
             }
           }
           
