@@ -1013,11 +1013,12 @@ class SoundManager {
             // Allow all other property sets
             try {
               target[prop] = value;
-              return true;
             } catch (e) {
               console.warn(`⚠️ Could not set ${prop}=${value}:`, e.message);
-              return false;
+              // DON'T return false - that breaks the calling code!
             }
+            // ALWAYS return true to indicate the trap handled the operation
+            return true;
           },
           get: (target, prop) => {
             // Forward all property gets to the real node
