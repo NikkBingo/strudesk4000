@@ -1210,10 +1210,7 @@ header h1 {
 }
 
 .chaospad-tilt-inline {
-  display: flex;
-  gap: 16px;
-  margin-top: 12px;
-  width: 100%;
+  display: none !important;
 }
 
 @media (max-width: 640px) {
