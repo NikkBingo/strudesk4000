@@ -4256,6 +4256,7 @@ class SoundManager {
             editPattern: () => {},
             setUrl: () => {},
             withLoc: true, // Enable location tracking for code highlighting
+            output: fallbackOutput, // CRITICAL: Pass our output so Strudel uses it
             midiOutput: (message) => {
               // This will send MIDI messages if MIDI is enabled, otherwise it's a no-op
               if (this.midiEnabled && this.selectedMidiOutput) {
