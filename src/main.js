@@ -14839,38 +14839,6 @@ class InteractiveSoundApp {
           <button class="mute-button" title="Mute">M</button>
         </div>
         
-        <div class="element-midi-settings">
-          <div class="midi-toggle-row">
-            <label class="midi-toggle-label">
-              Send MIDI
-              <input type="checkbox" class="midi-enable-toggle" />
-            </label>
-            </div>
-          <div class="midi-channel-row">
-            <label class="midi-channel-label">
-              Channel
-              <select class="midi-channel-select" disabled>
-                <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5">5</option>
-                <option value="6">6</option>
-                <option value="7">7</option>
-                <option value="8">8</option>
-                <option value="9">9</option>
-                <option value="10">10</option>
-                <option value="11">11</option>
-                <option value="12">12</option>
-                <option value="13">13</option>
-                <option value="14">14</option>
-                <option value="15">15</option>
-                <option value="16">16</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        
         <div class="element-action-buttons">
         <button class="config-button">Configure Sound</button>
           <div class="history-button-row">
