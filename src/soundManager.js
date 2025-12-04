@@ -1038,21 +1038,7 @@ class SoundManager {
         this.gainNode = this.masterGainNode;
         // Don't override master gain - it's already set to masterVolume above
         
-        // CRITICAL: Override audioContext.destination to route through master chain
-        // This ensures Strudel's webaudio output connects to masterPanNode instead of real destination
-        // We use Object.defineProperty to override the getter, which is safer than direct assignment
-        try {
-          Object.defineProperty(this.audioContext, 'destination', {
-            get: () => this.masterPanNode,
-            configurable: true,
-            enumerable: true
-          });
-          console.log('✅ Overrode audioContext.destination to route through masterPanNode');
-        } catch (e) {
-          console.warn('⚠️ Could not override audioContext.destination:', e.message);
-          console.log('💡 Will rely on AudioNode.prototype.connect hijacking instead');
-        }
-        
+        // Note: audioContext.destination override was done earlier (destinationWrapper)
         console.log('💡 Master channel ready - will route Strudel through it during init');
 
         // CRITICAL: Patch AudioNode.prototype.connect BEFORE loading Strudel
@@ -4883,13 +4869,15 @@ class SoundManager {
           // Also check for audioContext property in scheduler
           if (scheduler.audioContext) {
             // Patch audioContext.destination in scheduler's context
+            // Use destinationWrapper (GainNode) instead of masterPanNode (StereoPannerNode)
+            // to prevent superdough from setting channelCount=0 which breaks audio
             const originalDestination = scheduler.audioContext.destination;
             try {
               Object.defineProperty(scheduler.audioContext, 'destination', {
-                get: () => this.masterPanNode || originalDestination,
+                get: () => this.destinationWrapper || this.masterPanNode || originalDestination,
                 configurable: true
               });
-              console.log('🎚️ Patched scheduler audioContext.destination');
+              console.log('🎚️ Patched scheduler audioContext.destination to use destinationWrapper');
             } catch (e) {
               console.warn('⚠️ Could not patch scheduler audioContext:', e);
             }
