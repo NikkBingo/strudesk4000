@@ -3363,8 +3363,8 @@ class InteractiveSoundApp {
     document.addEventListener('mozfullscreenchange', this.handleVisualizerFullscreenChange);
     document.addEventListener('MSFullscreenChange', this.handleVisualizerFullscreenChange);
     
-    // Chaospad state
-    this.chaospadEnabled = false;
+    // Chaospad state (always enabled)
+    this.chaospadEnabled = true;
     this.currentCutoffValue = null;
     this.lastCutoffUpdate = null;
     this.currentResonanceValue = null;
@@ -4694,43 +4694,25 @@ class InteractiveSoundApp {
       }
     });
     
-    // Setup Chaospad checkbox
-    const chaospadCheckbox = document.getElementById('chaospad-checkbox');
-    if (chaospadCheckbox) {
-      chaospadCheckbox.addEventListener('change', async (e) => {
-        const wasEnabled = this.chaospadEnabled;
-        this.chaospadEnabled = e.target.checked;
-        console.log(`🎛️ Chaospad ${this.chaospadEnabled ? 'enabled' : 'disabled'}`);
-        this.updateMobileOrientationLock();
-        this.refreshTiltControlsState();
-        
-        // Update cursor style
-        if (this.masterPunchcardCanvas) {
-          this.masterPunchcardCanvas.style.cursor = this.chaospadEnabled ? 'pointer' : '';
-        }
-        
-        if (!this.chaospadEnabled) {
-          console.log('🎛️ Chaospad: Disabled - restoring defaults');
-          // Restore all values to defaults
-          this.restoreChaospadDefaults();
-          soundManager.enableMasterFilter(false);
-        } else {
-          console.log('🎛️ Chaospad: Enabled - activating master filter with defaults');
-          // Store current values as defaults before enabling (only if not already enabled)
-          if (!wasEnabled) {
-            this.updateChaospadDefaultsFromCurrent();
-          }
-          soundManager.enableMasterFilter(true);
-          this.resetChaospadToDefaults(true);
-          
-          // Show mobile notification
-          if (this.isMobileView) {
-            this.showChaospadMobileNotification();
-          }
-        }
-        await this.updateChaospadInputMode();
-      });
+    // Initialize Chaospad (always enabled)
+    console.log('🎛️ Chaospad: Always enabled - activating master filter with defaults');
+    this.updateChaospadDefaultsFromCurrent();
+    soundManager.enableMasterFilter(true);
+    this.resetChaospadToDefaults(true);
+    this.updateMobileOrientationLock();
+    this.refreshTiltControlsState();
+    
+    // Update cursor style
+    if (this.masterPunchcardCanvas) {
+      this.masterPunchcardCanvas.style.cursor = 'pointer';
     }
+    
+    // Show mobile notification
+    if (this.isMobileView) {
+      this.showChaospadMobileNotification();
+    }
+    
+    await this.updateChaospadInputMode();
 
     const tiltXSlider = document.getElementById('chaospad-tilt-x');
     const tiltYSlider = document.getElementById('chaospad-tilt-y');
