@@ -4695,24 +4695,26 @@ class InteractiveSoundApp {
     });
     
     // Initialize Chaospad (always enabled)
-    console.log('🎛️ Chaospad: Always enabled - activating master filter with defaults');
-    this.updateChaospadDefaultsFromCurrent();
-    soundManager.enableMasterFilter(true);
-    this.resetChaospadToDefaults(true);
-    this.updateMobileOrientationLock();
-    this.refreshTiltControlsState();
-    
-    // Update cursor style
-    if (this.masterPunchcardCanvas) {
-      this.masterPunchcardCanvas.style.cursor = 'pointer';
-    }
-    
-    // Show mobile notification
-    if (this.isMobileView) {
-      this.showChaospadMobileNotification();
-    }
-    
-    await this.updateChaospadInputMode();
+    (async () => {
+      console.log('🎛️ Chaospad: Always enabled - activating master filter with defaults');
+      this.updateChaospadDefaultsFromCurrent();
+      soundManager.enableMasterFilter(true);
+      this.resetChaospadToDefaults(true);
+      this.updateMobileOrientationLock();
+      this.refreshTiltControlsState();
+      
+      // Update cursor style
+      if (this.masterPunchcardCanvas) {
+        this.masterPunchcardCanvas.style.cursor = 'pointer';
+      }
+      
+      // Show mobile notification
+      if (this.isMobileView) {
+        this.showChaospadMobileNotification();
+      }
+      
+      await this.updateChaospadInputMode();
+    })();
 
     const tiltXSlider = document.getElementById('chaospad-tilt-x');
     const tiltYSlider = document.getElementById('chaospad-tilt-y');
