@@ -1120,12 +1120,23 @@ class SoundManager {
                     if (destination && destination.context) {
                       console.log(`    🔍 Checking if destination GainNode is orphaned...`);
                       // If this is the final GainNode in the chain, it should connect to our master
+                      // CRITICAL: Don't disconnect! Just ADD the connection to preserve the existing chain
                       try {
-                        destination.disconnect();
-                        destination.connect(soundManagerInstance.masterPanNode);
-                        console.log(`    ✅ FOUND ORPHANED GAINNODE - Connected to masterPanNode!`);
+                        // Check if already connected to masterPanNode
+                        if (destination.numberOfOutputs > 0) {
+                          // Has outputs, might already be connected - add masterPanNode as additional output
+                          destination.connect(soundManagerInstance.masterPanNode);
+                          console.log(`    ✅ FOUND ORPHANED GAINNODE - Added connection to masterPanNode (preserving existing chain)!`);
+                        } else {
+                          // No outputs, definitely orphaned
+                          destination.connect(soundManagerInstance.masterPanNode);
+                          console.log(`    ✅ FOUND ORPHANED GAINNODE - Connected to masterPanNode!`);
+                        }
                       } catch (e) {
-                        console.warn(`    ⚠️ Could not connect potential orphaned GainNode:`, e.message);
+                        // Might already be connected, that's fine
+                        if (!e.message.includes('already connected')) {
+                          console.warn(`    ⚠️ Could not connect potential orphaned GainNode:`, e.message);
+                        }
                       }
                     }
                   }, 500); // Check after a short delay to let the chain fully form
