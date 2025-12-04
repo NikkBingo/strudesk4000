@@ -995,14 +995,39 @@ class SoundManager {
         }
         
         // CRITICAL: Create a wrapper GainNode as fake destination
-        // Superdough tries to set channelCount=0 on destination which breaks StereoPannerNode
-        // Use a GainNode wrapper that superdough can configure freely
-        this.destinationWrapper = this.audioContext.createGain();
-        this.destinationWrapper.gain.value = 1.0;
-        this.destinationWrapper.connect(this.masterPanNode);
+        // Superdough tries to set channelCount=0 which is INVALID for ALL AudioNodes
+        // Wrap it in a Proxy to intercept and block invalid property sets
+        const realWrapper = this.audioContext.createGain();
+        realWrapper.gain.value = 1.0;
+        realWrapper.connect(this.masterPanNode);
         console.log('✅ Created destination wrapper (GainNode) -> masterPanNode');
         
-        // Override audioContext.destination to return the wrapper
+        // Wrap in Proxy to intercept invalid property sets
+        this.destinationWrapper = new Proxy(realWrapper, {
+          set: (target, prop, value) => {
+            // Block invalid channelCount values (must be >= 1 for all AudioNodes)
+            if (prop === 'channelCount' && (value === 0 || value < 1)) {
+              console.warn(`🛡️ BLOCKED: superdough tried to set channelCount=${value} (invalid, must be >= 1)`);
+              return true; // Return true = success (but don't actually set)
+            }
+            // Allow all other property sets
+            try {
+              target[prop] = value;
+              return true;
+            } catch (e) {
+              console.warn(`⚠️ Could not set ${prop}=${value}:`, e.message);
+              return false;
+            }
+          },
+          get: (target, prop) => {
+            // Forward all property gets to the real node
+            const value = target[prop];
+            // If it's a function, bind it to the real target
+            return typeof value === 'function' ? value.bind(target) : value;
+          }
+        });
+        
+        // Override audioContext.destination to return the protected wrapper
         Object.defineProperty(this.audioContext, 'destination', {
           get: () => this.destinationWrapper,
           configurable: true,
