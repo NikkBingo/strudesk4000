@@ -994,10 +994,17 @@ class SoundManager {
           console.error('❌ Failed to connect masterGainNode -> _realDestination:', e);
         }
         
-        // CRITICAL: Override audioContext.destination to route through master chain
-        // This ensures Strudel's webaudio output connects to masterPanNode instead of real destination
+        // CRITICAL: Create a wrapper GainNode as fake destination
+        // Superdough tries to set channelCount=0 on destination which breaks StereoPannerNode
+        // Use a GainNode wrapper that superdough can configure freely
+        this.destinationWrapper = this.audioContext.createGain();
+        this.destinationWrapper.gain.value = 1.0;
+        this.destinationWrapper.connect(this.masterPanNode);
+        console.log('✅ Created destination wrapper (GainNode) -> masterPanNode');
+        
+        // Override audioContext.destination to return the wrapper
         Object.defineProperty(this.audioContext, 'destination', {
-          get: () => this.masterPanNode,
+          get: () => this.destinationWrapper,
           configurable: true,
           enumerable: true
         });
