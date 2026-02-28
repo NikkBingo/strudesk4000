@@ -8468,8 +8468,8 @@ class SoundManager {
       'github:yaxu/clean-breaks/main',    // Used in: scrub
       
       // Popular verified sample packs from strudel-samples.alternet.site
-      // Top packs by sample count
-      'github:tidalcycles/uzu-drumkit',         // 16 samples - Uzu drumkit
+      // TEMPORARILY DISABLED - Strudel 1.2.6 has issues resolving these github: URLs
+      // 'github:tidalcycles/uzu-drumkit',         // 16 samples - Uzu drumkit
       
       // Verified user repositories (based on known GitHub patterns)
       'github:yaxu/mrid',                      // 13 samples - Mrid
