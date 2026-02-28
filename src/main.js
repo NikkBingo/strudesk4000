@@ -63,7 +63,7 @@ const VCSL_FAMILY_ORDER = ['Chordophones', 'Aerophones', 'Membranophones', 'Elec
 // Format: { value: 'github:user/repo', label: 'Display Name', samples: count }
 const SAMPLE_PACKS = [
   // Top packs by sample count
-  { value: 'github:tidalcycles/uzu-drumkit', label: 'Uzu Drumkit (16)', samples: 16 },
+  // DISABLED: { value: 'github:tidalcycles/uzu-drumkit', label: 'Uzu Drumkit (16)', samples: 16 },
   
   // Yaxu repositories
   { value: 'github:yaxu/clean-breaks/main', label: 'Clean Breaks Main (32)', samples: 32 },
