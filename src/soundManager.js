@@ -9886,7 +9886,21 @@ class SoundManager {
           await window.strudel.evaluate(`${slot} = ${patternText}`);
         }
       } else {
-        await window.strudel.evaluate(`${slot} = ${patternText}`);
+        // Parse multi-statement patterns (e.g., from strudel.cc documentation)
+        const { setupStatements, patternExpression } = this.parseMultiStatementPattern(patternText);
+        
+        // Evaluate setup statements first
+        for (const setupStmt of setupStatements) {
+          try {
+            await window.strudel.evaluate(setupStmt);
+          } catch (setupError) {
+            console.warn(`⚠️ Setup statement evaluation warning: ${setupError.message}`);
+          }
+        }
+        
+        // Evaluate the pattern expression with slot assignment
+        const finalPattern = patternExpression || patternText;
+        await window.strudel.evaluate(`${slot} = ${finalPattern}`);
       }
       if (window.strudel.scheduler) {
         if (!window.strudel.scheduler.started) {
@@ -9933,6 +9947,121 @@ class SoundManager {
       console.error('❌ Failed to evaluate master pattern:', error);
       return { success: false, error: error.message };
     }
+  }
+
+  /**
+   * Parse a multi-statement pattern into setup statements and pattern expression
+   * Handles patterns from strudel.cc that contain samples(), setcps(), variable declarations, etc.
+   * @param {string} pattern - The full pattern code
+   * @returns {{setupStatements: string[], patternExpression: string}}
+   */
+  parseMultiStatementPattern(pattern) {
+    if (!pattern || typeof pattern !== 'string') {
+      return { setupStatements: [], patternExpression: pattern || '' };
+    }
+
+    // Split by newlines and semicolons, preserving content within strings and parentheses
+    const lines = [];
+    let currentLine = '';
+    let inString = false;
+    let stringChar = '';
+    let parenDepth = 0;
+    let braceDepth = 0;
+    let bracketDepth = 0;
+    
+    for (let i = 0; i < pattern.length; i++) {
+      const char = pattern[i];
+      const prevChar = i > 0 ? pattern[i - 1] : '';
+      
+      // Track string boundaries
+      if ((char === '"' || char === "'" || char === '`') && prevChar !== '\\') {
+        if (!inString) {
+          inString = true;
+          stringChar = char;
+        } else if (char === stringChar) {
+          inString = false;
+          stringChar = '';
+        }
+      }
+      
+      // Track parentheses, braces, brackets depth
+      if (!inString) {
+        if (char === '(') parenDepth++;
+        else if (char === ')') parenDepth--;
+        else if (char === '{') braceDepth++;
+        else if (char === '}') braceDepth--;
+        else if (char === '[') bracketDepth++;
+        else if (char === ']') bracketDepth--;
+      }
+      
+      // Split on newlines and semicolons only when not inside strings or nested structures
+      if (!inString && parenDepth === 0 && braceDepth === 0 && bracketDepth === 0 && 
+          (char === '\n' || char === ';')) {
+        if (currentLine.trim()) {
+          lines.push(currentLine.trim());
+        }
+        currentLine = '';
+        continue;
+      }
+      
+      currentLine += char;
+    }
+    
+    // Add the last line if it exists
+    if (currentLine.trim()) {
+      lines.push(currentLine.trim());
+    }
+    
+    // Identify setup statements vs pattern expression
+    const setupStatements = [];
+    let patternExpression = '';
+    
+    // Setup statement patterns
+    const setupPatterns = [
+      /^\s*samples\s*\(/i,           // samples(...)
+      /^\s*setcps\s*\(/i,            // setcps(...)
+      /^\s*setcpm\s*\(/i,            // setcpm(...)
+      /^\s*setbpm\s*\(/i,            // setbpm(...)
+      /^\s*(let|const|var)\s+\w+/i,  // variable declarations
+      /^\s*await\s+samples\s*\(/i,   // await samples(...)
+    ];
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Skip empty lines and comments
+      if (!line || line.startsWith('//') || line.startsWith('/*')) {
+        continue;
+      }
+      
+      // Check if this line is a setup statement
+      const isSetup = setupPatterns.some(pattern => pattern.test(line));
+      
+      if (isSetup) {
+        setupStatements.push(line);
+      } else {
+        // This is part of the pattern expression
+        // If we haven't found a pattern yet, or if this is the last statement, use it
+        if (!patternExpression || i === lines.length - 1) {
+          patternExpression = line;
+        } else {
+          // It might be a multi-line pattern expression, append it
+          patternExpression = patternExpression ? `${patternExpression}\n${line}` : line;
+        }
+      }
+    }
+    
+    // If no pattern expression was found, use the entire pattern (fallback to old behavior)
+    if (!patternExpression && lines.length > 0) {
+      patternExpression = lines[lines.length - 1];
+    }
+    
+    // If we only have one line and it's not a setup statement, treat it as pattern expression
+    if (lines.length === 1 && setupStatements.length === 0) {
+      patternExpression = lines[0];
+    }
+    
+    return { setupStatements, patternExpression };
   }
 
   /**
@@ -10412,7 +10541,30 @@ class SoundManager {
           return { success: false, error: 'Strudel scheduler not available' };
         }
         
-        const code = `${evaluationSlot} = ${patternToEval}`;
+        // Parse multi-statement patterns (e.g., from strudel.cc documentation)
+        // Separates setup statements (samples(), setcps(), etc.) from the main pattern expression
+        const { setupStatements, patternExpression } = this.parseMultiStatementPattern(patternToEval);
+        
+        if (setupStatements.length > 0) {
+          console.log(`🎼 Multi-statement pattern detected:`);
+          console.log(`   Setup statements (${setupStatements.length}): ${setupStatements.map(s => s.substring(0, 40) + '...').join(', ')}`);
+          console.log(`   Pattern expression: ${patternExpression.substring(0, 100)}...`);
+        }
+        
+        // Evaluate setup statements first (without assignment)
+        for (const setupStmt of setupStatements) {
+          try {
+            console.log(`   ⚙️ Evaluating setup: ${setupStmt.substring(0, 60)}...`);
+            await window.strudel.evaluate(setupStmt);
+          } catch (setupError) {
+            console.warn(`   ⚠️ Setup statement evaluation warning: ${setupError.message}`);
+            // Continue anyway - setup statements are not critical for pattern evaluation
+          }
+        }
+        
+        // Use the pattern expression (or full pattern if no parsing occurred)
+        const finalPattern = patternExpression || patternToEval;
+        const code = `${evaluationSlot} = ${finalPattern}`;
         console.log(`🎼 Evaluating master pattern:`);
         console.log(`   Full code: ${code}`);
         console.log(`   Code length: ${code.length} characters`);
